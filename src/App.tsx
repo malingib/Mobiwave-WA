@@ -3,7 +3,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import {
   Activity, ArrowUpRight, BookOpen, Bot, Check, ChevronDown, CircleHelp,
   Globe2, LayoutDashboard, Link2, LogOut, MessageCircle, Plus, RefreshCw, Search,
-  Send, Settings2, ShieldCheck, Sparkles, Trash2, Users, UserRound, Settings, X, Zap, LoaderCircle,
+  Send, Settings2, ShieldCheck, Sparkles, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle,
 } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 
@@ -31,7 +31,7 @@ const views: { label: View; icon: typeof LayoutDashboard; section?: string }[] =
   { label: "Campaigns", icon: Zap },
   { label: "Integrations", icon: Settings2, section: "ADMINISTRATION" },
   { label: "Profile", icon: UserRound, section: "ACCOUNT" },
-  { label: "Settings", icon: Settings },
+  { label: "Settings", icon: SettingsIcon },
 ];
 
 export default function App() {
