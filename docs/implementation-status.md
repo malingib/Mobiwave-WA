@@ -1,47 +1,39 @@
 # Implementation status
 
-## Branch
+## Production foundation
 
-`feat/knowledge-builder-foundation`
+The dashboard and backend foundation are merged into `main`. The existing Vercel production deployment was reported READY from commit `bd3f1b5aa789be07e691cdc0cede0c3651ef9897`; deployment readiness is not the same as a successful live end-to-end test.
 
-## Implemented in the repository
+## Implemented
 
-### Dashboard
-- React/Vite responsive dashboard, Supabase Auth sign-in/sign-up, workspace creation and workspace selector.
-- Knowledge source management with single-URL and same-host crawl scopes, source status, refresh and deletion.
-- AI memory queue with manual memory entry, approval/rejection/deletion, and review-only suggestions extracted from resolved conversations.
-- Chatbot configuration, AI answer test, and handoff controls.
-- Contacts with opt-in/opt-out status, shared inbox, agent replies, approved-template campaign drafts and campaign batch launcher.
-- Meta integration setup, token verification and template sync screens.
+- React/Vite dashboard with Supabase Auth UI and workspace selector.
+- Tenant-scoped knowledge sources and bounded website ingestion; full-text retrieval and curated AI memory review.
+- Contacts, consent and opt-out state, shared inbox, agent replies, and conversation handoff.
+- Official Meta WhatsApp Cloud API integration, encrypted stored credentials, template sync, signed inbound webhook handling, and message status ingestion.
+- Campaign drafts and consent-checked, approved-template sending batches.
+- Tenant API keys, usage events, customer webhooks, and retryable webhook delivery worker.
+- Supabase schema migrations, row-level security policies, CI type-check/build, and Vercel production environment variables for the frontend.
 
-### Backend
-- Tenant-scoped PostgreSQL schema for workspace membership, sources, documents/chunks, ingestion runs, AI memory, settings, contacts, Meta integration, templates, campaigns, recipients, conversations, messages and webhook events.
-- RLS policies, explicit authenticated Data API grants and a tenant-scoped full-text retrieval RPC restricted to the service role.
-- Supabase Edge Functions for workspace provisioning, bounded source ingestion, grounded AI replies, review-only memory suggestions, Meta credential encryption/verification, template sync, signed Meta webhooks, inbound conversation processing, message sending and consent-checked campaign batches.
-- Meta credentials are encrypted with AES-GCM; browser roles cannot select the encrypted token column.
-- CI workflow for TypeScript/Vite build.
+## Added production-readiness work
 
-## Product safety rules implemented
-- Official Meta WhatsApp Cloud API only; no alternative WhatsApp engines or QR pairing.\n- Tenant API keys are hashed, shown once, revocable and scoped to approved-template sending; monthly message/AI request usage events and basic quotas are implemented.
-- No general internet search fallback. Only tenant-submitted sources are eligible for knowledge ingestion.
-- AI responses require an exact reference to retrieved approved evidence; otherwise the chatbot hands off.
-- Memory generated from conversations remains in the review queue and is not automatically approved.
-- AI starts disabled for each workspace.
-- Marketing campaigns require recorded opt-in and an approved Meta template; opted-out contacts are suppressed.
-- Free-form agent replies require a recent inbound message inside the 24-hour customer-service window.
-- Webhook POST requests require Meta HMAC signature verification and inbound message IDs are used for idempotency.
-- Crawler bounds page count and body size, checks DNS and redirects, stays on the explicitly authorized host, and applies robots path rules.
+- A GitHub Actions webhook worker schedule is defined in `.github/workflows/webhook-worker.yml` (every five minutes plus manual dispatch). It requires repository Actions secrets `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `INTERNAL_FUNCTION_TOKEN`.
+- `docs/production-go-live.md` documents the existing production resources, exact Auth URL settings, Edge Function secrets, Meta webhook setup, worker setup, and controlled pilot checklist.
 
-## Not yet complete or verified
-- The branch has not been deployed to a live Supabase project, and no live project credentials were provided.
-- GitHub Actions passed the Vite production build and Deno Edge Function type-check on the current branch head (commit `4922bf45652cf14e46092b1b0322ff642e3f1f8d`). This verifies compile/type-check only, not live database, Meta API, crawler or end-to-end behaviour.
-- The crawler is a bounded HTML/text extractor, not a headless browser; PDFs, JavaScript-rendered content and authenticated pages are not supported. DNS preflight cannot completely prevent DNS rebinding; high-assurance production should use an egress proxy enforcing IP restrictions at connection time.
-- No scheduled crawl/refresh worker, durable campaign scheduler/queue worker, complete delivery analytics, billing/subscription collection, team invitation UI or full audit log yet. Customer webhook retries require the configured webhook-worker to be scheduled. The public API currently supports approved-template sends and basic monthly quota enforcement.
-- Campaign launcher processes at most 10 queued recipients per invocation; remaining batches must be run again. Dynamic template parameters are supported as JSON but require validation against each template's expected parameters.
-- No live Meta webhook has been registered and no real message has been sent or received.
-- AI provider credentials and usage limits have not been configured. The chatbot and memory suggestion feature require the optional AI key.
-- Automated tests, load tests, penetration testing and production privacy/compliance review remain necessary.
+## Still requires account-owner configuration or real provider credentials
 
-## Required setup before a live pilot
+- Supabase Auth Site URL and redirect allowlist must be saved in the Supabase dashboard.
+- Supabase Edge Function secrets must be entered securely in Supabase; this integration does not expose a secret-management operation.
+- GitHub Actions repository secrets must be added securely in GitHub; this integration does not expose an Actions-secret write operation.
+- Meta app/WABA/phone number/access token/webhook configuration must be completed in Meta and verified against an authorized test number.
+- The worker schedule must be tested after its three GitHub secrets are added.
+- No live end-to-end WhatsApp test has been confirmed in this work session.
 
-Follow `docs/environment-and-deployment.md`. Apply SQL migrations in timestamp order, configure Edge Function secrets, deploy the functions, configure Auth URLs, verify the Meta Cloud API, sync templates, register the webhook and test with an authorized test number before enabling real campaigns.
+## Safety constraints
+
+- Official Meta Cloud API only; no unofficial WhatsApp Web engines or QR pairing.
+- Only tenant-submitted URLs are eligible for knowledge crawling; no general internet search fallback.
+- AI remains optional and starts disabled; suggested memories require human approval.
+- Campaigns require recorded opt-in and approved templates; opted-out contacts are suppressed.
+- Never put service-role keys, Meta tokens, encryption keys, AI provider keys, or internal tokens in browser variables or source control.
+
+See `docs/production-go-live.md` and `docs/environment-and-deployment.md`.
