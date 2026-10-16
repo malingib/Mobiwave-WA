@@ -77,6 +77,12 @@ Deno.serve(async (request) => {
         if (!settings?.ai_enabled) continue;
         const apiKey = Deno.env.get("OPENAI_API_KEY");
         if (!apiKey) continue;
+        const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
+        const [{ data: limits }, { count: aiUsed }] = await Promise.all([
+          admin.from("tenant_usage_limits").select("monthly_ai_request_limit").eq("tenant_id", tenantId).maybeSingle(),
+          admin.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "ai_request").gte("occurred_at", monthStart.toISOString()),
+        ]);
+        if ((aiUsed ?? 0) >= (limits?.monthly_ai_request_limit ?? 500)) continue;
         const context = await retrieveApprovedContext(admin, tenantId, text);
         if (!context.sources.length && !context.memories.length) {
           if (settings.human_handoff_enabled) await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
@@ -91,6 +97,7 @@ Deno.serve(async (request) => {
             signal: AbortSignal.timeout(16000),
           });
         } catch { continue; }
+        await admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "ai_request", quantity: 1, metadata: { channel: "inbound_chatbot" } });
         if (!aiResponse.ok) continue;
         const aiPayload = await aiResponse.json();
         let ai: any;
