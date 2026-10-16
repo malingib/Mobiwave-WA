@@ -101,9 +101,15 @@ Deno.serve(async (request) => {
             body: JSON.stringify({ model: settings.ai_model || Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini", temperature: 0.1, max_tokens: settings.max_ai_reply_tokens ?? 500, response_format: { type: "json_object" }, messages: [{ role: "system", content: prompt.system }, { role: "user", content: prompt.user }] }),
             signal: AbortSignal.timeout(16000),
           });
-        } catch { continue; }
+        } catch {
+          if (settings.human_handoff_enabled) await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
+          continue;
+        }
         await admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "ai_request", quantity: 1, metadata: { channel: "inbound_chatbot" } });
-        if (!aiResponse.ok) continue;
+        if (!aiResponse.ok) {
+          if (settings.human_handoff_enabled) await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
+          continue;
+        }
         const aiPayload = await aiResponse.json();
         let ai: any;
         try { ai = JSON.parse(aiPayload.choices?.[0]?.message?.content ?? "{}"); } catch { ai = {}; }
@@ -113,17 +119,38 @@ Deno.serve(async (request) => {
           if (settings.human_handoff_enabled) await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
           continue;
         }
+        const monthStartForMessages = new Date(); monthStartForMessages.setUTCDate(1); monthStartForMessages.setUTCHours(0,0,0,0);
+        const [{ data: messageLimits }, { count: messageUsage }] = await Promise.all([
+          admin.from("tenant_usage_limits").select("monthly_message_limit").eq("tenant_id", tenantId).maybeSingle(),
+          admin.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStartForMessages.toISOString()),
+        ]);
+        if ((messageUsage ?? 0) >= (messageLimits?.monthly_message_limit ?? 1000)) {
+          if (settings.human_handoff_enabled) await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
+          continue;
+        }
         const token = await decryptToken(integration.encrypted_access_token);
-        const send = await fetch("https://graph.facebook.com/" + GRAPH_VERSION + "/" + phoneNumberId + "/messages", {
+        let send: Response;
+        try {
+          send = await fetch("https://graph.facebook.com/" + GRAPH_VERSION + "/" + phoneNumberId + "/messages", {
           method: "POST", headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
           body: JSON.stringify({ messaging_product: "whatsapp", to: from, type: "text", text: { preview_url: false, body: answer } }),
           signal: AbortSignal.timeout(15000),
-        });
+          });
+        } catch {
+          if (settings.human_handoff_enabled) await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
+          continue;
+        }
         const sendResult = await send.json();
-        if (send.ok && sendResult.messages?.[0]?.id) await admin.from("messages").insert({
-          tenant_id: tenantId, conversation_id: conversation.id, direction: "outbound", actor_type: "bot", message_type: "text",
-          body: answer, status: "sent", meta_message_id: sendResult.messages[0].id, metadata: { evidence, model: settings.ai_model || "gpt-4o-mini" },
-        });
+        if (send.ok && sendResult.messages?.[0]?.id) {
+          await admin.from("messages").insert({
+            tenant_id: tenantId, conversation_id: conversation.id, direction: "outbound", actor_type: "bot", message_type: "text",
+            body: answer, status: "sent", meta_message_id: sendResult.messages[0].id, metadata: { evidence, model: settings.ai_model || "gpt-4o-mini" },
+          });
+          await admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "message_submitted", quantity: 1, reference_id: sendResult.messages[0].id, metadata: { channel: "inbound_chatbot" } });
+          await emitWebhook(admin, tenantId, "message.outbound", { message_id: sendResult.messages[0].id, to: phone, type: "text", actor: "bot", status: "sent_to_meta" });
+        } else if (settings.human_handoff_enabled) {
+          await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
+        }
       }
       for (const status of value.statuses ?? []) {
         const statusName = String(status.status ?? "");
