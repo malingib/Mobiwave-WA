@@ -157,7 +157,8 @@ Deno.serve(async (request) => {
     let charsIndexed = 0;
 
     // Respect robots.txt for the submitted host. Crawl is restricted to submitted URL or exact same host.
-    let robotsDisallowAll = false;\n    const robotsRules: { allow: boolean; path: string }[] = [];
+    let robotsDisallowAll = false;
+    const robotsRules: { allow: boolean; path: string }[] = [];
     try {
       const robotsUrl = new URL("/robots.txt", startUrl.origin);
       const { response } = await safeFetch(robotsUrl.toString(), originHost, "same_domain");
