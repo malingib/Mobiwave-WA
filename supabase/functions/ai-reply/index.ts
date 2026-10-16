@@ -33,6 +33,12 @@ Deno.serve(async (request) => {
     if (settingsError) throw settingsError;
     if (!settings?.ai_enabled) return json({ answer: "I’m unable to answer automatically right now. I’ll ask a team member to help.", handoff: true, evidence: [] });
     const apiKey = Deno.env.get("OPENAI_API_KEY");
+    const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
+    const [{ data: limits }, { count: used }] = await Promise.all([
+      admin.from("tenant_usage_limits").select("monthly_ai_request_limit").eq("tenant_id", tenantId).maybeSingle(),
+      admin.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "ai_request").gte("occurred_at", monthStart.toISOString()),
+    ]);
+    if ((used ?? 0) >= (limits?.monthly_ai_request_limit ?? 500)) return json({ answer: "The automated assistant has reached its monthly usage limit. A team member will help.", handoff: true, evidence: [] });
     const model = settings.ai_model || Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini";
     if (!apiKey) return json({ answer: "I can’t access the automated assistant right now. A team member will help you.", handoff: true, evidence: [] });
     const context = await retrieveApprovedContext(admin, tenantId, question);
@@ -52,6 +58,7 @@ Deno.serve(async (request) => {
       console.error("AI provider returned", response.status);
       return json({ answer: "I can’t access the automated assistant right now. A team member will help.", handoff: true, evidence: [] });
     }
+    await admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "ai_request", quantity: 1, metadata: { channel: "assistant_test" } });
     await admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "ai_request", quantity: 1, metadata: { channel: "assistant_test" } });
     const payload = await response.json();
     let result: any;
