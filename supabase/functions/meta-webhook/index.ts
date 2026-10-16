@@ -72,7 +72,7 @@ Deno.serve(async (request) => {
         await emitWebhook(admin, tenantId, "message.inbound", {
           message_id: metaId, conversation_id: conversation.id, contact: { phone_e164: phone, display_name: profile?.profile?.name ?? null },
           message: { type: message.type, text: text.slice(0, 3000), timestamp: message.timestamp },
-        });
+        }, false);
         await admin.from("conversations").update({ last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", conversation.id);
 
         // Explicit opt-in is required before proactive campaigns. Inbound messages open a customer-service window,
@@ -132,7 +132,7 @@ Deno.serve(async (request) => {
         const mapped = ["sent", "delivered", "read", "failed"].includes(statusName) ? statusName : null;
         if (!mapped) continue;
         await admin.from("messages").update({ status: mapped, metadata: { status_timestamp: status.timestamp, errors: status.errors ?? [] } }).eq("tenant_id", tenantId).eq("meta_message_id", metaId);
-        await emitWebhook(admin, tenantId, "message.status", { message_id: metaId, status: mapped, timestamp: status.timestamp, errors: status.errors ?? [] });
+        await emitWebhook(admin, tenantId, "message.status", { message_id: metaId, status: mapped, timestamp: status.timestamp, errors: status.errors ?? [] }, false);
         const column = mapped === "delivered" ? "delivered_at" : mapped === "read" ? "read_at" : null;
         if (column) await admin.from("campaign_recipients").update({ status: mapped, [column]: new Date().toISOString() }).eq("tenant_id", tenantId).eq("meta_message_id", metaId);
       }
