@@ -1,6 +1,6 @@
 export const corsHeaders = {
   "Access-Control-Allow-Origin": Deno.env.get("APP_ALLOWED_ORIGIN") ?? "https://mobiwave.co.ke",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-hub-signature-256",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, x-api-key, content-type, x-hub-signature-256",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Vary": "Origin",
 };
