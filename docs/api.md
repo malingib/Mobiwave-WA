@@ -67,6 +67,17 @@ This means Meta accepted the request; it is not a guarantee of delivery. Deliver
 - `429`: monthly message limit reached.
 - `502`: Meta rejected the message or returned an upstream error.
 
-## Webhooks
+## Customer webhooks
 
-Meta's inbound message/status webhook is implemented at `/meta-webhook` and requires the configured Meta app secret and verification token. Tenant-configurable outbound customer webhooks, retry queueing and webhook signing are not yet implemented.
+Workspace administrators can configure customer webhook endpoints in **Integrations → Customer webhooks**. Endpoints must use HTTPS and resolve to public IP addresses. Selected events include:
+- `message.inbound`
+- `message.status`
+- `message.outbound`
+- `campaign.completed`
+- `knowledge.indexed`
+
+Each delivery includes `X-MobiWave-Event`, `X-MobiWave-Delivery`, and `X-MobiWave-Signature`. The signature is `sha256=<hex HMAC-SHA256>` over the exact raw JSON request body using the one-time signing secret shown when the webhook is created. Verify the signature before processing and deduplicate on delivery ID.
+
+Delivery attempts are persisted. Failed deliveries retry with exponential backoff up to eight attempts, then become dead-letter records. Deploy `webhook-worker` and schedule it to run at least once per minute using a trusted scheduler that sends `X-Internal-Token`. Never call that worker from a browser or expose the internal token.
+
+Meta's inbound provider webhook is separate at `/meta-webhook` and validates Meta's `X-Hub-Signature-256` using the configured Meta app secret.
