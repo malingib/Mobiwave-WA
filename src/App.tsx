@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import {
-  Activity, ArrowUpRight, BookOpen, Bot, Check, ChevronDown, CircleHelp, Clock3,
+  Activity, ArrowUpRight, BookOpen, Bot, Check, ChevronDown, CircleHelp,
   Globe2, LayoutDashboard, Link2, LogOut, MessageCircle, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Sparkles, Trash2, Users, X, Zap, LoaderCircle,
 } from "lucide-react";
