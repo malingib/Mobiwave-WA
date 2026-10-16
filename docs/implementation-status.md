@@ -36,7 +36,7 @@
 - The branch has not been deployed to a live Supabase project, and no live project credentials were provided.
 - The current build has not been verified in this environment; the GitHub Actions result must be checked before merging.
 - The crawler is a bounded HTML/text extractor, not a headless browser; PDFs, JavaScript-rendered content and authenticated pages are not supported. DNS preflight cannot completely prevent DNS rebinding; high-assurance production should use an egress proxy enforcing IP restrictions at connection time.
-- No scheduled crawl/refresh worker, durable campaign scheduler/queue worker, retry/backoff queue, full delivery analytics, billing/subscription collection, customer-configurable outbound webhook dispatch, team invitation UI or full audit log yet. The public API currently supports approved-template sends and basic monthly quota enforcement.
+- No scheduled crawl/refresh worker, durable campaign scheduler/queue worker, complete delivery analytics, billing/subscription collection, team invitation UI or full audit log yet. Customer webhook retries require the configured webhook-worker to be scheduled. The public API currently supports approved-template sends and basic monthly quota enforcement.
 - Campaign launcher processes at most 10 queued recipients per invocation; remaining batches must be run again. Dynamic template parameters are supported as JSON but require validation against each template's expected parameters.
 - No live Meta webhook has been registered and no real message has been sent or received.
 - AI provider credentials and usage limits have not been configured. The chatbot and memory suggestion feature require the optional AI key.
