@@ -210,7 +210,13 @@ export default function App() {
     setNotice(error ? error.message : approve ? "Memory approved for use by the assistant." : "Memory rejected."); await loadWorkspace();
   }
 
-  async function suggestMemory(event: FormEvent) {\n    event.preventDefault(); if (!supabase || !memoryConversationId) return; setBusy(true);\n    const { data, error } = await supabase.functions.invoke("suggest-memory", { body: { tenant_id: tenantId, conversation_id: memoryConversationId } });\n    setBusy(false); setNotice(error ? error.message : data?.error ?? data?.message ?? "Memory suggestions created."); await loadWorkspace();\n  }\n\n  async function deleteMemory(memoryId: string) {
+  async function suggestMemory(event: FormEvent) {
+    event.preventDefault(); if (!supabase || !memoryConversationId) return; setBusy(true);
+    const { data, error } = await supabase.functions.invoke("suggest-memory", { body: { tenant_id: tenantId, conversation_id: memoryConversationId } });
+    setBusy(false); setNotice(error ? error.message : data?.error ?? data?.message ?? "Memory suggestions created."); await loadWorkspace();
+  }
+
+  async function deleteMemory(memoryId: string) {
     if (!supabase || !confirm("Permanently delete this memory item?")) return;
     const { error } = await supabase.from("ai_memory_items").delete().eq("id", memoryId).eq("tenant_id", tenantId);
     setNotice(error ? error.message : "Memory deleted."); await loadWorkspace();
@@ -286,7 +292,13 @@ export default function App() {
     await loadMessages(); await loadWorkspace();
   }
 
-  async function resolveConversation(conversation: Conversation) {\n    if (!supabase) return;\n    const { error } = await supabase.from("conversations").update({ status: "resolved", bot_paused: true, updated_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", tenantId);\n    setNotice(error ? error.message : "Conversation resolved. You can now suggest reusable business memory."); await loadWorkspace();\n  }\n\n  async function handoffConversation(conversation: Conversation, pause: boolean) {
+  async function resolveConversation(conversation: Conversation) {
+    if (!supabase) return;
+    const { error } = await supabase.from("conversations").update({ status: "resolved", bot_paused: true, updated_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", tenantId);
+    setNotice(error ? error.message : "Conversation resolved. You can now suggest reusable business memory."); await loadWorkspace();
+  }
+
+  async function handoffConversation(conversation: Conversation, pause: boolean) {
     if (!supabase) return;
     const { error } = await supabase.from("conversations").update({ bot_paused: pause, status: pause ? "pending" : "open", updated_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", tenantId);
     setNotice(error ? error.message : pause ? "Bot paused for this conversation." : "Bot resumed for this conversation."); await loadWorkspace();
