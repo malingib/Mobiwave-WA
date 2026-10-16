@@ -15,7 +15,7 @@ type Contact = { id: string; phone_e164: string; display_name?: string; consent_
 type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string };
 type Campaign = { id: string; name: string; status: string; created_at: string; template_id?: string };
 type Conversation = { id: string; status: string; bot_paused: boolean; last_message_at?: string; contacts?: { display_name?: string; phone_e164: string } };
-type ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };
+type ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };\ntype TenantWebhook = { id: string; name: string; endpoint_url: string; events: string[]; enabled: boolean; last_delivery_at?: string; last_status?: string; last_error?: string; created_at: string };
 type ChatMessage = { id: string; direction: string; actor_type: string; body?: string; status: string; created_at: string };
 type Settings = { ai_enabled: boolean; system_instructions: string; context_retention_days: number; max_ai_reply_tokens: number; human_handoff_enabled: boolean };
 type UsageStats = { messages: number; aiRequests: number; messageLimit: number; aiLimit: number };
@@ -77,7 +77,7 @@ export default function App() {
   const [metaStatus, setMetaStatus] = useState<any>(null);
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [apiKeyName, setApiKeyName] = useState("Production integration");
-  const [newApiKey, setNewApiKey] = useState("");
+  const [newApiKey, setNewApiKey] = useState("");\n  const [webhooks, setWebhooks] = useState<TenantWebhook[]>([]);\n  const [webhookName, setWebhookName] = useState("Support event receiver");\n  const [webhookUrl, setWebhookUrl] = useState("");\n  const [webhookEvents, setWebhookEvents] = useState<string[]>(["message.inbound","message.status"]);\n  const [newWebhookSecret, setNewWebhookSecret] = useState("");
   const [usageStats, setUsageStats] = useState<UsageStats>({ messages: 0, aiRequests: 0, messageLimit: 1000, aiLimit: 500 });
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiAnswer, setAiAnswer] = useState<any>(null);
@@ -108,11 +108,11 @@ export default function App() {
   const loadWorkspace = useCallback(async () => {
     if (!supabase || !tenantId) {
       setSources([]); setMemories([]); setContacts([]); setTemplates([]); setCampaigns([]); setConversations([]);
-      setMetaStatus(null); setApiKeys([]); setUsageStats({ messages: 0, aiRequests: 0, messageLimit: 1000, aiLimit: 500 }); return;
+      setMetaStatus(null); setApiKeys([]); setWebhooks([]); setUsageStats({ messages: 0, aiRequests: 0, messageLimit: 1000, aiLimit: 500 }); return;
     }
     setLoading(true);
     const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
-    const [s, m, st, c, t, ca, co, mi, ak, ul, um, ua] = await Promise.all([
+    const [s, m, st, c, t, ca, co, mi, ak, ul, um, ua, wh] = await Promise.all([
       supabase.from("knowledge_sources").select("id,submitted_url,display_name,scope,status,last_successful_at,last_error_code,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       supabase.from("ai_memory_items").select("id,title,memory_text,memory_type,status,updated_at,source_reference").eq("tenant_id", tenantId).order("updated_at", { ascending: false }),
       supabase.from("tenant_settings").select("ai_enabled,system_instructions,context_retention_days,max_ai_reply_tokens,human_handoff_enabled").eq("tenant_id", tenantId).maybeSingle(),
@@ -124,7 +124,7 @@ export default function App() {
       supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       supabase.from("tenant_usage_limits").select("monthly_message_limit,monthly_ai_request_limit").eq("tenant_id", tenantId).maybeSingle(),
       supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString()),
-      supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "ai_request").gte("occurred_at", monthStart.toISOString()),
+      supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "ai_request").gte("occurred_at", monthStart.toISOString()),\n      supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
     ]);
     if (s.error) setNotice("Could not load workspace data: " + s.error.message);
     setSources((s.data ?? []) as Source[]);
@@ -337,6 +337,27 @@ export default function App() {
     setBusy(false); setNotice(error ? error.message : data?.error ?? ("Templates synced: " + data?.synced)); await loadWorkspace();
   }
 
+  async function createWebhook(event: FormEvent) {
+    event.preventDefault(); if (!supabase) return; setBusy(true); setNewWebhookSecret("");
+    const { data, error } = await supabase.functions.invoke("manage-webhook", { body: { tenant_id: tenantId, action: "create", name: webhookName.trim(), endpoint_url: webhookUrl.trim(), events: webhookEvents } });
+    setBusy(false);
+    if (error || data?.error) setNotice(data?.error ?? error?.message ?? "Could not create webhook.");
+    else { setNewWebhookSecret(data.signing_secret); setWebhookUrl(""); setWebhookName("Support event receiver"); setNotice("Webhook created. Copy the signing secret now."); await loadWorkspace(); }
+  }
+
+  async function manageWebhook(webhook: TenantWebhook, action: "enable" | "disable" | "delete") {
+    if (!supabase) return;
+    if (action === "delete" && !confirm("Delete this webhook subscription and its delivery history?")) return;
+    const { data, error } = await supabase.functions.invoke("manage-webhook", { body: { tenant_id: tenantId, action, webhook_id: webhook.id } });
+    setNotice(error ? error.message : data?.error ?? (action === "delete" ? "Webhook deleted." : "Webhook updated."));
+    await loadWorkspace();
+  }
+
+  async function copyWebhookSecret() {
+    try { await navigator.clipboard.writeText(newWebhookSecret); setNotice("Webhook signing secret copied."); }
+    catch { setNotice("Clipboard unavailable. Select and copy the signing secret manually."); }
+  }
+
   async function createApiKey(event: FormEvent) {
     event.preventDefault(); if (!supabase) return; setBusy(true); setNewApiKey("");
     const { data, error } = await supabase.functions.invoke("create-api-key", { body: { tenant_id: tenantId, name: apiKeyName.trim() } });
@@ -410,6 +431,7 @@ export default function App() {
       {view === "Integrations" && <section className="content"><PageHeading eyebrow="CHANNEL CONNECTIONS" title="Integrations" description="Official Meta WhatsApp Cloud API only. No QR pairing or unofficial WhatsApp engines."/>
         <div className="integration-card"><div className="integration-head"><div className="integration-logo"><MessageCircle size={24}/></div><div><strong>Meta WhatsApp Cloud API</strong><p>Official WhatsApp Business Platform</p></div><Status status={metaStatus?.enabled?"connected":"not connected"}/></div><p className="muted small">Credentials are encrypted server-side. The access token is never sent back to the browser. Use a system-user/permanent token with only the permissions needed for your WABA.</p>{isAdmin&&<form onSubmit={saveMeta} className="integration-form"><div className="form-grid"><div className="field"><label>Phone Number ID *</label><input value={metaPhoneId} onChange={(e)=>setMetaPhoneId(e.target.value)} required pattern="[0-9]{5,30}" placeholder="Meta phone number ID"/></div><div className="field"><label>WhatsApp Business Account ID *</label><input value={metaWabaId} onChange={(e)=>setMetaWabaId(e.target.value)} required pattern="[0-9]{5,30}" placeholder="WABA ID"/></div></div><div className="field"><label>Access token *</label><input type="password" value={metaToken} onChange={(e)=>setMetaToken(e.target.value)} required minLength={40} autoComplete="off" placeholder="Paste Meta access token (never committed to source)"/></div><div className="form-actions"><button className="primary-button" disabled={busy}>Encrypt and save token</button></div></form>}{isAdmin&&<div className="integration-actions"><button className="secondary-button" onClick={()=>void verifyMeta()} disabled={busy}><ShieldCheck size={15}/> Verify and enable</button><button className="secondary-button" onClick={()=>void syncTemplates()} disabled={busy}><RefreshCw size={15}/> Sync templates</button></div>}{metaStatus?.display_phone_number&&<div className="connected-detail"><Check size={15}/> Connected number: {metaStatus.display_phone_number}{metaStatus.verified_name?" · "+metaStatus.verified_name:""}</div>}<div className="integration-footnote"><ShieldCheck size={15}/> Configure the Meta webhook callback using the URL and verification token described in the deployment guide.</div></div>
         <div className="panel form-panel"><h2>Tenant API keys</h2><p className="muted small">Create keys for server-to-server messaging integrations. Keys are shown only once, scoped to this workspace, and can send approved templates to opted-in contacts.</p>{isAdmin&&<form onSubmit={createApiKey} className="api-key-create"><div className="field"><label>Key name</label><input value={apiKeyName} onChange={(e)=>setApiKeyName(e.target.value)} required minLength={2} maxLength={120}/></div><button className="primary-button" disabled={busy}><Plus size={15}/> Create API key</button></form>}{newApiKey&&<div className="new-key-box"><strong>Copy your new key now</strong><code>{newApiKey}</code><button className="secondary-button" onClick={()=>void copyApiKey()}>Copy key</button><small>It will disappear if you refresh or leave this screen.</small></div>}<div className="api-key-list">{apiKeys.length===0?<p className="muted small">No API keys created.</p>:apiKeys.map(key=><div className="api-key-row" key={key.id}><div><strong>{key.name}</strong><code>{key.key_prefix}…</code><small>{key.last_used_at?"Last used "+new Date(key.last_used_at).toLocaleString():"Not used yet"}</small></div><Status status={key.revoked_at?"revoked":"active"}/>{isAdmin&&!key.revoked_at&&<button className="secondary-button compact" onClick={()=>void revokeApiKey(key)}>Revoke</button>}</div>)}</div><div className="api-example"><strong>Send through the API</strong><pre>{`POST ${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-send\nX-API-Key: YOUR_MOBIWAVE_API_KEY\nContent-Type: application/json\n\n{"to":"+2547XXXXXXXX","template_name":"approved_template","language_code":"en","components":[]}`}</pre></div></div>
+        <div className="panel form-panel"><h2>Customer webhooks</h2><p className="muted small">Send signed events to your own HTTPS endpoint. Delivery failures are retried with exponential backoff by the webhook worker.</p>{isAdmin&&<form className="webhook-create" onSubmit={createWebhook}><div className="form-grid"><div className="field"><label>Webhook name</label><input value={webhookName} onChange={(e)=>setWebhookName(e.target.value)} required minLength={2} maxLength={120}/></div><div className="field"><label>HTTPS endpoint URL</label><input type="url" value={webhookUrl} onChange={(e)=>setWebhookUrl(e.target.value)} required placeholder="https://api.yourbusiness.co.ke/hooks/mobiwave"/></div></div><div className="webhook-event-options">{[["message.inbound","Inbound message"],["message.status","Delivery status"],["message.outbound","Outbound message"],["campaign.completed","Campaign completed"],["knowledge.indexed","Knowledge indexed"],["conversation.updated","Conversation updated"]].map(([value,label])=><label key={value} className="checkbox-line"><input type="checkbox" checked={webhookEvents.includes(value)} onChange={(e)=>setWebhookEvents(current=>e.target.checked?[...current,value]:current.filter(item=>item!==value))}/>{label}</label>)}</div><div className="form-actions"><span className="muted small">HTTPS only · public host required</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add webhook</button></div></form>}{newWebhookSecret&&<div className="new-key-box"><strong>Copy your webhook signing secret now</strong><code>{newWebhookSecret}</code><button className="secondary-button" onClick={()=>void copyWebhookSecret()}>Copy secret</button><small>Use this secret to verify the X-MobiWave-Signature header. It cannot be retrieved again.</small></div>}<div className="api-key-list">{webhooks.length===0?<p className="muted small">No customer webhooks configured.</p>:webhooks.map(h=><div className="api-key-row" key={h.id}><div><strong>{h.name}</strong><code>{h.endpoint_url}</code><small>Events: {h.events.join(", ")}</small>{h.last_error&&<small className="error-text">{h.last_error}</small>}</div><Status status={h.enabled?(h.last_status||"active"):"disabled"}/>{isAdmin&&<button className="secondary-button compact" onClick={()=>void manageWebhook(h,h.enabled?"disable":"enable")}>{h.enabled?"Disable":"Enable"}</button>}{isAdmin&&<button className="icon-button" onClick={()=>void manageWebhook(h,"delete")} aria-label="Delete webhook"><Trash2 size={15}/></button>}</div>)}</div><div className="muted small">Signatures use HMAC-SHA256 over the exact raw JSON body. Verify X-MobiWave-Signature before processing and use X-MobiWave-Delivery for idempotency.</div></div>
         <div className="panel form-panel"><h2>Webhook and AI service status</h2><div className="checklist"><SetupRow done={Boolean(metaStatus?.verified)} label="Meta credentials verified" detail="The Graph API phone number endpoint returned a valid response."/><SetupRow done={Boolean(templates.length)} label="Message templates synced" detail="Only templates with approved status are available for campaigns."/><SetupRow done={settings.ai_enabled} label="Optional AI enabled" detail="Requires the OPENAI_API_KEY secret on the backend."/><SetupRow label="Webhook callback" detail="Add the Supabase Edge Function URL to your Meta app and subscribe to messages and statuses."/></div></div>
       </section>}
       {loading&&<div className="loading-bar"><LoaderCircle className="spin" size={14}/> Loading workspace data…</div>}
