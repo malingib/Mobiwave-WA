@@ -18,8 +18,8 @@ Deno.serve(async (request) => {
     let nextUrl: string | null = "https://graph.facebook.com/" + GRAPH_VERSION + "/" + integration.waba_id + "/message_templates?fields=id,name,status,category,language,components&limit=100";
     let synced = 0, pages = 0;
     while (nextUrl && pages < 10) {
-      const response = await fetch(nextUrl, { headers: { "Authorization": "Bearer " + token }, signal: AbortSignal.timeout(12000) });
-      const result = await response.json();
+      const response: Response = await fetch(String(nextUrl), { headers: { "Authorization": "Bearer " + token }, signal: AbortSignal.timeout(12000) });
+      const result: any = await response.json();
       if (!response.ok) {
         console.error("Meta template sync failed", response.status, JSON.stringify(result).slice(0,500));
         return json({ error: "Meta could not return message templates. Check WABA permissions." }, 502);
