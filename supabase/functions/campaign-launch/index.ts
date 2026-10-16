@@ -19,7 +19,7 @@ Deno.serve(async (request) => {
     if (!integration?.encrypted_access_token || !integration.phone_number_id) return json({ error: "Connect and verify the official Meta Cloud API first." }, 409);
     const { data: template } = await auth.admin.from("wa_templates").select("meta_template_name,language_code,meta_status,components").eq("tenant_id", tenantId).eq("id", campaign.template_id).maybeSingle();
     if (!template || template.meta_status !== "approved") return json({ error: "Campaign must use a Meta-approved template." }, 403);
-    const { data: recipients, error: recipientsError } = await auth.admin.from("campaign_recipients").select("id,contact_id,contacts!inner(phone_e164,consent_status)").eq("tenant_id", tenantId).eq("campaign_id", campaignId).eq("status", "queued").limit(50);
+    const { data: recipients, error: recipientsError } = await auth.admin.from("campaign_recipients").select("id,contact_id,contacts!inner(phone_e164,consent_status)").eq("tenant_id", tenantId).eq("campaign_id", campaignId).eq("status", "queued").limit(10);
     if (recipientsError) throw recipientsError;
     if (!recipients?.length) return json({ error: "No queued recipients. Add opted-in contacts to the campaign first." }, 400);
     const token = await decryptToken(integration.encrypted_access_token);
@@ -55,7 +55,7 @@ Deno.serve(async (request) => {
     const { count: remaining } = await auth.admin.from("campaign_recipients").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("campaign_id", campaignId).eq("status", "queued");
     const nextStatus = (remaining ?? 0) > 0 ? "running" : failed && !sent ? "failed" : "completed";
     await auth.admin.from("campaigns").update({ status: nextStatus, finished_at: nextStatus === "running" ? null : new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", campaignId).eq("tenant_id", tenantId);
-    return json({ ok: true, sent, skipped, failed, remaining: remaining ?? 0, status: nextStatus, message: ((usedBefore ?? 0) + sent >= monthlyLimit ? "Monthly message quota reached. Increase the workspace limit or wait for the next billing month. " : "") + "Each run processes up to 50 recipients. Run again to process remaining queued recipients." });
+    return json({ ok: true, sent, skipped, failed, remaining: remaining ?? 0, status: nextStatus, message: ((usedBefore ?? 0) + sent >= monthlyLimit ? "Monthly message quota reached. Increase the workspace limit or wait for the next billing month. " : "") + "Each run processes up to 10 recipients. Run again to process remaining queued recipients." });
   } catch (error) {
     const message = errorMessage(error);
     return json({ error: message }, /sign in|session is invalid/i.test(message) ? 401 : /permission/i.test(message) ? 403 : 400);
