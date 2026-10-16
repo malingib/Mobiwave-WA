@@ -52,7 +52,7 @@ async function validatePublicHttpUrl(raw: string): Promise<URL> {
   return url;
 }
 
-async function safeFetch(raw: string, originHost: string, scope: string): Promise<{ response: Response; url: URL }> {
+async function safeFetch(raw: string, originHost: string, scope: string, allowXml = false): Promise<{ response: Response; url: URL }> {
   let current = await validatePublicHttpUrl(raw);
   if (scope === "submitted_url" && current.hostname !== originHost) throw new Error("Crawl left the submitted host.");
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
@@ -75,7 +75,8 @@ async function safeFetch(raw: string, originHost: string, scope: string): Promis
     }
     if (!response.ok) throw new Error("Source returned HTTP " + response.status + ".");
     const type = (response.headers.get("content-type") ?? "").toLowerCase();
-    if (!type.includes("text/html") && !type.includes("text/plain")) throw new Error("Only HTML and plain-text pages can be indexed.");
+    const isXml = type.includes("application/xml") || type.includes("text/xml") || type.includes("+xml");
+    if (!type.includes("text/html") && !type.includes("text/plain") && !(allowXml && isXml)) throw new Error("Only HTML and plain-text pages can be indexed.");
     const declaredLength = Number(response.headers.get("content-length") ?? 0);
     if (declaredLength > MAX_BODY_BYTES) throw new Error("Page is larger than the allowed 1.5 MB limit.");
     return { response, url: current };
@@ -111,6 +112,51 @@ function linksFromHtml(html: string, base: URL, host: string): string[] {
   }
   return [...out];
 }
+function sitemapLocs(xml: string, host: string): string[] {
+  const urls = new Set<string>();
+  for (const match of xml.matchAll(/<loc>\s*([\s\S]*?)\s*<\/loc>/gi)) {
+    const raw = match[1].replace(/&amp;/gi, "&").trim();
+    try {
+      const url = new URL(raw);
+      url.hash = "";
+      if (url.hostname === host && ["http:", "https:"].includes(url.protocol)) urls.add(url.toString());
+    } catch { /* ignore invalid sitemap entries */ }
+  }
+  return [...urls];
+}
+
+async function discoverSitemapPages(startUrl: URL, originHost: string): Promise<string[]> {
+  const pages = new Set<string>();
+  const sitemapCandidates = [
+    new URL("/sitemap.xml", startUrl.origin),
+    new URL("/sitemap_index.xml", startUrl.origin),
+  ];
+  for (const sitemapUrl of sitemapCandidates) {
+    try {
+      const { response } = await safeFetch(sitemapUrl.toString(), originHost, "same_domain", true);
+      const xml = (await response.text()).slice(0, MAX_BODY_BYTES);
+      const locations = sitemapLocs(xml, originHost);
+      if (/<sitemapindex\b/i.test(xml)) {
+        for (const childUrl of locations.filter((value) => /\.xml(?:$|[?#])/i.test(value)).slice(0, 3)) {
+          try {
+            const { response: childResponse } = await safeFetch(childUrl, originHost, "same_domain", true);
+            const childXml = (await childResponse.text()).slice(0, MAX_BODY_BYTES);
+            for (const pageUrl of sitemapLocs(childXml, originHost)) {
+              if (!/\.xml(?:$|[?#])/i.test(new URL(pageUrl).pathname) && pages.size < MAX_PAGES) pages.add(pageUrl);
+            }
+          } catch { /* one unavailable child sitemap must not fail the whole crawl */ }
+        }
+      } else {
+        for (const pageUrl of locations) {
+          if (!/\.xml(?:$|[?#])/i.test(new URL(pageUrl).pathname) && pages.size < MAX_PAGES) pages.add(pageUrl);
+        }
+      }
+      if (pages.size >= MAX_PAGES) break;
+    } catch { /* sitemap is optional; same-host HTML links remain available */ }
+  }
+  return [...pages];
+}
+
 function chunksFor(text: string): string[] {
   const chunks: string[] = [];
   const size = 1400, overlap = 180;
@@ -172,6 +218,12 @@ Deno.serve(async (request) => {
       }
     } catch { /* robots unavailable: continue only with explicit submitted scope and bounded fetches */ }
     if (robotsDisallowAll) throw new Error("robots.txt disallows crawling this host.");
+    if (scope === "same_domain") {
+      for (const sitemapPage of await discoverSitemapPages(startUrl, originHost)) {
+        if (queue.length >= MAX_PAGES) break;
+        if (!queue.includes(sitemapPage)) queue.push(sitemapPage);
+      }
+    }
 
     while (queue.length && visited.size < (scope === "same_domain" ? MAX_PAGES : 1)) {
       const rawUrl = queue.shift()!;
@@ -187,6 +239,13 @@ Deno.serve(async (request) => {
       const rawText = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
       const html = (response.headers.get("content-type") ?? "").includes("text/html");
       const extracted = html ? htmlToText(rawText) : rawText.trim();
+      // Discover same-host links before skipping thin JavaScript app-shell pages.
+      // Otherwise a nearly empty homepage prevents the crawler reaching readable routes.
+      if (scope === "same_domain" && html) {
+        for (const link of linksFromHtml(rawText, finalUrl, originHost)) {
+          if (!visited.has(link) && !queue.includes(link) && queue.length < MAX_PAGES) queue.push(link);
+        }
+      }
       if (extracted.length < 80) continue;
       const title = html ? pageTitle(rawText, finalUrl.pathname || finalUrl.hostname) : finalUrl.pathname || finalUrl.hostname;
       const hash = await sha256(extracted);
@@ -207,7 +266,6 @@ Deno.serve(async (request) => {
         if (chunkError) throw chunkError;
       }
       pagesIndexed++; charsIndexed += extracted.length;
-      if (scope === "same_domain") for (const link of linksFromHtml(rawText, finalUrl, originHost)) if (!visited.has(link) && !queue.includes(link) && queue.length < MAX_PAGES) queue.push(link);
     }
 
     if (!pagesIndexed) throw new Error("No readable pages were indexed. Check the URL, access rules, robots.txt and page content.");
