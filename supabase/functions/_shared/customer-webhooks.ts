@@ -93,10 +93,13 @@ export async function deliverWebhook(admin: SupabaseClient, deliveryId: string) 
 export async function emitWebhook(admin: SupabaseClient, tenantId: string, eventType: string, payload: unknown, immediate = true) {
   const { data: hooks, error } = await admin.from("tenant_webhooks").select("id").eq("tenant_id", tenantId).eq("enabled", true).contains("events", [eventType]);
   if (error || !hooks?.length) return;
+  const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  const base = String(record.message_id ?? record.campaign_id ?? record.source_id ?? record.conversation_id ?? crypto.randomUUID());
+  const eventKey = eventType + ":" + base + (record.status ? ":" + String(record.status) : "");
   const queued = await Promise.all(hooks.map(async (hook: any) => {
-    const { data: delivery, error: insertError } = await admin.from("webhook_deliveries").insert({
-      tenant_id: tenantId, webhook_id: hook.id, event_type: eventType, payload, status: "queued",
-    }).select("id").single();
+    const { data: delivery, error: insertError } = await admin.from("webhook_deliveries").upsert({
+      tenant_id: tenantId, webhook_id: hook.id, event_type: eventType, event_key: eventKey, payload, status: "queued",
+    }, { onConflict: "webhook_id,event_key", ignoreDuplicates: true }).select("id").maybeSingle();
     return !insertError && delivery ? delivery.id as string : null;
   }));
   if (immediate) await Promise.all(queued.filter(Boolean).map((id) => deliverWebhook(admin, id as string)));
