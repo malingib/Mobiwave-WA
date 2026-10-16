@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import { decryptToken } from "../_shared/meta.ts";
+import { emitWebhook } from "../_shared/customer-webhooks.ts";
 import { corsHeaders, json } from "../_shared/cors.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_VERSION") || "v23.0";
@@ -50,6 +51,7 @@ Deno.serve(async (request) => {
       { tenant_id: tenantId, event_type: "api_request", quantity: 1, reference_id: apiKey.id, metadata: { outcome: "sent_to_meta" } },
     ]);
     await admin.from("tenant_api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", apiKey.id);
+    await emitWebhook(admin, tenantId, "message.outbound", { message_id: metaMessageId, to, template_name: templateName, status: "sent_to_meta" });
     return json({ ok: true, message_id: metaMessageId, status: "sent_to_meta" });
   } catch (error) {
     console.error("Public API send error:", error instanceof Error ? error.message : "unknown");
