@@ -14,7 +14,7 @@ type Memory = { id: string; title: string; memory_text: string; memory_type: str
 type Contact = { id: string; phone_e164: string; display_name?: string; consent_status: string; consent_source?: string };
 type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string };
 type Campaign = { id: string; name: string; status: string; created_at: string; template_id?: string };
-type Conversation = { id: string; status: string; bot_paused: boolean; last_message_at?: string; contacts?: { display_name?: string; phone_e164: string } };
+type Conversation = { id: string; status: string; bot_paused: boolean; last_message_at?: string; contacts?: { display_name?: string; phone_e164: string } };\ntype ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };
 type ChatMessage = { id: string; direction: string; actor_type: string; body?: string; status: string; created_at: string };
 type Settings = { ai_enabled: boolean; system_instructions: string; context_retention_days: number; max_ai_reply_tokens: number; human_handoff_enabled: boolean };
 
@@ -72,7 +72,7 @@ export default function App() {
   const [metaPhoneId, setMetaPhoneId] = useState("");
   const [metaWabaId, setMetaWabaId] = useState("");
   const [metaToken, setMetaToken] = useState("");
-  const [metaStatus, setMetaStatus] = useState<any>(null);
+  const [metaStatus, setMetaStatus] = useState<any>(null);\n  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);\n  const [apiKeyName, setApiKeyName] = useState("Production integration");\n  const [newApiKey, setNewApiKey] = useState("");
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiAnswer, setAiAnswer] = useState<any>(null);
 
@@ -102,10 +102,10 @@ export default function App() {
   const loadWorkspace = useCallback(async () => {
     if (!supabase || !tenantId) {
       setSources([]); setMemories([]); setContacts([]); setTemplates([]); setCampaigns([]); setConversations([]);
-      setMetaStatus(null); return;
+      setMetaStatus(null); setApiKeys([]); return;
     }
     setLoading(true);
-    const [s, m, st, c, t, ca, co, mi] = await Promise.all([
+    const [s, m, st, c, t, ca, co, mi, ak] = await Promise.all([
       supabase.from("knowledge_sources").select("id,submitted_url,display_name,scope,status,last_successful_at,last_error_code,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       supabase.from("ai_memory_items").select("id,title,memory_text,memory_type,status,updated_at,source_reference").eq("tenant_id", tenantId).order("updated_at", { ascending: false }),
       supabase.from("tenant_settings").select("ai_enabled,system_instructions,context_retention_days,max_ai_reply_tokens,human_handoff_enabled").eq("tenant_id", tenantId).maybeSingle(),
@@ -113,7 +113,7 @@ export default function App() {
       supabase.from("wa_templates").select("id,meta_template_name,language_code,category,meta_status").eq("tenant_id", tenantId).order("meta_template_name"),
       supabase.from("campaigns").select("id,name,status,created_at,template_id").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
       supabase.from("conversations").select("id,status,bot_paused,last_message_at,contacts(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
-      supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at").eq("tenant_id", tenantId).maybeSingle(),
+      supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at").eq("tenant_id", tenantId).maybeSingle(),\n      supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
     ]);
     if (s.error) setNotice("Could not load workspace data: " + s.error.message);
     setSources((s.data ?? []) as Source[]);
@@ -324,6 +324,26 @@ export default function App() {
     setBusy(false); setNotice(error ? error.message : data?.error ?? ("Templates synced: " + data?.synced)); await loadWorkspace();
   }
 
+  async function createApiKey(event: FormEvent) {
+    event.preventDefault(); if (!supabase) return; setBusy(true); setNewApiKey("");
+    const { data, error } = await supabase.functions.invoke("create-api-key", { body: { tenant_id: tenantId, name: apiKeyName.trim() } });
+    setBusy(false);
+    if (error || data?.error) setNotice(data?.error ?? error?.message ?? "Could not create API key.");
+    else { setNewApiKey(data.api_key); setApiKeyName("Production integration"); setNotice("API key created. Copy it now; the secret will not be shown again."); await loadWorkspace(); }
+  }
+
+  async function revokeApiKey(key: ApiKey) {
+    if (!supabase || !confirm("Revoke API key " + key.name + "? Requests using it will stop working.")) return;
+    const { error } = await supabase.from("tenant_api_keys").update({ revoked_at: new Date().toISOString() }).eq("id", key.id).eq("tenant_id", tenantId);
+    setNotice(error ? error.message : "API key revoked."); await loadWorkspace();
+  }
+
+  async function copyApiKey() {
+    if (!newApiKey) return;
+    try { await navigator.clipboard.writeText(newApiKey); setNotice("API key copied to clipboard."); }
+    catch { setNotice("Copy is unavailable. Select and copy the displayed key manually."); }
+  }
+
   async function signOut() { if (supabase) await supabase.auth.signOut(); setTenants([]); setTenantId(""); }
 
   const filteredSources = useMemo(() => sources.filter((s) => (s.display_name + " " + s.submitted_url).toLowerCase().includes(search.toLowerCase())), [sources, search]);
@@ -376,6 +396,7 @@ export default function App() {
       {view === "Shared inbox" && <section className="content inbox-content"><PageHeading eyebrow="CUSTOMER SUPPORT" title="Shared inbox" description="Inbound WhatsApp messages and human-agent handoff."/><div className="inbox-layout"><div className="conversation-list"><div className="inbox-list-title">Conversations <span>{conversations.length}</span></div>{conversations.length===0?<Empty icon={<MessageCircle size={22}/>} title="Inbox is empty" text="Inbound messages arrive after the Meta webhook is configured."/>:conversations.map(c=><button className={selectedConversation===c.id?"conversation-item selected":"conversation-item"} key={c.id} onClick={()=>setSelectedConversation(c.id)}><div className="conversation-avatar">{(c.contacts?.display_name||c.contacts?.phone_e164||"?").slice(0,1).toUpperCase()}</div><div className="conversation-summary"><strong>{c.contacts?.display_name||c.contacts?.phone_e164||"Unknown contact"}</strong><span>{c.status}{c.bot_paused?" · bot paused":""}</span><small>{c.last_message_at?new Date(c.last_message_at).toLocaleString():"No messages"}</small></div></button>)}</div><div className="chat-panel">{!selectedConversation?<div className="empty-chat"><MessageCircle size={28}/><strong>Select a conversation</strong><span>Choose a contact to view messages and reply.</span></div>:<><div className="chat-header"><div><strong>{conversations.find(c=>c.id===selectedConversation)?.contacts?.display_name||conversations.find(c=>c.id===selectedConversation)?.contacts?.phone_e164}</strong><span>{conversations.find(c=>c.id===selectedConversation)?.contacts?.phone_e164}</span></div>{(()=>{const c=conversations.find(x=>x.id===selectedConversation);return c?<div className="chat-head-actions"><button className="secondary-button compact" onClick={()=>void handoffConversation(c,!c.bot_paused)}>{c.bot_paused?"Resume bot":"Pause bot"}</button>{c.status!=="resolved"&&<button className="secondary-button compact" onClick={()=>void resolveConversation(c)}>Resolve</button>}</div>:null})()}</div><div className="chat-messages">{messages.map(m=><div key={m.id} className={m.direction==="outbound"?"message-bubble outbound":"message-bubble inbound"}><p>{m.body||"Unsupported media message"}</p><small>{m.actor_type} · {new Date(m.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})} · {m.status}</small></div>)}</div><form className="chat-reply" onSubmit={sendReply}><input value={replyText} onChange={(e)=>setReplyText(e.target.value)} placeholder="Reply within the 24-hour service window…" required/><button className="primary-button" disabled={busy}><Send size={15}/> Send</button></form></>}</div></div></section>}
       {view === "Integrations" && <section className="content"><PageHeading eyebrow="CHANNEL CONNECTIONS" title="Integrations" description="Official Meta WhatsApp Cloud API only. No QR pairing or unofficial WhatsApp engines."/>
         <div className="integration-card"><div className="integration-head"><div className="integration-logo"><MessageCircle size={24}/></div><div><strong>Meta WhatsApp Cloud API</strong><p>Official WhatsApp Business Platform</p></div><Status status={metaStatus?.enabled?"connected":"not connected"}/></div><p className="muted small">Credentials are encrypted server-side. The access token is never sent back to the browser. Use a system-user/permanent token with only the permissions needed for your WABA.</p>{isAdmin&&<form onSubmit={saveMeta} className="integration-form"><div className="form-grid"><div className="field"><label>Phone Number ID *</label><input value={metaPhoneId} onChange={(e)=>setMetaPhoneId(e.target.value)} required pattern="[0-9]{5,30}" placeholder="Meta phone number ID"/></div><div className="field"><label>WhatsApp Business Account ID *</label><input value={metaWabaId} onChange={(e)=>setMetaWabaId(e.target.value)} required pattern="[0-9]{5,30}" placeholder="WABA ID"/></div></div><div className="field"><label>Access token *</label><input type="password" value={metaToken} onChange={(e)=>setMetaToken(e.target.value)} required minLength={40} autoComplete="off" placeholder="Paste Meta access token (never committed to source)"/></div><div className="form-actions"><button className="primary-button" disabled={busy}>Encrypt and save token</button></div></form>}{isAdmin&&<div className="integration-actions"><button className="secondary-button" onClick={()=>void verifyMeta()} disabled={busy}><ShieldCheck size={15}/> Verify and enable</button><button className="secondary-button" onClick={()=>void syncTemplates()} disabled={busy}><RefreshCw size={15}/> Sync templates</button></div>}{metaStatus?.display_phone_number&&<div className="connected-detail"><Check size={15}/> Connected number: {metaStatus.display_phone_number}{metaStatus.verified_name?" · "+metaStatus.verified_name:""}</div>}<div className="integration-footnote"><ShieldCheck size={15}/> Configure the Meta webhook callback using the URL and verification token described in the deployment guide.</div></div>
+        <div className="panel form-panel"><h2>Tenant API keys</h2><p className="muted small">Create keys for server-to-server messaging integrations. Keys are shown only once, scoped to this workspace, and can send approved templates to opted-in contacts.</p>{isAdmin&&<form onSubmit={createApiKey} className="api-key-create"><div className="field"><label>Key name</label><input value={apiKeyName} onChange={(e)=>setApiKeyName(e.target.value)} required minLength={2} maxLength={120}/></div><button className="primary-button" disabled={busy}><Plus size={15}/> Create API key</button></form>}{newApiKey&&<div className="new-key-box"><strong>Copy your new key now</strong><code>{newApiKey}</code><button className="secondary-button" onClick={()=>void copyApiKey()}>Copy key</button><small>It will disappear if you refresh or leave this screen.</small></div>}<div className="api-key-list">{apiKeys.length===0?<p className="muted small">No API keys created.</p>:apiKeys.map(key=><div className="api-key-row" key={key.id}><div><strong>{key.name}</strong><code>{key.key_prefix}…</code><small>{key.last_used_at?"Last used "+new Date(key.last_used_at).toLocaleString():"Not used yet"}</small></div><Status status={key.revoked_at?"revoked":"active"}/>{isAdmin&&!key.revoked_at&&<button className="secondary-button compact" onClick={()=>void revokeApiKey(key)}>Revoke</button>}</div>)}</div><div className="api-example"><strong>Send through the API</strong><pre>{`POST ${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-send\nX-API-Key: YOUR_MOBIWAVE_API_KEY\nContent-Type: application/json\n\n{"to":"+2547XXXXXXXX","template_name":"approved_template","language_code":"en","components":[]}`}</pre></div></div>
         <div className="panel form-panel"><h2>Webhook and AI service status</h2><div className="checklist"><SetupRow done={Boolean(metaStatus?.verified)} label="Meta credentials verified" detail="The Graph API phone number endpoint returned a valid response."/><SetupRow done={Boolean(templates.length)} label="Message templates synced" detail="Only templates with approved status are available for campaigns."/><SetupRow done={settings.ai_enabled} label="Optional AI enabled" detail="Requires the OPENAI_API_KEY secret on the backend."/><SetupRow label="Webhook callback" detail="Add the Supabase Edge Function URL to your Meta app and subscribe to messages and statuses."/></div></div>
       </section>}
       {loading&&<div className="loading-bar"><LoaderCircle className="spin" size={14}/> Loading workspace data…</div>}
