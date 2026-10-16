@@ -1,40 +1,44 @@
 # MobiWave WhatsApp
 
-MobiWave WhatsApp is a planned multi-tenant messaging platform for Kenyan businesses, combining WhatsApp campaign management, customer conversations, APIs, webhooks, usage controls and billing.
+MobiWave WhatsApp is a planned multi-tenant WhatsApp messaging and automation platform for Kenyan businesses. It will provide bulk campaigns, customer conversations, APIs, webhooks, usage controls, billing and optional AI-powered chatbots.
 
 ## Current status
 
-This repository is being initialized. No production messaging integration is implemented yet.
+The repository contains the initial product brief and architecture. The application and production messaging integration have not yet been implemented.
 
-## Product direction
+## Fixed product decisions
 
-- Multi-tenant customer accounts with strict tenant isolation.
-- Campaign creation, contact imports, opt-in records, suppression lists and delivery reporting.
-- Template management and message sending through provider adapters.
-- Webhooks for inbound messages and delivery/status events.
-- API keys, usage limits, audit logs and admin controls.
-- Official Meta WhatsApp Cloud API as the preferred production provider.
-- Optional WhatsApp Web-based providers only as separately configured, clearly labelled experimental integrations; they must not be represented as official or guaranteed reliable.
-- MobiWave-branded customer dashboard and developer documentation.
+- **WhatsApp connectivity:** official Meta WhatsApp Cloud API only. No unofficial WhatsApp Web engines, QR pairing, WPPConnect, WAHA or Evolution API.
+- **AI:** optional chatbot capabilities connected to inbound conversations through a separate AI service layer. Messaging and campaigns must continue to work when AI is disabled or unavailable.
+- **Multi-tenancy:** isolated business accounts, users, contacts, provider configuration, campaigns, conversations and usage records.
+- **Bulk messaging:** contacts/imports, consent records, suppression lists, approved templates, campaign scheduling, status reporting and APIs.
+- **Inbox:** inbound/outbound conversation history, assignment, agent replies and human handoff from AI.
+- **Developer tools:** tenant-scoped API keys, webhooks, documentation and usage metering.
+- **Commercial controls:** plans, quotas, billing and MobiWave operator administration.
 
-## Non-goals for the initial MVP
+## AI chatbot scope
 
-- Unsolicited messaging or tools to evade platform limits.
-- Storing provider access tokens in frontend code.
-- Sending messages before the tenant's provider credentials and consent requirements are configured.
-- Treating a queued message as delivered without a provider status event.
+- Enable or disable AI per tenant and per WhatsApp number.
+- Configure business instructions, FAQs and approved knowledge sources.
+- Support conversation context with configurable retention.
+- Allow escalation to a human agent and pause automation while an agent handles a conversation.
+- Keep AI provider credentials server-side and make the AI provider replaceable without adding alternative WhatsApp transport engines.
+- Apply tenant-level usage limits, logging, privacy controls and safe failure behaviour.
+- Do not allow AI to bypass Meta messaging policies, template requirements, opt-in or opt-out handling.
 
-## Proposed implementation sequence
+## MVP implementation sequence
 
-1. Confirm the application architecture and environment configuration.
-2. Implement authentication, tenant model, roles and audit events.
-3. Add provider interface and Meta Cloud API adapter.
-4. Add contacts, consent/suppression controls, templates and campaign queue.
-5. Add webhooks, status tracking, retry rules and usage accounting.
-6. Build dashboard, API documentation, automated tests and deployment checks.
+1. Confirm stack and environment configuration.
+2. Implement authentication, tenant membership, roles and audit logs.
+3. Implement database schema and tenant isolation.
+4. Implement the official Meta Cloud API client and webhook verification.
+5. Build contacts, consent/suppression controls, templates and campaign queue.
+6. Build shared inbox, assignment and message-status history.
+7. Add an optional AI chatbot service, knowledge configuration and human handoff.
+8. Add usage accounting, billing hooks, API docs, tests and deployment checks.
 
-See [`docs/architecture.md`](docs/architecture.md) for the initial architecture notes.
+See [`docs/architecture.md`](docs/architecture.md) for the architecture and security rules.
 
 ## Security
 
-Never commit API tokens, app secrets, database credentials, webhook verification secrets or real customer contact lists. Use environment variables or a managed secrets store. Keep all provider calls on the server side.
+Never commit API tokens, app secrets, database credentials, webhook verification secrets or real customer contact lists. Use environment variables or a managed secrets store. Keep Meta and AI provider calls on the server side. Enforce tenant authorization server-side on every operation.
