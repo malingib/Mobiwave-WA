@@ -1,13 +1,20 @@
 # Environment and deployment
 
-## Required browser variables
+## Existing deployment
+
+The dashboard is deployed to the existing Vercel project at https://mobiwavewa.vercel.app and uses Supabase project ref `jyjgvsljcmvbhovzevaz`. Use [production-go-live.md](production-go-live.md) for the exact production setup checklist.
+
+## Browser variables
+
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY` (Supabase publishable key is preferred where supported)
 
-Never put `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `APP_ENCRYPTION_KEY`, Meta access tokens, or Meta app secrets in browser variables or committed files.
+These are public browser configuration values. Never put `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `APP_ENCRYPTION_KEY`, Meta access tokens, Meta app secrets, or internal tokens in browser variables or committed files.
 
 ## Supabase Edge Function secrets
-Configure these in the Supabase project before deploying functions:
+
+Configure server-side secrets in the Supabase project dashboard:
+
 - `SUPABASE_URL` — provided by the Supabase runtime.
 - `SUPABASE_ANON_KEY` — legacy anon key, needed for request-scoped user clients.
 - `SUPABASE_SERVICE_ROLE_KEY` — server-side only.
@@ -15,26 +22,41 @@ Configure these in the Supabase project before deploying functions:
 - `META_APP_SECRET` — used to verify `X-Hub-Signature-256`.
 - `META_WEBHOOK_VERIFY_TOKEN` — a separate random verification string entered in Meta webhook setup.
 - `META_GRAPH_VERSION` — supported Graph API version for the connected Meta app.
-- `OPENAI_API_KEY` and optionally `OPENAI_MODEL` — only required for AI replies.
-- `INTERNAL_FUNCTION_TOKEN` — high-entropy internal token if server-to-server AI function calls are enabled.
-- `APP_ALLOWED_ORIGIN` — the exact allowed dashboard origin.
+- `OPENAI_API_KEY` and optionally `OPENAI_MODEL` — only required for AI replies and memory suggestions.
+- `INTERNAL_FUNCTION_TOKEN` — high-entropy internal token used by server-to-server worker calls.
+- `APP_ALLOWED_ORIGIN` — exact dashboard origin: `https://mobiwavewa.vercel.app`.
 
-The Meta webhook is the only function configured with platform JWT verification disabled. It independently verifies Meta's HMAC signature before processing POST requests. Other user-facing functions should keep JWT verification enabled.
+Use unique random values and a password manager. Do not send secrets in chat or commit them to Git. Losing the encryption key prevents decrypting existing saved Meta credentials.
 
-## Apply and deploy
-1. Create a Supabase project in the intended MobiWave organization.
-2. Apply the SQL migrations in timestamp order using the Supabase CLI or dashboard SQL editor.
-3. Set secrets above. Use unique random values; do not reuse passwords.
-4. Deploy each folder under `supabase/functions/` as an Edge Function. Deploy `meta-webhook` and `webhook-worker` with JWT verification disabled; keep JWT verification enabled for other user-facing functions. The webhook worker independently checks `X-Internal-Token`.
-5. Configure Auth site URL and redirect URLs for the real dashboard domain.
-6. Configure the Meta app's WhatsApp webhook callback to `<SUPABASE_URL>/functions/v1/meta-webhook`, subscribe to WhatsApp message fields, and use the configured verify token.
-7. Schedule a trusted server-side POST to `<SUPABASE_URL>/functions/v1/webhook-worker` at least once per minute with `X-Internal-Token: <INTERNAL_FUNCTION_TOKEN>` and `apikey: <SUPABASE_PUBLISHABLE_KEY>`. Never place this token in the frontend.
-8. Configure the dashboard's environment variables and deploy the static Vite app.
-9. Create a test workspace, add a public help URL you control, crawl it, verify approved memory retrieval, and test Meta messages with a test phone before production rollout.
+## Supabase Auth
 
-## Important deployment safety notes
-- The crawler accepts only explicit tenant-submitted URLs, follows same-host links only when that scope is selected, limits page size/count, validates redirects and DNS answers, and does not perform general internet search. For high-assurance production, route crawling through an egress proxy that enforces destination IP policy at connection time; DNS preflight alone cannot fully eliminate DNS-rebinding races.
-- Respect website terms, robots rules and content permissions. The initial crawler is a bounded HTML/text extractor, not a browser renderer; JS-rendered pages and PDF files are not supported.
-- The AI uses approved retrieved chunks and approved memory, not model retraining. Unsupported questions must be handed to a human. The default state keeps AI disabled.
-- Campaign sending requires explicit recorded opt-in and an approved Meta template. Each launch request processes up to 10 recipients; repeat while queued recipients remain.
-- This repository foundation has not been deployed to a live Supabase project and no live Meta/OpenAI credentials have been supplied in this work session.
+In Supabase Dashboard → Authentication → URL Configuration:
+
+- Site URL: `https://mobiwavewa.vercel.app`
+- Redirect URL allowlist: `https://mobiwavewa.vercel.app/**`
+- Add `http://localhost:5173/**` only if local development needs it.
+
+## Meta webhook and message delivery
+
+- Callback: `https://jyjgvsljcmvbhovzevaz.supabase.co/functions/v1/meta-webhook`
+- Configure the callback in the Meta app, use the exact `META_WEBHOOK_VERIFY_TOKEN`, and subscribe to WhatsApp message events.
+- The webhook POST handler independently verifies Meta's HMAC signature before processing. Keep platform JWT verification disabled only for `meta-webhook`, `webhook-worker`, and `api-send` as configured; the latter two apply their own internal/API-key authorization.
+- Configure the WhatsApp Business Account, phone number ID, and appropriate long-lived/system-user token in the dashboard's Integrations view. Verify the connection and sync templates.
+
+## Scheduled customer webhook retries
+
+The workflow `.github/workflows/webhook-worker.yml` invokes the Supabase `webhook-worker` every five minutes and supports manual dispatch. Add these repository Actions secrets in GitHub → Settings → Secrets and variables → Actions:
+
+- `SUPABASE_URL`
+- `SUPABASE_PUBLISHABLE_KEY`
+- `INTERNAL_FUNCTION_TOKEN` (must match the Supabase Edge Function secret exactly)
+
+The GitHub schedule can be delayed. This worker is for bounded retry processing and does not promise a real-time SLA.
+
+## Safe pilot
+
+Before production campaigns, test sign-up/sign-in, workspace creation and tenant isolation; ingest a website you are authorized to crawl; verify consent suppression and approved-template enforcement; send/receive a Meta-authorized test message; confirm delivery statuses; and test customer webhook signing/retries. AI is optional and should remain disabled until its provider secret and human-handoff behavior have been verified.
+
+## Scope limits
+
+The crawler is a bounded HTML/text extractor, not a browser renderer; JavaScript-rendered pages, PDFs and authenticated pages are not supported. Respect website terms, robots rules and content permissions. DNS preflight alone cannot fully eliminate DNS-rebinding races; for high-assurance production, route crawling through an egress proxy enforcing destination IP policy at connection time. Campaign launches are bounded per invocation; continue processing batches while recipients remain queued.
