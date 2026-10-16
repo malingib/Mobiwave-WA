@@ -25,9 +25,9 @@ The Meta webhook is the only function configured with platform JWT verification 
 1. Create a Supabase project in the intended MobiWave organization.
 2. Apply the SQL migrations in timestamp order using the Supabase CLI or dashboard SQL editor.
 3. Set secrets above. Use unique random values; do not reuse passwords.
-4. Deploy each folder under `supabase/functions/` as an Edge Function. Deploy `meta-webhook` with JWT verification disabled; keep JWT verification enabled for other functions.
+4. Deploy each folder under `supabase/functions/` as an Edge Function. Deploy `meta-webhook` and `webhook-worker` with JWT verification disabled; keep JWT verification enabled for other user-facing functions. The webhook worker independently checks `X-Internal-Token`.
 5. Configure Auth site URL and redirect URLs for the real dashboard domain.
-6. Configure the Meta app's WhatsApp webhook callback to `<SUPABASE_URL>/functions/v1/meta-webhook`, subscribe to WhatsApp message fields, and use the configured verify token.
+6. Configure the Meta app's WhatsApp webhook callback to `<SUPABASE_URL>/functions/v1/meta-webhook`, subscribe to WhatsApp message fields, and use the configured verify token.\n8. Schedule a trusted server-side POST to `<SUPABASE_URL>/functions/v1/webhook-worker` at least once per minute with `X-Internal-Token: <INTERNAL_FUNCTION_TOKEN>` and an `apikey` header if required by your gateway. Never place this token in the frontend.\n9. Configure the dashboard's environment variables and deploy the static Vite app.
 7. Configure the dashboard's environment variables and deploy the static Vite app.
 8. Create a test workspace, add a public help URL you control, crawl it, verify approved memory retrieval, and test Meta messages with a test phone before production rollout.
 
