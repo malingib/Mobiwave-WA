@@ -1,10 +1,19 @@
 # MobiWave WhatsApp
 
-MobiWave WhatsApp is a multi-tenant WhatsApp messaging and automation platform for Kenyan businesses. WhatsApp transport is the official Meta Cloud API only; AI is an optional service layer.
+MobiWave WhatsApp is a multi-tenant WhatsApp messaging and automation platform for Kenyan businesses. WhatsApp connectivity uses the official Meta Cloud API only; AI is optional.
 
-## Current implementation
+## Production resources
 
-This branch contains a React/Vite dashboard and Supabase backend foundation for:
+- Dashboard: https://mobiwavewa.vercel.app
+- Repository: https://github.com/malingib/Mobiwave-WA
+- Supabase project ref: `jyjgvsljcmvbhovzevaz`
+
+The frontend has been deployed to the existing Vercel project and the Supabase database migrations and Edge Functions are present in the connected project. A READY deployment and passing CI confirm deployment/build status, not full live behavior. Auth URL configuration, server-side secrets, Meta webhook registration and an end-to-end test with an authorized Meta test number remain required before sending real campaigns.
+
+**Start with [Production go-live checklist](docs/production-go-live.md)** for exact Auth URLs, server secrets, Meta configuration and the scheduled retry worker. Also see [Environment and deployment](docs/environment-and-deployment.md) and [Implementation status](docs/implementation-status.md).
+
+## Current capabilities
+
 - Supabase Auth sign-in/sign-up and workspace creation.
 - Tenant-scoped knowledge sources, bounded website ingestion, HTML/text extraction, content versioning, chunks and full-text retrieval.
 - Curated AI memory, manual approval/rejection and review-only suggestions from resolved conversations.
@@ -12,9 +21,7 @@ This branch contains a React/Vite dashboard and Supabase backend foundation for:
 - Official Meta Cloud API credential encryption, verification, template sync, signed webhooks, inbound message ingestion and delivery status updates.
 - Contacts and consent state, shared inbox, human replies, approved-template campaign drafts and bounded sending batches.
 - Row-level security policies, explicit authenticated Data API grants, tenant API keys, usage metering and signed customer webhooks with retryable deliveries.
-- GitHub Actions build workflow.
-
-This is **not yet deployed to a live Supabase or Meta environment**. Credentials, migrations, edge functions, Auth redirect settings, Meta webhook setup and the frontend deployment must be configured before production use. Review `docs/implementation-status.md` and `docs/environment-and-deployment.md`.
+- GitHub Actions build/type-check workflow and a scheduled customer-webhook retry workflow (requires repository secrets).
 
 ## Fixed product decisions
 
@@ -31,9 +38,9 @@ This is **not yet deployed to a live Supabase or Meta environment**. Credentials
 2. Copy `.env.example` to `.env.local` and configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 3. Install packages with `npm install`.
 4. Run `npm run dev`.
-5. Apply the SQL migrations and deploy Edge Functions before using persistent app actions.
+5. Apply migrations and deploy Edge Functions before using persistent app actions.
 
-No Docker dependency is required for frontend development. See `docs/environment-and-deployment.md` for Supabase secrets, Meta setup, and deployment steps.
+No Docker dependency is required for frontend development.
 
 ## Security notes
 
