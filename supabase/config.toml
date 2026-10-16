@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.webhook-worker]
 verify_jwt = false
+
+[functions.api-send]
+verify_jwt = false
