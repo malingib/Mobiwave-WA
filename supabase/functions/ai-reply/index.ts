@@ -52,6 +52,7 @@ Deno.serve(async (request) => {
       console.error("AI provider returned", response.status);
       return json({ answer: "I can’t access the automated assistant right now. A team member will help.", handoff: true, evidence: [] });
     }
+    await admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "ai_request", quantity: 1, metadata: { channel: "assistant_test" } });
     const payload = await response.json();
     let result: any;
     try { result = JSON.parse(payload.choices?.[0]?.message?.content ?? "{}"); } catch { result = {}; }
