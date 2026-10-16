@@ -23,9 +23,14 @@ Deno.serve(async (request) => {
     if (recipientsError) throw recipientsError;
     if (!recipients?.length) return json({ error: "No queued recipients. Add opted-in contacts to the campaign first." }, 400);
     const token = await decryptToken(integration.encrypted_access_token);
+    const { data: limits } = await auth.admin.from("tenant_usage_limits").select("monthly_message_limit").eq("tenant_id", tenantId).maybeSingle();
+    const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
+    const { count: usedBefore } = await auth.admin.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString());
+    const monthlyLimit = limits?.monthly_message_limit ?? 1000;
     await auth.admin.from("campaigns").update({ status: "running", started_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", campaignId).eq("tenant_id", tenantId);
     let sent = 0, skipped = 0, failed = 0;
     for (const recipient of recipients as any[]) {
+      if ((usedBefore ?? 0) + sent >= monthlyLimit) break;
       const contact = recipient.contacts;
       if (!contact || contact.consent_status !== "opted_in") {
         skipped++;
@@ -43,6 +48,7 @@ Deno.serve(async (request) => {
         await auth.admin.from("campaign_recipients").update({ status: "failed", attempts: 1, error_code: String(result.error?.code ?? "meta_error"), error_detail: String(result.error?.message ?? "Meta rejected message").slice(0,300) }).eq("id", recipient.id);
       } else {
         sent++;
+        await auth.admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "message_submitted", quantity: 1, reference_id: result.messages[0].id, metadata: { channel: "campaign", campaign_id: campaignId } });
         await auth.admin.from("campaign_recipients").update({ status: "sent", attempts: 1, meta_message_id: result.messages[0].id, sent_at: new Date().toISOString() }).eq("id", recipient.id);
       }
     }
