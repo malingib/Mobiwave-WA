@@ -17,6 +17,7 @@ https://YOUR_PROJECT_REF.supabase.co/functions/v1
 Headers:
 
 ```
+apikey: YOUR_SUPABASE_PUBLISHABLE_KEY
 X-API-Key: mw_live_your_secret
 Content-Type: application/json
 ```
