@@ -147,7 +147,7 @@ Deno.serve(async (request) => {
             body: answer, status: "sent", meta_message_id: sendResult.messages[0].id, metadata: { evidence, model: settings.ai_model || "gpt-4o-mini" },
           });
           await admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "message_submitted", quantity: 1, reference_id: sendResult.messages[0].id, metadata: { channel: "inbound_chatbot" } });
-          await emitWebhook(admin, tenantId, "message.outbound", { message_id: sendResult.messages[0].id, to: phone, type: "text", actor: "bot", status: "sent_to_meta" });
+          await emitWebhook(admin, tenantId, "message.outbound", { message_id: sendResult.messages[0].id, to: phone, type: "text", actor: "bot", status: "sent_to_meta" }, false);
         } else if (settings.human_handoff_enabled) {
           await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
         }
