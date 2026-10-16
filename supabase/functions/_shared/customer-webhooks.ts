@@ -90,7 +90,7 @@ export async function deliverWebhook(admin: SupabaseClient, deliveryId: string) 
   }
 }
 
-export async function emitWebhook(admin: SupabaseClient, tenantId: string, eventType: string, payload: unknown) {
+export async function emitWebhook(admin: SupabaseClient, tenantId: string, eventType: string, payload: unknown, immediate = true) {
   const { data: hooks, error } = await admin.from("tenant_webhooks").select("id").eq("tenant_id", tenantId).eq("enabled", true).contains("events", [eventType]);
   if (error || !hooks?.length) return;
   const queued = await Promise.all(hooks.map(async (hook: any) => {
@@ -99,5 +99,5 @@ export async function emitWebhook(admin: SupabaseClient, tenantId: string, event
     }).select("id").single();
     return !insertError && delivery ? delivery.id as string : null;
   }));
-  await Promise.all(queued.filter(Boolean).map((id) => deliverWebhook(admin, id as string)));
+  if (immediate) await Promise.all(queued.filter(Boolean).map((id) => deliverWebhook(admin, id as string)));
 }
