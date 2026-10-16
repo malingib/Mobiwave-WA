@@ -93,10 +93,11 @@ export async function deliverWebhook(admin: SupabaseClient, deliveryId: string) 
 export async function emitWebhook(admin: SupabaseClient, tenantId: string, eventType: string, payload: unknown) {
   const { data: hooks, error } = await admin.from("tenant_webhooks").select("id").eq("tenant_id", tenantId).eq("enabled", true).contains("events", [eventType]);
   if (error || !hooks?.length) return;
-  for (const hook of hooks) {
+  const queued = await Promise.all(hooks.map(async (hook: any) => {
     const { data: delivery, error: insertError } = await admin.from("webhook_deliveries").insert({
       tenant_id: tenantId, webhook_id: hook.id, event_type: eventType, payload, status: "queued",
     }).select("id").single();
-    if (!insertError && delivery) await deliverWebhook(admin, delivery.id);
-  }
+    return !insertError && delivery ? delivery.id as string : null;
+  }));
+  await Promise.all(queued.filter(Boolean).map((id) => deliverWebhook(admin, id as string)));
 }
