@@ -107,6 +107,7 @@ export default function App() {
   }, [user]);
 
   useEffect(() => { void loadTenants(); }, [loadTenants]);
+  useEffect(() => { setNewApiKey(""); setNewWebhookSecret(""); }, [tenantId]);
 
   const activeTenant = tenants.find((t) => t.id === tenantId);
   const isAdmin = activeTenant ? ["owner", "admin"].includes(activeTenant.role) : false;
