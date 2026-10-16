@@ -11,7 +11,7 @@ This branch contains a React/Vite dashboard and Supabase backend foundation for:
 - Grounded AI answer testing and optional inbound chatbot replies with human handoff.
 - Official Meta Cloud API credential encryption, verification, template sync, signed webhooks, inbound message ingestion and delivery status updates.
 - Contacts and consent state, shared inbox, human replies, approved-template campaign drafts and bounded sending batches.
-- Row-level security policies and explicit authenticated Data API grants.
+- Row-level security policies, explicit authenticated Data API grants, tenant API keys, usage metering and signed customer webhooks with retryable deliveries.
 - GitHub Actions build workflow.
 
 This is **not yet deployed to a live Supabase or Meta environment**. Credentials, migrations, edge functions, Auth redirect settings, Meta webhook setup and the frontend deployment must be configured before production use. Review `docs/implementation-status.md` and `docs/environment-and-deployment.md`.
