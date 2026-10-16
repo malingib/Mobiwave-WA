@@ -34,7 +34,7 @@
 
 ## Not yet complete or verified
 - The branch has not been deployed to a live Supabase project, and no live project credentials were provided.
-- The current build has not been verified in this environment; the GitHub Actions result must be checked before merging.
+- GitHub Actions passed the Vite production build and Deno Edge Function type-check on the current branch head (commit `4922bf45652cf14e46092b1b0322ff642e3f1f8d`). This verifies compile/type-check only, not live database, Meta API, crawler or end-to-end behaviour.
 - The crawler is a bounded HTML/text extractor, not a headless browser; PDFs, JavaScript-rendered content and authenticated pages are not supported. DNS preflight cannot completely prevent DNS rebinding; high-assurance production should use an egress proxy enforcing IP restrictions at connection time.
 - No scheduled crawl/refresh worker, durable campaign scheduler/queue worker, complete delivery analytics, billing/subscription collection, team invitation UI or full audit log yet. Customer webhook retries require the configured webhook-worker to be scheduled. The public API currently supports approved-template sends and basic monthly quota enforcement.
 - Campaign launcher processes at most 10 queued recipients per invocation; remaining batches must be run again. Dynamic template parameters are supported as JSON but require validation against each template's expected parameters.
