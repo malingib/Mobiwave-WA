@@ -15,7 +15,8 @@ type Contact = { id: string; phone_e164: string; display_name?: string; consent_
 type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string };
 type Campaign = { id: string; name: string; status: string; created_at: string; template_id?: string };
 type Conversation = { id: string; status: string; bot_paused: boolean; last_message_at?: string; contacts?: { display_name?: string; phone_e164: string } };
-type ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };\ntype TenantWebhook = { id: string; name: string; endpoint_url: string; events: string[]; enabled: boolean; last_delivery_at?: string; last_status?: string; last_error?: string; created_at: string };
+type ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };
+type TenantWebhook = { id: string; name: string; endpoint_url: string; events: string[]; enabled: boolean; last_delivery_at?: string; last_status?: string; last_error?: string; created_at: string };
 type ChatMessage = { id: string; direction: string; actor_type: string; body?: string; status: string; created_at: string };
 type Settings = { ai_enabled: boolean; system_instructions: string; context_retention_days: number; max_ai_reply_tokens: number; human_handoff_enabled: boolean };
 type UsageStats = { messages: number; aiRequests: number; messageLimit: number; aiLimit: number };
@@ -77,7 +78,12 @@ export default function App() {
   const [metaStatus, setMetaStatus] = useState<any>(null);
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [apiKeyName, setApiKeyName] = useState("Production integration");
-  const [newApiKey, setNewApiKey] = useState("");\n  const [webhooks, setWebhooks] = useState<TenantWebhook[]>([]);\n  const [webhookName, setWebhookName] = useState("Support event receiver");\n  const [webhookUrl, setWebhookUrl] = useState("");\n  const [webhookEvents, setWebhookEvents] = useState<string[]>(["message.inbound","message.status"]);\n  const [newWebhookSecret, setNewWebhookSecret] = useState("");
+  const [newApiKey, setNewApiKey] = useState("");
+  const [webhooks, setWebhooks] = useState<TenantWebhook[]>([]);
+  const [webhookName, setWebhookName] = useState("Support event receiver");
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookEvents, setWebhookEvents] = useState<string[]>(["message.inbound","message.status"]);
+  const [newWebhookSecret, setNewWebhookSecret] = useState("");
   const [usageStats, setUsageStats] = useState<UsageStats>({ messages: 0, aiRequests: 0, messageLimit: 1000, aiLimit: 500 });
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiAnswer, setAiAnswer] = useState<any>(null);
@@ -124,7 +130,8 @@ export default function App() {
       supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       supabase.from("tenant_usage_limits").select("monthly_message_limit,monthly_ai_request_limit").eq("tenant_id", tenantId).maybeSingle(),
       supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString()),
-      supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "ai_request").gte("occurred_at", monthStart.toISOString()),\n      supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+      supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "ai_request").gte("occurred_at", monthStart.toISOString()),
+      supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
     ]);
     if (s.error) setNotice("Could not load workspace data: " + s.error.message);
     setSources((s.data ?? []) as Source[]);
