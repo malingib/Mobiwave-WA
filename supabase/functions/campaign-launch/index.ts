@@ -1,6 +1,7 @@
 import { requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { decryptToken } from "../_shared/meta.ts";
 import { corsHeaders, json, errorMessage } from "../_shared/cors.ts";
+import { emitWebhook } from "../_shared/customer-webhooks.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_VERSION") || "v23.0";
 Deno.serve(async (request) => {
@@ -55,6 +56,7 @@ Deno.serve(async (request) => {
     const { count: remaining } = await auth.admin.from("campaign_recipients").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("campaign_id", campaignId).eq("status", "queued");
     const nextStatus = (remaining ?? 0) > 0 ? "running" : failed && !sent ? "failed" : "completed";
     await auth.admin.from("campaigns").update({ status: nextStatus, finished_at: nextStatus === "running" ? null : new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", campaignId).eq("tenant_id", tenantId);
+    if (nextStatus !== "running") await emitWebhook(auth.admin, tenantId, "campaign.completed", { campaign_id: campaignId, status: nextStatus, sent, skipped, failed });
     return json({ ok: true, sent, skipped, failed, remaining: remaining ?? 0, status: nextStatus, message: ((usedBefore ?? 0) + sent >= monthlyLimit ? "Monthly message quota reached. Increase the workspace limit or wait for the next billing month. " : "") + "Each run processes up to 10 recipients. Run again to process remaining queued recipients." });
   } catch (error) {
     const message = errorMessage(error);
