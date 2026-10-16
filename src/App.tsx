@@ -3,11 +3,11 @@ import type { Session, User } from "@supabase/supabase-js";
 import {
   Activity, ArrowUpRight, BookOpen, Bot, Check, ChevronDown, CircleHelp,
   Globe2, LayoutDashboard, Link2, LogOut, MessageCircle, Plus, RefreshCw, Search,
-  Send, Settings2, ShieldCheck, Sparkles, Trash2, Users, X, Zap, LoaderCircle,
+  Send, Settings2, ShieldCheck, Sparkles, Trash2, Users, UserRound, Settings, X, Zap, LoaderCircle,
 } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 
-type View = "Overview" | "Knowledge sources" | "AI memory" | "Chatbot settings" | "Shared inbox" | "Contacts" | "Campaigns" | "Integrations";
+type View = "Overview" | "Knowledge sources" | "AI memory" | "Chatbot settings" | "Shared inbox" | "Contacts" | "Campaigns" | "Integrations" | "Profile" | "Settings";
 type Tenant = { id: string; name: string; slug: string; role: string };
 type Source = { id: string; submitted_url: string; display_name: string; scope: string; status: string; last_successful_at?: string; last_error_code?: string; created_at: string };
 type Memory = { id: string; title: string; memory_text: string; memory_type: string; status: string; updated_at: string; source_reference?: string };
@@ -30,6 +30,8 @@ const views: { label: View; icon: typeof LayoutDashboard; section?: string }[] =
   { label: "Contacts", icon: Users },
   { label: "Campaigns", icon: Zap },
   { label: "Integrations", icon: Settings2, section: "ADMINISTRATION" },
+  { label: "Profile", icon: UserRound, section: "ACCOUNT" },
+  { label: "Settings", icon: Settings },
 ];
 
 export default function App() {
@@ -38,6 +40,8 @@ export default function App() {
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [profileName, setProfileName] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [user, setUser] = useState<User | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantId, setTenantId] = useState("");
@@ -107,6 +111,7 @@ export default function App() {
   }, [user]);
 
   useEffect(() => { void loadTenants(); }, [loadTenants]);
+  useEffect(() => { setProfileName(String(user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "")); }, [user]);
   useEffect(() => { setNewApiKey(""); setNewWebhookSecret(""); }, [tenantId]);
 
   const activeTenant = tenants.find((t) => t.id === tenantId);
@@ -387,6 +392,18 @@ export default function App() {
     catch { setNotice("Copy is unavailable. Select and copy the displayed key manually."); }
   }
 
+  async function saveProfile(event: FormEvent) {
+    event.preventDefault(); if (!supabase) return;
+    setBusy(true);
+    const updates: { data?: Record<string, unknown>; password?: string } = { data: { full_name: profileName.trim() } };
+    if (newPassword.trim()) updates.password = newPassword;
+    const { error } = await supabase.auth.updateUser(updates);
+    setBusy(false);
+    if (error) { setNotice("Could not update profile: " + error.message); return; }
+    setNewPassword(""); setNotice("Profile updated successfully.");
+    const { data } = await supabase.auth.getUser(); if (data.user) setUser(data.user);
+  }
+
   async function signOut() { if (supabase) await supabase.auth.signOut(); setTenants([]); setTenantId(""); }
 
   const filteredSources = useMemo(() => sources.filter((s) => (s.display_name + " " + s.submitted_url).toLowerCase().includes(search.toLowerCase())), [sources, search]);
@@ -443,6 +460,8 @@ export default function App() {
         <div className="panel form-panel"><h2>Customer webhooks</h2><p className="muted small">Send signed events to your own HTTPS endpoint. Delivery failures are retried with exponential backoff by the webhook worker.</p>{isAdmin&&<form className="webhook-create" onSubmit={createWebhook}><div className="form-grid"><div className="field"><label>Webhook name</label><input value={webhookName} onChange={(e)=>setWebhookName(e.target.value)} required minLength={2} maxLength={120}/></div><div className="field"><label>HTTPS endpoint URL</label><input type="url" value={webhookUrl} onChange={(e)=>setWebhookUrl(e.target.value)} required placeholder="https://api.yourbusiness.co.ke/hooks/mobiwave"/></div></div><div className="webhook-event-options">{[["message.inbound","Inbound message"],["message.status","Delivery status"],["message.outbound","Outbound message"],["campaign.completed","Campaign completed"],["knowledge.indexed","Knowledge indexed"],["conversation.updated","Conversation updated"]].map(([value,label])=><label key={value} className="checkbox-line"><input type="checkbox" checked={webhookEvents.includes(value)} onChange={(e)=>setWebhookEvents(current=>e.target.checked?[...current,value]:current.filter(item=>item!==value))}/>{label}</label>)}</div><div className="form-actions"><span className="muted small">HTTPS only · public host required</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add webhook</button></div></form>}{newWebhookSecret&&<div className="new-key-box"><strong>Copy your webhook signing secret now</strong><code>{newWebhookSecret}</code><button className="secondary-button" onClick={()=>void copyWebhookSecret()}>Copy secret</button><small>Use this secret to verify the X-MobiWave-Signature header. It cannot be retrieved again.</small></div>}<div className="api-key-list">{webhooks.length===0?<p className="muted small">No customer webhooks configured.</p>:webhooks.map(h=><div className="api-key-row" key={h.id}><div><strong>{h.name}</strong><code>{h.endpoint_url}</code><small>Events: {h.events.join(", ")}</small>{h.last_error&&<small className="error-text">{h.last_error}</small>}</div><Status status={h.enabled?(h.last_status||"active"):"disabled"}/>{isAdmin&&<button className="secondary-button compact" onClick={()=>void manageWebhook(h,h.enabled?"disable":"enable")}>{h.enabled?"Disable":"Enable"}</button>}{isAdmin&&<button className="icon-button" onClick={()=>void manageWebhook(h,"delete")} aria-label="Delete webhook"><Trash2 size={15}/></button>}</div>)}</div><div className="muted small">Signatures use HMAC-SHA256 over the exact raw JSON body. Verify X-MobiWave-Signature before processing and use X-MobiWave-Delivery for idempotency.</div></div>
         <div className="panel form-panel"><h2>Webhook and AI service status</h2><div className="checklist"><SetupRow done={Boolean(metaStatus?.verified)} label="Meta credentials verified" detail="The Graph API phone number endpoint returned a valid response."/><SetupRow done={Boolean(templates.length)} label="Message templates synced" detail="Only templates with approved status are available for campaigns."/><SetupRow done={settings.ai_enabled} label="Optional AI enabled" detail="Requires the OPENAI_API_KEY secret on the backend."/><SetupRow label="Webhook callback" detail="Add the Supabase Edge Function URL to your Meta app and subscribe to messages and statuses."/></div></div>
       </section>}
+      {view === "Profile" && <section className="content"><PageHeading eyebrow="ACCOUNT" title="Your profile" description="Manage the name shown in your workspace and update your sign-in password."/><form className="panel form-panel profile-form" onSubmit={saveProfile}><h2>Personal details</h2><div className="profile-summary"><div className="profile-avatar large">{(profileName.trim() || user.email || "U").slice(0,1).toUpperCase()}</div><div><strong>{profileName.trim() || "Workspace member"}</strong><span>{activeTenant?.role ?? "Member"} · {activeTenant?.name ?? "No workspace"}</span></div></div><div className="field"><label>Full name</label><input value={profileName} onChange={(e)=>setProfileName(e.target.value)} maxLength={120} placeholder="Your name"/></div><div className="field"><label>Email address</label><input value={user.email ?? ""} readOnly aria-readonly="true"/><small className="muted small">Your sign-in email is managed by your authentication account.</small></div><div className="field"><label>New password <span className="muted small">(optional)</span></label><input type="password" value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} minLength={8} autoComplete="new-password" placeholder="At least 8 characters"/></div><div className="form-actions"><span className="muted small">Leave the password blank to keep it unchanged.</span><button className="primary-button" disabled={busy}>{busy?"Saving…":"Save profile"}</button></div></form><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Account security</strong><p>Use a unique password. Your profile is stored with your authenticated account and does not change workspace permissions.</p></div></div></section>}
+      {view === "Settings" && <section className="content"><PageHeading eyebrow="PREFERENCES" title="Settings" description="Review your workspace, account access and the configuration areas available to you."/><div className="panel settings-panel"><div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Active workspace</strong><p>{activeTenant?.name ?? "No workspace selected"} · workspace ID and role are managed by workspace membership.</p></div><span className="fixed-setting">{activeTenant?.role ?? "Member"}</span></div><div className="setting-row"><div className="setting-icon"><MessageCircle size={19}/></div><div className="setting-copy"><strong>WhatsApp connection</strong><p>{metaStatus?.enabled ? "Meta Cloud API is enabled for this workspace." : "Meta Cloud API is not enabled yet. Open Integrations to configure and verify it."}</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Integrations")}>Open integrations</button></div><div className="setting-row"><div className="setting-icon"><Bot size={19}/></div><div className="setting-copy"><strong>AI behaviour</strong><p>{settings.ai_enabled ? "AI replies are enabled." : "AI replies are currently disabled."} Configure reply rules, retention and handoff.</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Chatbot settings")}>Chatbot settings</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Workspace access</strong><p>Your current role is {activeTenant?.role ?? "Member"}. Administrative actions are restricted to workspace owners and admins.</p></div><span className="fixed-setting">{isAdmin?"Admin access":"Member access"}</span></div><div className="setting-row"><div className="setting-icon"><LogOut size={19}/></div><div className="setting-copy"><strong>Sign out</strong><p>End this session on the current browser.</p></div><button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button></div></div><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Privacy and data separation</strong><p>Workspace records are tenant-scoped. Use Profile to update your account details; workspace-level AI controls remain under Chatbot settings.</p></div></div></section>}
       {loading&&<div className="loading-bar"><LoaderCircle className="spin" size={14}/> Loading workspace data…</div>}
       {notice&&<div className="toast" role="status"><div className="toast-icon"><Check size={15}/></div><span>{notice}</span><button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
       <footer className="footer"><span>© 2026 MobiWave Innovations Ltd</span><span><span className="footer-dot"/> {metaStatus?.enabled?"Meta API connected":"Configuration required"} · {activeTenant?.slug}</span><a href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md">Setup guide <ArrowUpRight size={13}/></a></footer>
