@@ -1,23 +1,47 @@
 # Implementation status
 
-## Branch: `feat/knowledge-builder-foundation`
+## Branch
 
-This branch adds the first React/Vite frontend foundation for MobiWave WhatsApp, focused on the source-restricted knowledge builder and curated AI memory.
+`feat/knowledge-builder-foundation`
 
-### Implemented in this branch
-- Responsive dashboard shell and navigation.
-- Knowledge-source list with URL validation, duplicate detection, local add/remove, search and crawl-scope selection.
-- AI memory review screen with local approve/remove interactions.
-- Chatbot settings preview for AI pause, approved-knowledge-only behaviour and handoff intent.
-- Overview checklist and clear UI labels where services are not connected.
-- Product and architecture documentation for submitted-source-only ingestion and tenant-isolated memory.
+## Implemented in the repository
 
-### Not implemented yet
-- Authentication, persistent database, tenant memberships and RLS.
-- Real website crawling, SSRF-safe fetch worker, extraction, deduplication, embeddings or search.
-- Persistent AI memory, approval audit trail or conversation-based memory suggestions.
-- Meta WhatsApp Cloud API, webhook verification, outbound messages, campaigns and shared inbox.
-- Production secrets, hosting, monitoring, CI build checks and end-to-end tests.
+### Dashboard
+- React/Vite responsive dashboard, Supabase Auth sign-in/sign-up, workspace creation and workspace selector.
+- Knowledge source management with single-URL and same-host crawl scopes, source status, refresh and deletion.
+- AI memory queue with manual memory entry, approval/rejection/deletion, and review-only suggestions extracted from resolved conversations.
+- Chatbot configuration, AI answer test, and handoff controls.
+- Contacts with opt-in/opt-out status, shared inbox, agent replies, approved-template campaign drafts and campaign batch launcher.
+- Meta integration setup, token verification and template sync screens.
 
-### Important
-The sample entries are clearly labelled as sample data and browser state only. Adding a URL does not fetch or index it. The application must not claim a source is indexed until a backend ingestion job has completed successfully.
+### Backend
+- Tenant-scoped PostgreSQL schema for workspace membership, sources, documents/chunks, ingestion runs, AI memory, settings, contacts, Meta integration, templates, campaigns, recipients, conversations, messages and webhook events.
+- RLS policies, explicit authenticated Data API grants and a tenant-scoped full-text retrieval RPC restricted to the service role.
+- Supabase Edge Functions for workspace provisioning, bounded source ingestion, grounded AI replies, review-only memory suggestions, Meta credential encryption/verification, template sync, signed Meta webhooks, inbound conversation processing, message sending and consent-checked campaign batches.
+- Meta credentials are encrypted with AES-GCM; browser roles cannot select the encrypted token column.
+- CI workflow for TypeScript/Vite build.
+
+## Product safety rules implemented
+- Official Meta WhatsApp Cloud API only; no alternative WhatsApp engines or QR pairing.
+- No general internet search fallback. Only tenant-submitted sources are eligible for knowledge ingestion.
+- AI responses require an exact reference to retrieved approved evidence; otherwise the chatbot hands off.
+- Memory generated from conversations remains in the review queue and is not automatically approved.
+- AI starts disabled for each workspace.
+- Marketing campaigns require recorded opt-in and an approved Meta template; opted-out contacts are suppressed.
+- Free-form agent replies require a recent inbound message inside the 24-hour customer-service window.
+- Webhook POST requests require Meta HMAC signature verification and inbound message IDs are used for idempotency.
+- Crawler bounds page count and body size, checks DNS and redirects, stays on the explicitly authorized host, and applies robots path rules.
+
+## Not yet complete or verified
+- The branch has not been deployed to a live Supabase project, and no live project credentials were provided.
+- The current build has not been verified in this environment; the GitHub Actions result must be checked before merging.
+- The crawler is a bounded HTML/text extractor, not a headless browser; PDFs, JavaScript-rendered content and authenticated pages are not supported. DNS preflight cannot completely prevent DNS rebinding; high-assurance production should use an egress proxy enforcing IP restrictions at connection time.
+- No scheduled crawl/refresh worker, durable campaign scheduler/queue worker, retry/backoff queue, delivery analytics, billing, tenant API keys, customer webhook dispatch, team invitation UI or full audit log yet.
+- Campaign launcher processes at most 50 queued recipients per invocation; remaining batches must be run again. Dynamic template parameters are supported as JSON but require validation against each template's expected parameters.
+- No live Meta webhook has been registered and no real message has been sent or received.
+- AI provider credentials and usage limits have not been configured. The chatbot and memory suggestion feature require the optional AI key.
+- Automated tests, load tests, penetration testing and production privacy/compliance review remain necessary.
+
+## Required setup before a live pilot
+
+Follow `docs/environment-and-deployment.md`. Apply SQL migrations in timestamp order, configure Edge Function secrets, deploy the functions, configure Auth URLs, verify the Meta Cloud API, sync templates, register the webhook and test with an authorized test number before enabling real campaigns.
