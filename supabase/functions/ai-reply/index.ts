@@ -57,7 +57,7 @@ Deno.serve(async (request) => {
     try { result = JSON.parse(payload.choices?.[0]?.message?.content ?? "{}"); } catch { result = {}; }
     const answer = typeof result.answer === "string" ? result.answer.slice(0, 3000) : "";
     const evidence = Array.isArray(result.evidence) ? result.evidence.filter((v: unknown) => typeof v === "string").slice(0, 6) : [];
-    const supported = evidence.length > 0 && answer.length > 0;
+    const supported = evidence.some((ref: string) => prompt.allowedEvidence.includes(ref)) && answer.length > 0;
     const handoff = result.handoff === true || !supported;
     if (conversationId) {
       if (handoff && settings.human_handoff_enabled) {
