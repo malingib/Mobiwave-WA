@@ -20,7 +20,7 @@ export async function decryptToken(ciphertext: string): Promise<string> {
   if (!keyHex || !/^[0-9a-f]{64}$/i.test(keyHex)) throw new Error("APP_ENCRYPTION_KEY must be 32 bytes encoded as 64 hex characters.");
   const raw = hexToBytes(ciphertext);
   if (raw.length < 29) throw new Error("Encrypted token is invalid.");
-  const key = await crypto.subtle.importKey("raw", hexToBytes(keyHex), "AES-GCM", false, ["decrypt"]);
+  const key = await crypto.subtle.importKey("raw", hexToBytes(keyHex).slice().buffer as ArrayBuffer, "AES-GCM", false, ["decrypt"]);
   const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12) }, key, raw.slice(12));
   return new TextDecoder().decode(plain);
 }
@@ -28,7 +28,7 @@ export async function decryptToken(ciphertext: string): Promise<string> {
 export async function encryptToken(token: string): Promise<string> {
   const keyHex = Deno.env.get("APP_ENCRYPTION_KEY");
   if (!keyHex || !/^[0-9a-f]{64}$/i.test(keyHex)) throw new Error("APP_ENCRYPTION_KEY must be 32 bytes encoded as 64 hex characters.");
-  const key = await crypto.subtle.importKey("raw", hexToBytes(keyHex), "AES-GCM", false, ["encrypt"]);
+  const key = await crypto.subtle.importKey("raw", hexToBytes(keyHex).slice().buffer as ArrayBuffer, "AES-GCM", false, ["encrypt"]);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(token)));
   const all = new Uint8Array(iv.length + cipher.length); all.set(iv); all.set(cipher, iv.length);
