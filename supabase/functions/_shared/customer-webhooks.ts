@@ -94,7 +94,10 @@ export async function emitWebhook(admin: SupabaseClient, tenantId: string, event
   const { data: hooks, error } = await admin.from("tenant_webhooks").select("id").eq("tenant_id", tenantId).eq("enabled", true).contains("events", [eventType]);
   if (error || !hooks?.length) return;
   const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
-  const base = String(record.message_id ?? record.campaign_id ?? record.source_id ?? record.conversation_id ?? crypto.randomUUID());
+  const stableEvent = ["message.inbound","message.status","message.outbound","campaign.completed"].includes(eventType);
+  const base = stableEvent
+    ? String(record.message_id ?? record.campaign_id ?? crypto.randomUUID())
+    : crypto.randomUUID();
   const eventKey = eventType + ":" + base + (record.status ? ":" + String(record.status) : "");
   const queued = await Promise.all(hooks.map(async (hook: any) => {
     const { data: delivery, error: insertError } = await admin.from("webhook_deliveries").upsert({
