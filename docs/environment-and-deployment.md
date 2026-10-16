@@ -35,5 +35,5 @@ The Meta webhook is the only function configured with platform JWT verification 
 - The crawler accepts only explicit tenant-submitted URLs, follows same-host links only when that scope is selected, limits page size/count, validates redirects and DNS answers, and does not perform general internet search. For high-assurance production, route crawling through an egress proxy that enforces destination IP policy at connection time; DNS preflight alone cannot fully eliminate DNS-rebinding races.
 - Respect website terms, robots rules and content permissions. The initial crawler is a bounded HTML/text extractor, not a browser renderer; JS-rendered pages and PDF files are not supported.
 - The AI uses approved retrieved chunks and approved memory, not model retraining. Unsupported questions must be handed to a human. The default state keeps AI disabled.
-- Campaign sending requires explicit recorded opt-in and an approved Meta template. Each launch request processes up to 50 recipients; repeat while queued recipients remain.
+- Campaign sending requires explicit recorded opt-in and an approved Meta template. Each launch request processes up to 10 recipients; repeat while queued recipients remain.
 - This repository foundation has not been deployed to a live Supabase project and no live Meta/OpenAI credentials have been supplied in this work session.
