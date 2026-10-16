@@ -1,0 +1,4 @@
+project_id = "mobiwave-whatsapp"
+
+[functions.meta-webhook]
+verify_jwt = false
