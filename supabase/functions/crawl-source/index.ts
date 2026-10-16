@@ -1,5 +1,6 @@
 import { requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { corsHeaders, json, errorMessage } from "../_shared/cors.ts";
+import { emitWebhook } from "../_shared/customer-webhooks.ts";
 
 const MAX_PAGES = 20;
 const MAX_BODY_BYTES = 1_500_000;
@@ -211,6 +212,7 @@ Deno.serve(async (request) => {
     if (!pagesIndexed) throw new Error("No readable pages were indexed. Check the URL, access rules, robots.txt and page content.");
     await admin.from("source_ingestion_runs").update({ status: "succeeded", pages_discovered: visited.size, pages_indexed: pagesIndexed, finished_at: new Date().toISOString() }).eq("id", runId);
     await admin.from("knowledge_sources").update({ status: "indexed", canonical_url: startUrl.toString(), last_successful_at: new Date().toISOString(), last_error_code: null }).eq("id", sourceId).eq("tenant_id", tenantId);
+    await emitWebhook(admin, tenantId, "knowledge.indexed", { source_id: sourceId, pages_indexed: pagesIndexed, characters_indexed: charsIndexed });
     return json({ ok: true, source_id: sourceId, pages_indexed: pagesIndexed, characters_indexed: charsIndexed, message: "Submitted source content indexed. No general internet search was performed." });
   } catch (error) {
     const message = errorMessage(error);
