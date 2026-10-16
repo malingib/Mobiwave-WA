@@ -1,5 +1,6 @@
 import { requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { decryptToken } from "../_shared/meta.ts";
+import { emitWebhook } from "../_shared/customer-webhooks.ts";
 import { corsHeaders, json, errorMessage } from "../_shared/cors.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_VERSION") || "v23.0";
@@ -62,6 +63,7 @@ Deno.serve(async (request) => {
       status: "sent", meta_message_id: metaMessageId, metadata: { meta_status: "accepted" },
     });
     await auth.admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "message_submitted", quantity: 1, reference_id: metaMessageId ?? null, metadata: { channel: "agent" } });
+    await emitWebhook(auth.admin, tenantId, "message.outbound", { message_id: metaMessageId ?? null, to, type, status: "sent_to_meta" });
     return json({ ok: true, message_id: metaMessageId ?? null, status: "sent_to_meta" });
   } catch (error) {
     const message = errorMessage(error);
