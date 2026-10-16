@@ -22,7 +22,7 @@
 - CI workflow for TypeScript/Vite build.
 
 ## Product safety rules implemented
-- Official Meta WhatsApp Cloud API only; no alternative WhatsApp engines or QR pairing.
+- Official Meta WhatsApp Cloud API only; no alternative WhatsApp engines or QR pairing.\n- Tenant API keys are hashed, shown once, revocable and scoped to approved-template sending; monthly message/AI request usage events and basic quotas are implemented.
 - No general internet search fallback. Only tenant-submitted sources are eligible for knowledge ingestion.
 - AI responses require an exact reference to retrieved approved evidence; otherwise the chatbot hands off.
 - Memory generated from conversations remains in the review queue and is not automatically approved.
@@ -36,7 +36,7 @@
 - The branch has not been deployed to a live Supabase project, and no live project credentials were provided.
 - The current build has not been verified in this environment; the GitHub Actions result must be checked before merging.
 - The crawler is a bounded HTML/text extractor, not a headless browser; PDFs, JavaScript-rendered content and authenticated pages are not supported. DNS preflight cannot completely prevent DNS rebinding; high-assurance production should use an egress proxy enforcing IP restrictions at connection time.
-- No scheduled crawl/refresh worker, durable campaign scheduler/queue worker, retry/backoff queue, delivery analytics, billing, tenant API keys, customer webhook dispatch, team invitation UI or full audit log yet.
+- No scheduled crawl/refresh worker, durable campaign scheduler/queue worker, retry/backoff queue, full delivery analytics, billing/subscription collection, customer-configurable outbound webhook dispatch, team invitation UI or full audit log yet. The public API currently supports approved-template sends and basic monthly quota enforcement.
 - Campaign launcher processes at most 50 queued recipients per invocation; remaining batches must be run again. Dynamic template parameters are supported as JSON but require validation against each template's expected parameters.
 - No live Meta webhook has been registered and no real message has been sent or received.
 - AI provider credentials and usage limits have not been configured. The chatbot and memory suggestion feature require the optional AI key.
