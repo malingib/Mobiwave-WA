@@ -12,7 +12,7 @@ Deno.serve(async (request) => {
     const tenantId = String(body.tenant_id ?? ""), campaignId = String(body.campaign_id ?? "");
     if (!tenantId || !campaignId) return json({ error: "tenant_id and campaign_id are required." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner", "admin"]);
-    const { data: campaign } = await auth.admin.from("campaigns").select("id,name,status,template_id").eq("tenant_id", tenantId).eq("id", campaignId).maybeSingle();
+    const { data: campaign } = await auth.admin.from("campaigns").select("id,name,status,template_id,template_parameters").eq("tenant_id", tenantId).eq("id", campaignId).maybeSingle();
     if (!campaign) return json({ error: "Campaign not found." }, 404);
     if (!["draft","paused","failed","running"].includes(campaign.status)) return json({ error: "Campaign cannot be launched from its current state." }, 409);
     const { data: integration } = await auth.admin.from("meta_integrations").select("phone_number_id,encrypted_access_token").eq("tenant_id", tenantId).eq("enabled", true).maybeSingle();
@@ -34,7 +34,7 @@ Deno.serve(async (request) => {
       }
       const response = await fetch("https://graph.facebook.com/" + GRAPH_VERSION + "/" + integration.phone_number_id + "/messages", {
         method: "POST", headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
-        body: JSON.stringify({ messaging_product: "whatsapp", to: String(contact.phone_e164).replace("+",""), type: "template", template: { name: template.meta_template_name, language: { code: template.language_code }, components: Array.isArray(template.components) ? template.components : [] } }),
+        body: JSON.stringify({ messaging_product: "whatsapp", to: String(contact.phone_e164).replace("+",""), type: "template", template: { name: template.meta_template_name, language: { code: template.language_code }, components: Array.isArray(campaign.template_parameters) ? campaign.template_parameters : [] } }),
         signal: AbortSignal.timeout(12000),
       });
       const result = await response.json();
