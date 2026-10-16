@@ -27,9 +27,10 @@ The Meta webhook is the only function configured with platform JWT verification 
 3. Set secrets above. Use unique random values; do not reuse passwords.
 4. Deploy each folder under `supabase/functions/` as an Edge Function. Deploy `meta-webhook` and `webhook-worker` with JWT verification disabled; keep JWT verification enabled for other user-facing functions. The webhook worker independently checks `X-Internal-Token`.
 5. Configure Auth site URL and redirect URLs for the real dashboard domain.
-6. Configure the Meta app's WhatsApp webhook callback to `<SUPABASE_URL>/functions/v1/meta-webhook`, subscribe to WhatsApp message fields, and use the configured verify token.\n8. Schedule a trusted server-side POST to `<SUPABASE_URL>/functions/v1/webhook-worker` at least once per minute with `X-Internal-Token: <INTERNAL_FUNCTION_TOKEN>` and an `apikey` header if required by your gateway. Never place this token in the frontend.\n9. Configure the dashboard's environment variables and deploy the static Vite app.
-7. Configure the dashboard's environment variables and deploy the static Vite app.
-8. Create a test workspace, add a public help URL you control, crawl it, verify approved memory retrieval, and test Meta messages with a test phone before production rollout.
+6. Configure the Meta app's WhatsApp webhook callback to `<SUPABASE_URL>/functions/v1/meta-webhook`, subscribe to WhatsApp message fields, and use the configured verify token.
+7. Schedule a trusted server-side POST to `<SUPABASE_URL>/functions/v1/webhook-worker` at least once per minute with `X-Internal-Token: <INTERNAL_FUNCTION_TOKEN>` and an `apikey` header if required by your gateway. Never place this token in the frontend.
+8. Configure the dashboard's environment variables and deploy the static Vite app.
+9. Create a test workspace, add a public help URL you control, crawl it, verify approved memory retrieval, and test Meta messages with a test phone before production rollout.
 
 ## Important deployment safety notes
 - The crawler accepts only explicit tenant-submitted URLs, follows same-host links only when that scope is selected, limits page size/count, validates redirects and DNS answers, and does not perform general internet search. For high-assurance production, route crawling through an egress proxy that enforces destination IP policy at connection time; DNS preflight alone cannot fully eliminate DNS-rebinding races.
