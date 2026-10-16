@@ -67,6 +67,7 @@ export default function App() {
   const [memoryText, setMemoryText] = useState("");
   const [memoryType, setMemoryType] = useState("business_rule");
   const [memoryConversationId, setMemoryConversationId] = useState("");
+  const [memorySourceId, setMemorySourceId] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactOptIn, setContactOptIn] = useState(false);
@@ -241,6 +242,12 @@ export default function App() {
     event.preventDefault(); if (!supabase || !memoryConversationId) return; setBusy(true);
     const { data, error } = await supabase.functions.invoke("suggest-memory", { body: { tenant_id: tenantId, conversation_id: memoryConversationId } });
     setBusy(false); setNotice(error ? error.message : data?.error ?? data?.message ?? "Memory suggestions created."); await loadWorkspace();
+  }
+
+  async function suggestSourceMemory(event: FormEvent) {
+    event.preventDefault(); if (!supabase || !memorySourceId) return; setBusy(true);
+    const { data, error } = await supabase.functions.invoke("suggest-source-memory", { body: { tenant_id: tenantId, source_id: memorySourceId } });
+    setBusy(false); setNotice(error ? (data?.error ?? error.message) : data?.error ?? data?.message ?? "Website memory suggestions created."); await loadWorkspace();
   }
 
   async function deleteMemory(memoryId: string) {
@@ -438,6 +445,7 @@ export default function App() {
       </section>}
       {view === "AI memory" && <section className="content"><PageHeading eyebrow="CURATED LEARNING" title="AI memory" description="Persistent business memory is curated and approved by your team; the model does not retrain itself."/>
         {<form className="panel form-panel" onSubmit={suggestMemory}><h2>Learn from a resolved conversation</h2><p className="muted small">AI extracts reusable business knowledge for review. Customer-specific or sensitive details must not become memory, and suggestions are never auto-approved.</p><div className="form-actions"><select value={memoryConversationId} onChange={(e)=>setMemoryConversationId(e.target.value)} required><option value="">Select resolved conversation…</option>{conversations.filter(c=>c.status==="resolved").map(c=><option key={c.id} value={c.id}>{c.contacts?.display_name||c.contacts?.phone_e164||c.id}</option>)}</select><button className="secondary-button" disabled={busy||!conversations.some(c=>c.status==="resolved")}><Sparkles size={15}/> Suggest memory</button></div></form>}
+        {isAdmin&&<form className="panel form-panel" onSubmit={suggestSourceMemory}><h2>Learn from an indexed website</h2><p className="muted small">Create reviewable memory candidates from the pages already crawled. Only distinct, readable content is accepted; nothing is approved automatically.</p><div className="form-actions"><select value={memorySourceId} onChange={(e)=>setMemorySourceId(e.target.value)} required><option value="">Select indexed source…</option>{sources.filter(source=>source.status==="indexed").map(source=><option key={source.id} value={source.id}>{source.display_name} — {source.submitted_url}</option>)}</select><button className="secondary-button" disabled={busy||!sources.some(source=>source.status==="indexed")}><Sparkles size={15}/> Suggest from website</button></div></form>}
         {isAdmin&&<form className="panel form-panel" onSubmit={addMemory}><h2>Add business memory</h2><div className="field"><label>Title *</label><input value={memoryTitle} onChange={(e)=>setMemoryTitle(e.target.value)} required maxLength={200} placeholder="e.g. Standard delivery window"/></div><div className="field"><label>Memory / rule *</label><textarea value={memoryText} onChange={(e)=>setMemoryText(e.target.value)} required maxLength={6000} rows={3} placeholder="Write a verified fact or policy that the assistant should remember."/></div><div className="form-actions"><select value={memoryType} onChange={(e)=>setMemoryType(e.target.value)}><option value="business_rule">Business rule</option><option value="business_preference">Business preference</option><option value="confirmed_correction">Confirmed correction</option><option value="resolved_issue">Resolved issue</option></select><button className="primary-button" disabled={busy}><Plus size={16}/> Add to review</button></div></form>}
         <div className="section-header"><div><h2>Memory items</h2><p>Only approved items are included in AI retrieval.</p></div><span className="queue-count">{memories.filter(m=>m.status==="needs_review"||m.status==="suggested").length} awaiting review</span></div><div className="memory-list">{memories.length===0?<Empty icon={<Sparkles size={24}/>} title="No memory items" text="Add verified business knowledge to get started."/>:memories.map(m=><div className="memory-row" key={m.id}><div className="memory-symbol"><Sparkles size={18}/></div><div className="memory-copy"><strong>{m.title}</strong><p>{m.memory_text}</p><div className="inline-status"><Status status={m.status}/><span>{m.memory_type.replaceAll("_"," ")}</span></div></div><div className="memory-actions">{isAdmin&&(m.status!=="approved"?<button className="secondary-button" onClick={()=>void reviewMemory(m,true)}><Check size={15}/> Approve</button>:<button className="secondary-button" onClick={()=>void reviewMemory(m,false)}>Archive / reject</button>)}{isAdmin&&<button className="icon-button" onClick={()=>void deleteMemory(m.id)} aria-label="Delete memory"><Trash2 size={15}/></button>}</div></div>)}</div>
       </section>}
