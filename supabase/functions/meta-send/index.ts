@@ -16,10 +16,12 @@ Deno.serve(async (request) => {
     const { data: integration, error: integrationError } = await auth.admin.from("meta_integrations").select("*").eq("tenant_id", tenantId).eq("enabled", true).maybeSingle();
     if (integrationError || !integration?.encrypted_access_token || !integration.phone_number_id) return json({ error: "Official Meta Cloud API is not configured and enabled for this workspace." }, 409);
     const { data: contact } = await auth.admin.from("contacts").select("id,consent_status").eq("tenant_id", tenantId).eq("phone_e164", to).maybeSingle();
-    if (!contact || contact.consent_status !== "opted_in") return json({ error: "Recipient must exist in contacts and have recorded opt-in consent." }, 403);
+    if (!contact) return json({ error: "Recipient must exist in this workspace's contacts." }, 404);
+    if (contact.consent_status === "opted_out") return json({ error: "This contact opted out and is suppressed." }, 403);
 
     let payload: any;
     if (type === "template") {
+      if (contact.consent_status !== "opted_in") return json({ error: "Template messages require recorded opt-in consent." }, 403);
       const name = String(body.template_name ?? "");
       const language = String(body.language_code ?? "en");
       if (!/^[a-z0-9_]{1,512}$/.test(name) || !/^[a-zA-Z_]{2,10}(-[a-zA-Z0-9]{2,10})?$/.test(language)) return json({ error: "Invalid template name or language code." }, 400);
