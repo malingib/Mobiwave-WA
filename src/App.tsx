@@ -315,14 +315,14 @@ export default function App() {
 
   async function resolveConversation(conversation: Conversation) {
     if (!supabase) return;
-    const { error } = await supabase.from("conversations").update({ status: "resolved", bot_paused: true, updated_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", tenantId);
-    setNotice(error ? error.message : "Conversation resolved. You can now suggest reusable business memory."); await loadWorkspace();
+    const { data, error } = await supabase.functions.invoke("conversation-control", { body: { tenant_id: tenantId, conversation_id: conversation.id, action: "resolve" } });
+    setNotice(error ? error.message : data?.error ?? "Conversation resolved. You can now suggest reusable business memory."); await loadWorkspace();
   }
 
   async function handoffConversation(conversation: Conversation, pause: boolean) {
     if (!supabase) return;
-    const { error } = await supabase.from("conversations").update({ bot_paused: pause, status: pause ? "pending" : "open", updated_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", tenantId);
-    setNotice(error ? error.message : pause ? "Bot paused for this conversation." : "Bot resumed for this conversation."); await loadWorkspace();
+    const { data, error } = await supabase.functions.invoke("conversation-control", { body: { tenant_id: tenantId, conversation_id: conversation.id, action: pause ? "pause_bot" : "resume_bot" } });
+    setNotice(error ? error.message : data?.error ?? (pause ? "Bot paused for this conversation." : "Bot resumed for this conversation.")); await loadWorkspace();
   }
 
   async function saveMeta(event: FormEvent) {
