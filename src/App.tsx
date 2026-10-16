@@ -1,9 +1,9 @@
 import { useMemo, useState, type FormEvent } from "react";
 import {
-  Activity, ArrowDownToLine, ArrowUpRight, Bot, BookOpen, Check,
+  Activity, ArrowUpRight, Bot, BookOpen, Check,
   ChevronDown, CircleHelp, Clock3, FileText, Globe2, LayoutDashboard,
   Link2, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search,
-  Settings2, ShieldCheck, Sparkles, Trash2, UploadCloud, Users, X,
+  Settings2, ShieldCheck, Sparkles, Trash2, Users, X,
 } from "lucide-react";
 
 type Source = {
