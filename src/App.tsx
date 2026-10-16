@@ -18,6 +18,7 @@ type Conversation = { id: string; status: string; bot_paused: boolean; last_mess
 type ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };
 type ChatMessage = { id: string; direction: string; actor_type: string; body?: string; status: string; created_at: string };
 type Settings = { ai_enabled: boolean; system_instructions: string; context_retention_days: number; max_ai_reply_tokens: number; human_handoff_enabled: boolean };
+type UsageStats = { messages: number; aiRequests: number; messageLimit: number; aiLimit: number };
 
 const views: { label: View; icon: typeof LayoutDashboard; section?: string }[] = [
   { label: "Overview", icon: LayoutDashboard, section: "WORKSPACE" },
@@ -77,6 +78,7 @@ export default function App() {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [apiKeyName, setApiKeyName] = useState("Production integration");
   const [newApiKey, setNewApiKey] = useState("");
+  const [usageStats, setUsageStats] = useState<UsageStats>({ messages: 0, aiRequests: 0, messageLimit: 1000, aiLimit: 500 });
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiAnswer, setAiAnswer] = useState<any>(null);
 
@@ -106,10 +108,11 @@ export default function App() {
   const loadWorkspace = useCallback(async () => {
     if (!supabase || !tenantId) {
       setSources([]); setMemories([]); setContacts([]); setTemplates([]); setCampaigns([]); setConversations([]);
-      setMetaStatus(null); setApiKeys([]); return;
+      setMetaStatus(null); setApiKeys([]); setUsageStats({ messages: 0, aiRequests: 0, messageLimit: 1000, aiLimit: 500 }); return;
     }
     setLoading(true);
-    const [s, m, st, c, t, ca, co, mi, ak] = await Promise.all([
+    const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
+    const [s, m, st, c, t, ca, co, mi, ak, ul, um, ua] = await Promise.all([
       supabase.from("knowledge_sources").select("id,submitted_url,display_name,scope,status,last_successful_at,last_error_code,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       supabase.from("ai_memory_items").select("id,title,memory_text,memory_type,status,updated_at,source_reference").eq("tenant_id", tenantId).order("updated_at", { ascending: false }),
       supabase.from("tenant_settings").select("ai_enabled,system_instructions,context_retention_days,max_ai_reply_tokens,human_handoff_enabled").eq("tenant_id", tenantId).maybeSingle(),
@@ -119,6 +122,9 @@ export default function App() {
       supabase.from("conversations").select("id,status,bot_paused,last_message_at,contacts(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
       supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at").eq("tenant_id", tenantId).maybeSingle(),
       supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+      supabase.from("tenant_usage_limits").select("monthly_message_limit,monthly_ai_request_limit").eq("tenant_id", tenantId).maybeSingle(),
+      supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString()),
+      supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "ai_request").gte("occurred_at", monthStart.toISOString()),
     ]);
     if (s.error) setNotice("Could not load workspace data: " + s.error.message);
     setSources((s.data ?? []) as Source[]);
@@ -130,6 +136,7 @@ export default function App() {
     setConversations((co.data ?? []) as unknown as Conversation[]);
     setMetaStatus(mi.data);
     setApiKeys((ak.data ?? []) as ApiKey[]);
+    setUsageStats({ messages: um.count ?? 0, aiRequests: ua.count ?? 0, messageLimit: ul.data?.monthly_message_limit ?? 1000, aiLimit: ul.data?.monthly_ai_request_limit ?? 500 });
     setLoading(false);
   }, [tenantId]);
 
@@ -374,7 +381,7 @@ export default function App() {
       {view === "Overview" && <section className="content">
         <PageHeading eyebrow="WORKSPACE" title="Overview" description="Manage official WhatsApp messaging, approved knowledge and optional AI support." />
         <div className="callout"><div className="callout-icon"><ShieldCheck size={20} /></div><div><strong>Your sources. Your AI. Your customer data.</strong><p>The assistant answers only from your approved sources and memories. It does not search the wider internet, and AI can be paused without interrupting human messaging.</p></div></div>
-        <div className="metric-grid"><Metric icon={<Globe2 size={18}/>} label="Knowledge sources" value={sources.length} note="Tenant-submitted only"/><Metric icon={<BookOpen size={18}/>} label="Indexed pages" value={sources.filter(s=>s.status==="indexed").length} note="Ready for retrieval"/><Metric icon={<Sparkles size={18}/>} label="Approved memory" value={memories.filter(m=>m.status==="approved").length} note="Curated business knowledge"/><Metric icon={<MessageCircle size={18}/>} label="Conversations" value={conversations.length} note="Shared inbox"/></div>
+        <div className="metric-grid"><Metric icon={<Globe2 size={18}/>} label="Knowledge sources" value={sources.length} note="Tenant-submitted only"/><Metric icon={<BookOpen size={18}/>} label="Indexed pages" value={sources.filter(s=>s.status==="indexed").length} note="Ready for retrieval"/><Metric icon={<Sparkles size={18}/>} label="Approved memory" value={memories.filter(m=>m.status==="approved").length} note="Curated business knowledge"/><Metric icon={<MessageCircle size={18}/>} label="Conversations" value={conversations.length} note="Shared inbox"/><Metric icon={<Send size={18}/>} label="Messages this month" value={usageStats.messages} note={"Limit: "+usageStats.messageLimit}/><Metric icon={<Bot size={18}/>} label="AI requests this month" value={usageStats.aiRequests} note={"Limit: "+usageStats.aiLimit}/></div>
         <div className="section-header"><div><h2>Launch checklist</h2><p>Complete configuration before sending messages to real customers.</p></div></div>
         <div className="checklist"><SetupRow done label="Workspace and tenant isolation" detail="Each workspace has separate data and access policies."/><SetupRow done={sources.some(s=>s.status==="indexed")} label="Build the knowledge base" detail="Add approved help pages and crawl only the URLs you authorize."/><SetupRow done={Boolean(metaStatus?.verified && metaStatus?.enabled)} label="Connect official Meta Cloud API" detail="Save credentials securely, verify access and sync approved templates."/><SetupRow done={settings.ai_enabled} label="Enable optional AI replies" detail="Review source content and business memories before enabling automation."/><SetupRow done={contacts.some(c=>c.consent_status==="opted_in")} label="Record customer consent" detail="Only opted-in contacts can receive campaign templates." /></div>
       </section>}
