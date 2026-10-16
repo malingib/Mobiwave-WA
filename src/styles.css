@@ -21,3 +21,21 @@ a{color:var(--green);text-decoration:none}a:hover{text-decoration:underline}.bra
 
 .webhook-create{border-top:1px solid var(--line);padding-top:16px;margin-top:16px}.webhook-event-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 12px;margin:2px 0 16px}.webhook-event-options .checkbox-line{margin:4px 0;font-size:10px}.webhook-create .form-grid{gap:0 14px}
 @media(max-width:720px){.webhook-event-options{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+/* Keep application chrome fixed while only the active page scrolls. */
+html,body,#root{height:100%;min-height:100%;overflow:hidden}
+.app-shell{height:100dvh;min-height:0;overflow:hidden}
+.sidebar{height:100dvh;min-height:0;overflow-y:auto;overscroll-behavior:contain;position:sticky;top:0}
+.main{height:100dvh;min-height:0;overflow:hidden}
+.topbar{flex:0 0 69px;position:relative;z-index:2}
+.content{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.footer{flex:0 0 auto}
+.profile-summary{display:flex;align-items:center;gap:12px;padding:0 0 20px;margin-bottom:20px;border-bottom:1px solid var(--line)}
+.profile-summary>div:last-child{min-width:0}
+.profile-summary strong{display:block;font-size:13px;color:var(--text)}
+.profile-summary span{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
+.profile-avatar.large{width:46px;height:46px;font-size:15px;flex-shrink:0}
+.profile-form{max-width:760px}
+.profile-form .field input[readonly]{background:#f7f9f8;color:#68766f;cursor:not-allowed}
+@media(max-width:720px){.topbar{flex-basis:59px}.sidebar{height:100dvh}.content{scrollbar-gutter:auto}}
