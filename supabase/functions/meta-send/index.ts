@@ -19,6 +19,12 @@ Deno.serve(async (request) => {
     if (!contact) return json({ error: "Recipient must exist in this workspace's contacts." }, 404);
     if (contact.consent_status === "opted_out") return json({ error: "This contact opted out and is suppressed." }, 403);
 
+    const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
+    const [{ data: limits }, { count: used }] = await Promise.all([
+      auth.admin.from("tenant_usage_limits").select("monthly_message_limit").eq("tenant_id", tenantId).maybeSingle(),
+      auth.admin.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString()),
+    ]);
+    if ((used ?? 0) >= (limits?.monthly_message_limit ?? 1000)) return json({ error: "This workspace has reached its monthly message limit." }, 429);
     let payload: any;
     if (type === "template") {
       if (contact.consent_status !== "opted_in") return json({ error: "Template messages require recorded opt-in consent." }, 403);
