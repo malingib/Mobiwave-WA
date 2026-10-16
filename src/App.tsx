@@ -14,7 +14,8 @@ type Memory = { id: string; title: string; memory_text: string; memory_type: str
 type Contact = { id: string; phone_e164: string; display_name?: string; consent_status: string; consent_source?: string };
 type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string };
 type Campaign = { id: string; name: string; status: string; created_at: string; template_id?: string };
-type Conversation = { id: string; status: string; bot_paused: boolean; last_message_at?: string; contacts?: { display_name?: string; phone_e164: string } };\ntype ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };
+type Conversation = { id: string; status: string; bot_paused: boolean; last_message_at?: string; contacts?: { display_name?: string; phone_e164: string } };
+type ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };
 type ChatMessage = { id: string; direction: string; actor_type: string; body?: string; status: string; created_at: string };
 type Settings = { ai_enabled: boolean; system_instructions: string; context_retention_days: number; max_ai_reply_tokens: number; human_handoff_enabled: boolean };
 
@@ -72,7 +73,10 @@ export default function App() {
   const [metaPhoneId, setMetaPhoneId] = useState("");
   const [metaWabaId, setMetaWabaId] = useState("");
   const [metaToken, setMetaToken] = useState("");
-  const [metaStatus, setMetaStatus] = useState<any>(null);\n  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);\n  const [apiKeyName, setApiKeyName] = useState("Production integration");\n  const [newApiKey, setNewApiKey] = useState("");
+  const [metaStatus, setMetaStatus] = useState<any>(null);
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
+  const [apiKeyName, setApiKeyName] = useState("Production integration");
+  const [newApiKey, setNewApiKey] = useState("");
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiAnswer, setAiAnswer] = useState<any>(null);
 
