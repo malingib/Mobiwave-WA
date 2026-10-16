@@ -143,6 +143,7 @@ export default function App() {
     setConversations((co.data ?? []) as unknown as Conversation[]);
     setMetaStatus(mi.data);
     setApiKeys((ak.data ?? []) as ApiKey[]);
+    setWebhooks((wh.data ?? []) as TenantWebhook[]);
     setUsageStats({ messages: um.count ?? 0, aiRequests: ua.count ?? 0, messageLimit: ul.data?.monthly_message_limit ?? 1000, aiLimit: ul.data?.monthly_ai_request_limit ?? 500 });
     setLoading(false);
   }, [tenantId]);
