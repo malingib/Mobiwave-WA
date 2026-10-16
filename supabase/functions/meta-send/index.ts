@@ -55,6 +55,7 @@ Deno.serve(async (request) => {
       actor_type: "agent", message_type: type, body: type === "text" ? payload.text.body : "[Template: " + payload.template.name + "]",
       status: "sent", meta_message_id: metaMessageId, metadata: { meta_status: "accepted" },
     });
+    await auth.admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "message_submitted", quantity: 1, reference_id: metaMessageId ?? null, metadata: { channel: "agent" } });
     return json({ ok: true, message_id: metaMessageId ?? null, status: "sent_to_meta" });
   } catch (error) {
     const message = errorMessage(error);
