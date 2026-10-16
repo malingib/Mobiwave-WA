@@ -98,7 +98,20 @@ function htmlToText(html: string): string {
     .replace(/\n{3,}/g, "\n\n").trim();
 }
 function pageTitle(html: string, fallback: string): string {
-  return html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]+>/g, "").trim().slice(0, 250) || fallback;
+  const raw = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]+>/g, "").trim();
+  return (raw || fallback).slice(0, 250);
+}
+function metadataText(html: string): string {
+  const values: string[] = [];
+  for (const match of html.matchAll(/<meta\b[^>]*(?:name|property)\s*=\s*["'](description|og:description|twitter:description|og:title|twitter:title)["'][^>]*>/gi)) {
+    const content = match[0].match(/content\s*=\s*["']([^"']+)["']/i)?.[1];
+    if (content) values.push(content.replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").trim());
+  }
+  for (const match of html.matchAll(/<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi)) {
+    const heading = htmlToText(match[1]);
+    if (heading) values.push(heading);
+  }
+  return [...new Set(values)].join("\n");
 }
 function linksFromHtml(html: string, base: URL, host: string): string[] {
   const matches = [...html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi)].map((m) => m[1]);
@@ -204,7 +217,7 @@ Deno.serve(async (request) => {
 
     // Respect robots.txt for the submitted host. Crawl is restricted to submitted URL or exact same host.
     let robotsDisallowAll = false;
-    const robotsRules: { allow: boolean; path: string }[] = [];
+    const robotsSitemaps: string[] = [];
     try {
       const robotsUrl = new URL("/robots.txt", startUrl.origin);
       const { response } = await safeFetch(robotsUrl.toString(), originHost, "same_domain");
@@ -213,15 +226,19 @@ Deno.serve(async (request) => {
       for (const line of robotsText.split(/\r?\n/)) {
         const [key, ...rest] = line.split(":");
         const value = rest.join(":").trim();
+        if (key?.trim().toLowerCase() === "sitemap" && value) robotsSitemaps.push(value);
         if (key?.trim().toLowerCase() === "user-agent") active = value === "*" || value.toLowerCase() === "mobiWaveknowledgebot";
         if (active && key?.trim().toLowerCase() === "disallow" && (value === "/" || value === "")) robotsDisallowAll = value === "/";
       }
     } catch { /* robots unavailable: continue only with explicit submitted scope and bounded fetches */ }
     if (robotsDisallowAll) throw new Error("robots.txt disallows crawling this host.");
     if (scope === "same_domain") {
-      for (const sitemapPage of await discoverSitemapPages(startUrl, originHost)) {
+      for (const sitemapPage of [...robotsSitemaps, ...await discoverSitemapPages(startUrl, originHost)]) {
         if (queue.length >= MAX_PAGES) break;
-        if (!queue.includes(sitemapPage)) queue.push(sitemapPage);
+        try {
+          const parsed = new URL(sitemapPage, startUrl);
+          if (parsed.hostname === originHost && !/\.xml(?:$|[?#])/i.test(parsed.pathname) && !queue.includes(parsed.toString())) queue.push(parsed.toString());
+        } catch { /* ignore invalid sitemap declarations */ }
       }
     }
 
@@ -238,12 +255,23 @@ Deno.serve(async (request) => {
       if (buffer.byteLength > MAX_BODY_BYTES) throw new Error("Fetched page exceeded the 1.5 MB limit.");
       const rawText = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
       const html = (response.headers.get("content-type") ?? "").includes("text/html");
-      const extracted = html ? htmlToText(rawText) : rawText.trim();
+      let extracted = html ? htmlToText(rawText) : rawText.trim();
+      if (html && extracted.length < 300) {
+        const metadata = metadataText(rawText);
+        if (metadata) extracted = [extracted, metadata].filter(Boolean).join("\n\n").trim();
+      }
       // Discover same-host links before skipping thin JavaScript app-shell pages.
       // Otherwise a nearly empty homepage prevents the crawler reaching readable routes.
       if (scope === "same_domain" && html) {
         for (const link of linksFromHtml(rawText, finalUrl, originHost)) {
           if (!visited.has(link) && !queue.includes(link) && queue.length < MAX_PAGES) queue.push(link);
+        }
+        if (visited.size === 1 && queue.length === 0) {
+          const commonPaths = ["/about", "/about-us", "/services", "/products", "/solutions", "/pricing", "/contact", "/contact-us", "/resources", "/blog", "/industries", "/bulk-sms", "/services/bulk-sms", "/services/whatsapp", "/api"];
+          for (const path of commonPaths) {
+            if (queue.length >= MAX_PAGES) break;
+            queue.push(new URL(path, startUrl.origin).toString());
+          }
         }
       }
       if (extracted.length < 80) continue;
