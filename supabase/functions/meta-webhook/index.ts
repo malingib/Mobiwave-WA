@@ -97,7 +97,7 @@ Deno.serve(async (request) => {
         try { ai = JSON.parse(aiPayload.choices?.[0]?.message?.content ?? "{}"); } catch { ai = {}; }
         const answer = typeof ai.answer === "string" ? ai.answer.trim().slice(0, 3000) : "";
         const evidence = Array.isArray(ai.evidence) ? ai.evidence.filter((v: unknown) => typeof v === "string").slice(0, 6) : [];
-        if (ai.handoff === true || !answer || !evidence.length) {
+        if (ai.handoff === true || !answer || !evidence.some((ref: string) => prompt.allowedEvidence.includes(ref))) {
           if (settings.human_handoff_enabled) await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
           continue;
         }
