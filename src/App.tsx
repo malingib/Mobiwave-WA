@@ -129,6 +129,7 @@ export default function App() {
     setCampaigns((ca.data ?? []) as Campaign[]);
     setConversations((co.data ?? []) as unknown as Conversation[]);
     setMetaStatus(mi.data);
+    setApiKeys((ak.data ?? []) as ApiKey[]);
     setLoading(false);
   }, [tenantId]);
 
