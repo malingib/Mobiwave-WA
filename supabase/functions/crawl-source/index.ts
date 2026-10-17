@@ -321,7 +321,7 @@ Deno.serve(async (request) => {
       if (extracted.length < 180) { thinPagesSkipped++; continue; }
       pagesReadable++;
       const title = html ? pageTitle(rawText, finalUrl.pathname || finalUrl.hostname) : finalUrl.pathname || finalUrl.hostname;
-      const normalizedContent = extracted.toLowerCase().replace(/https?:\\/\\/\\S+/g, " ").replace(/[^\\p{L}\\p{N}]+/gu, " ").replace(/\\s+/g, " ").trim();
+      const normalizedContent = extracted.toLowerCase().replace(/https?:\/\/\S+/g, " ").replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
       const hash = await sha256(normalizedContent);
       if (seenContentHashes.has(hash)) { duplicatesSkipped++; continue; }
       seenContentHashes.add(hash);
