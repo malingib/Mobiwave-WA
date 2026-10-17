@@ -8,6 +8,7 @@ import {
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import LandingPage from "./LandingPage";
 import PricingPage from "./PricingPage";
+import { ErrorPage } from "./ErrorPages";
 
 type View = "Overview" | "Knowledge sources" | "AI memory" | "Chatbot settings" | "Shared inbox" | "Contacts" | "Campaigns" | "Integrations" | "Profile" | "Settings";
 type Tenant = { id: string; name: string; slug: string; role: string };
@@ -476,8 +477,11 @@ export default function App() {
   const approvedTemplates = templates.filter((t) => t.meta_status === "approved");
 
   // Public routes are available without authentication; account access starts at /login.
-  if (window.location.pathname === "/pricing" || window.location.pathname === "/pricing/") return <PricingPage />;
-  if (window.location.pathname === "/") return <LandingPage />;
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (pathname === "/pricing") return <PricingPage />;
+  if (pathname === "/") return <LandingPage />;
+  const knownRoute = pathname === "/login" || ["/dashboard", "/admin", "/workspace", "/settings"].some((prefix) => pathname === prefix || pathname.startsWith(prefix + "/"));
+  if (!knownRoute) return <ErrorPage kind="not-found" />;
 
   if (!isSupabaseConfigured) return <div className="auth-screen"><div className="auth-card"><Brand /><h1>Connect your workspace</h1><p>Configure the Supabase URL and publishable/anon key in <code>.env.local</code> before running the dashboard.</p><pre>VITE_SUPABASE_URL=https://your-project.supabase.co{"\n"}VITE_SUPABASE_ANON_KEY=your-publishable-key</pre><a href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md">Deployment guide <ArrowUpRight size={14} /></a></div></div>;
   if (authLoading) return <div className="auth-screen"><LoaderCircle className="spin" /><span>Loading secure session…</span></div>;
