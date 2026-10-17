@@ -7,6 +7,10 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_VERSION") || "v23.0";
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+async function sha256(value: string) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+  return [...digest].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
 Deno.serve(async (request) => {
@@ -16,8 +20,10 @@ Deno.serve(async (request) => {
     const mode = url.searchParams.get("hub.mode");
     const token = url.searchParams.get("hub.verify_token");
     const challenge = url.searchParams.get("hub.challenge");
-    const expected = Deno.env.get("META_WEBHOOK_VERIFY_TOKEN");
-    if (mode === "subscribe" && expected && token === expected && challenge) return new Response(challenge, { status: 200, headers: { "Content-Type": "text/plain" } });
+    const legacyExpected = Deno.env.get("META_WEBHOOK_VERIFY_TOKEN");
+    const tokenHash = token ? await sha256(token) : "";
+    const { data: matchingTenant } = tokenHash ? await admin.from("meta_integrations").select("tenant_id").eq("webhook_verify_token_hash", tokenHash).limit(1).maybeSingle() : { data: null };
+    if (mode === "subscribe" && challenge && ((matchingTenant && tokenHash) || (legacyExpected && token === legacyExpected))) return new Response(challenge, { status: 200, headers: { "Content-Type": "text/plain" } });
     return new Response("Forbidden", { status: 403 });
   }
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
