@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+
+# Keep authentication and application areas out of search results.
+Disallow: /login
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /workspace
+Disallow: /settings
+Disallow: /api/
+
+Sitemap: https://wap.mobiwave.co.ke/sitemap.xml
