@@ -84,6 +84,7 @@ export default function App() {
   const [metaWabaId, setMetaWabaId] = useState("");
   const [metaToken, setMetaToken] = useState("");
   const [metaStatus, setMetaStatus] = useState<any>(null);
+  const [metaWebhookToken, setMetaWebhookToken] = useState("");
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [apiKeyName, setApiKeyName] = useState("Production integration");
   const [newApiKey, setNewApiKey] = useState("");
@@ -350,6 +351,23 @@ export default function App() {
     if (!supabase) return;
     const { data, error } = await supabase.functions.invoke("conversation-control", { body: { tenant_id: tenantId, conversation_id: conversation.id, action: pause ? "pause_bot" : "resume_bot" } });
     setNotice(error ? error.message : data?.error ?? (pause ? "Bot paused for this conversation." : "Bot resumed for this conversation.")); await loadWorkspace();
+  }
+
+  async function copyIntegrationValue(value: string, label: string) {
+    try { await navigator.clipboard.writeText(value); setNotice(label + " copied."); }
+    catch { setNotice("Clipboard unavailable. Select and copy the value manually."); }
+  }
+
+  async function generateMetaWebhookToken() {
+    if (!supabase || !tenantId) return;
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    const raw = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+    setBusy(true);
+    const { data, error } = await supabase.functions.invoke("meta-webhook-config", { body: { tenant_id: tenantId, verification_token: raw } });
+    setBusy(false);
+    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not configure Meta webhook verification."); return; }
+    setMetaWebhookToken(raw);
+    setNotice("Verification token saved securely. Copy it now and paste the same value into Meta.");
   }
 
   async function saveMeta(event: FormEvent) {
