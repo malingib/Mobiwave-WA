@@ -1,6 +1,6 @@
 import { requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { encryptToken } from "../_shared/meta.ts";
-import { validateWebhookUrl } from "../_shared/customer-webhooks.ts";
+import { validateWebhookUrl, deliverWebhook } from "../_shared/customer-webhooks.ts";
 import { corsHeaders, json, errorMessage } from "../_shared/cors.ts";
 
 const allowedEvents = new Set(["message.inbound","message.status","message.outbound","conversation.updated","campaign.completed","knowledge.indexed"]);
@@ -32,6 +32,30 @@ Deno.serve(async (request) => {
     }
     const webhookId = String(body.webhook_id ?? "");
     if (!webhookId) return json({ error: "webhook_id is required." }, 400);
+    if (action === "test") {
+      const { data: hook, error: hookError } = await auth.admin.from("tenant_webhooks").select("id,enabled").eq("tenant_id", tenantId).eq("id", webhookId).maybeSingle();
+      if (hookError) throw hookError;
+      if (!hook || !hook.enabled) return json({ error: "Enable this webhook before sending a test event." }, 409);
+      const { data: delivery, error: insertError } = await auth.admin.from("webhook_deliveries").insert({
+        tenant_id: tenantId, webhook_id: webhookId, event_type: "webhook.test",
+        payload: { test: true, message: "MobiWave webhook test event", tenant_id: tenantId, sent_at: new Date().toISOString() },
+        status: "queued", attempt_count: 0, next_attempt_at: new Date().toISOString(),
+      }).select("id").single();
+      if (insertError) throw insertError;
+      const result = await deliverWebhook(auth.admin, delivery.id);
+      return result.ok ? json({ ok: true, delivery_id: delivery.id, message: "Test event delivered successfully." }) : json({ error: result.error ?? "Test event delivery failed.", delivery_id: delivery.id }, 502);
+    }
+    if (action === "retry") {
+      const deliveryId = String(body.delivery_id ?? "");
+      if (!deliveryId) return json({ error: "delivery_id is required." }, 400);
+      const { data: delivery, error: lookupError } = await auth.admin.from("webhook_deliveries").select("id,status").eq("tenant_id", tenantId).eq("id", deliveryId).maybeSingle();
+      if (lookupError) throw lookupError;
+      if (!delivery || !["failed", "dead"].includes(delivery.status)) return json({ error: "Only failed or dead deliveries can be retried." }, 409);
+      const { error: resetError } = await auth.admin.from("webhook_deliveries").update({ status: "queued", next_attempt_at: new Date().toISOString(), last_error: null }).eq("tenant_id", tenantId).eq("id", deliveryId);
+      if (resetError) throw resetError;
+      const result = await deliverWebhook(auth.admin, deliveryId);
+      return result.ok ? json({ ok: true, delivery_id: deliveryId, message: "Delivery retried successfully." }) : json({ error: result.error ?? "Retry failed.", delivery_id: deliveryId }, 502);
+    }
     if (action === "disable" || action === "enable") {
       const { error } = await auth.admin.from("tenant_webhooks").update({ enabled: action === "enable", updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", webhookId);
       if (error) throw error;
