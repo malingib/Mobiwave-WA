@@ -24,6 +24,7 @@ export default function LandingPage() {
         <nav className="marketing-nav-links" aria-label="Main navigation">
           <a href="#features">Features</a>
           <a href="#how-it-works">How it works</a>
+          <a href="/pricing">Pricing</a>
           <a href="#security">Security</a>
           <a href="#faq">FAQs</a>
         </nav>
