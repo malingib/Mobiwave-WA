@@ -309,3 +309,30 @@ details.panel[open]>summary{margin-bottom:16px}
 .mw-error-footer a{display:inline-flex;align-items:center;gap:5px;color:#6c7c74;text-decoration:none}
 .mw-error-footer a svg{transform:rotate(135deg)}
 @media(max-width:540px){.mw-error-top{min-height:72px}.mw-error-secure{font-size:10px}.mw-error-content{padding:55px 0 65px}.mw-error-footer{align-items:flex-start;justify-content:center;flex-direction:column;padding:15px 0}}
+
+
+/* Meta WhatsApp message pricing */
+.wa-meta-pricing{max-width:1160px;margin:0 auto;padding:70px 24px 76px}
+.wa-meta-pricing .marketing-section-heading{max-width:760px;margin:0 auto 30px;text-align:center}
+.wa-meta-pricing .marketing-section-heading>p{font-size:14px;line-height:1.8;color:#6c7c74}
+.wa-meta-rate-table-wrap{overflow-x:auto;border:1px solid #e4eae7;border-radius:12px;background:#fff}
+.wa-meta-rate-table{border-collapse:collapse;width:100%;min-width:650px;text-align:left}
+.wa-meta-rate-table th{font-size:10px;letter-spacing:.7px;text-transform:uppercase;color:#718079;background:#f6f9f7;padding:15px 18px}
+.wa-meta-rate-table td{padding:17px 18px;border-top:1px solid #e9eeeb;font-size:12px;line-height:1.65;color:#607168;vertical-align:top}
+.wa-meta-rate-table td:first-child{width:18%;color:#203b32}
+.wa-meta-rate-table td:last-child{width:25%;color:#0b6b58;white-space:normal}
+.wa-meta-rate-table td strong{font-size:13px;color:#173c31}
+.wa-meta-rate-table td small{display:block;color:#75847c;font-size:10px;line-height:1.55;margin-top:3px}
+.wa-meta-footnote{font-size:11px;line-height:1.8;color:#7b8881;margin:14px 2px 25px}
+.wa-meta-rules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:24px}
+.wa-meta-rules article{border:1px solid #e4eae7;border-radius:10px;background:#fff;padding:23px}
+.wa-meta-rules h3{font:800 15px Manrope,sans-serif;letter-spacing:-.2px;color:#173c31;margin:0 0 12px}
+.wa-meta-rules ul{padding-left:18px;margin:0;color:#6c7c74;font-size:12px;line-height:1.9}
+.wa-meta-source{display:flex;align-items:flex-start;gap:12px;background:#edf6f2;border:1px solid #dcece5;border-radius:10px;padding:17px 19px;margin-top:18px;color:#0b6b58}
+.wa-meta-source svg{flex:0 0 auto;margin-top:2px}
+.wa-meta-source p{margin:0;color:#526b60;font-size:11px;line-height:1.8}
+.wa-meta-source strong{color:#1b4e3d}
+.wa-meta-official{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:9px;font-size:11px;color:#829088;margin:18px 0 0}
+.wa-meta-official a{display:inline-flex;align-items:center;gap:4px;color:#0b6b58;font-weight:700;text-decoration:none}
+.wa-meta-official a:hover{text-decoration:underline}
+@media(max-width:650px){.wa-meta-pricing{padding:48px 18px}.wa-meta-rules{grid-template-columns:1fr}.wa-meta-rules article{padding:18px}.wa-meta-rate-table td{padding:14px}}
