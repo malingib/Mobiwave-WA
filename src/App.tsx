@@ -133,7 +133,7 @@ export default function App() {
     }
     setLoading(true);
     const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
-    const [s, m, st, c, t, ca, co, mi, ak, ul, um, ua, wh] = await Promise.all([
+    const results = await Promise.all([
       supabase.from("knowledge_sources").select("id,submitted_url,display_name,scope,status,last_successful_at,last_error_code,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       supabase.from("ai_memory_items").select("id,title,memory_text,memory_type,status,updated_at,source_reference").eq("tenant_id", tenantId).order("updated_at", { ascending: false }),
       supabase.from("tenant_settings").select("ai_enabled,system_instructions,context_retention_days,max_ai_reply_tokens,human_handoff_enabled").eq("tenant_id", tenantId).maybeSingle(),
@@ -147,8 +147,15 @@ export default function App() {
       supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString()),
       supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "ai_request").gte("occurred_at", monthStart.toISOString()),
       supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
-    ]);
-    if (s.error) setNotice("Could not load workspace data: " + s.error.message);
+    ]).catch((cause: unknown) => {
+      console.error("MobiWave WA workspace load failed:", cause);
+      setNotice("We could not load workspace data. Check your connection and refresh.");
+      setLoading(false);
+      return null;
+    });
+    if (!results) return;
+    const [s, m, st, c, t, ca, co, mi, ak, ul, um, ua, wh] = results;
+    if (s.error) setNotice("Could not load workspace data. Please refresh and try again.");
     setSources((s.data ?? []) as Source[]);
     setMemories((m.data ?? []) as Memory[]);
     if (st.data) setSettings(st.data as Settings);
