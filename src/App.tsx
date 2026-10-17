@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import {
-  Activity, ArrowUpRight, BookOpen, Bot, Check, ChevronDown, CircleHelp,
+  Activity, ArrowLeft, ArrowUpRight, BookOpen, Bot, Check, ChevronDown, CircleHelp,
   Globe2, LayoutDashboard, Link2, LogOut, MessageCircle, Plus, RefreshCw, Search,
-  Send, Settings2, ShieldCheck, Sparkles, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle,
+  Send, Settings2, ShieldCheck, Sparkles, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail,
 } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import LandingPage from "./LandingPage";
@@ -41,6 +41,8 @@ export default function App() {
   const [authMode, setAuthMode] = useState<"signin" | "signup">(() => new URLSearchParams(window.location.search).get("mode") === "signup" ? "signup" : "signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
   const [profileName, setProfileName] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [user, setUser] = useState<User | null>(null);
@@ -177,6 +179,17 @@ export default function App() {
     if (result.error) setNotice(result.error.message);
     else if (authMode === "signup" && !result.data.session) setNotice("Check your email to confirm your account, then sign in.");
     else setNotice(authMode === "signup" ? "Account created." : "Signed in.");
+  }
+
+  async function sendPasswordReset(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !email.trim()) { setNotice("Enter your account email address first."); return; }
+    setBusy(true); setNotice("");
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin + "/login",
+    });
+    setBusy(false);
+    setNotice(error ? error.message : "If an account exists for that email, a password-reset link will be sent.");
   }
 
   async function createWorkspace(event: FormEvent) {
@@ -420,7 +433,47 @@ export default function App() {
 
   if (!isSupabaseConfigured) return <div className="auth-screen"><div className="auth-card"><Brand /><h1>Connect your workspace</h1><p>Configure the Supabase URL and publishable/anon key in <code>.env.local</code> before running the dashboard.</p><pre>VITE_SUPABASE_URL=https://your-project.supabase.co{"\n"}VITE_SUPABASE_ANON_KEY=your-publishable-key</pre><a href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md">Deployment guide <ArrowUpRight size={14} /></a></div></div>;
   if (authLoading) return <div className="auth-screen"><LoaderCircle className="spin" /><span>Loading secure session…</span></div>;
-  if (!session || !user) { if (window.location.pathname !== "/login") return <LandingPage />; return <div className="auth-screen"><form className="auth-card" onSubmit={signIn}><Brand /><div className="auth-eyebrow">OFFICIAL META CLOUD API</div><h1>{authMode === "signin" ? "Welcome back" : "Create your account"}</h1><p>Manage your WhatsApp knowledge, customer conversations and AI automation.</p><label>Email address</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required placeholder="you@company.co.ke" /><label>Password</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} autoComplete={authMode === "signin" ? "current-password" : "new-password"} required placeholder="At least 8 characters" /><button className="primary-button full" disabled={busy}>{busy ? "Please wait…" : authMode === "signin" ? "Sign in" : "Create account"}</button><button type="button" className="auth-switch" onClick={() => { setAuthMode(authMode === "signin" ? "signup" : "signin"); setNotice(""); }}>{authMode === "signin" ? "New to MobiWave? Create an account" : "Already have an account? Sign in"}</button>{notice && <div className="inline-notice">{notice}</div>}<small>Use a workspace administrator account. Configure email confirmation and allowed redirect URLs in Supabase Auth.</small><a className="auth-switch" href="/">← Back to MobiWave WA</a></form></div>; }
+  if (!session || !user) {
+    if (window.location.pathname !== "/login") return <LandingPage />;
+    return <div className="auth-page">
+      <a className="auth-back-home" href="/" aria-label="Back to MobiWave WA home"><ArrowLeft size={15}/> Back to website</a>
+      <div className="auth-layout">
+        <section className="auth-story">
+          <a className="auth-story-brand" href="/" aria-label="MobiWave WA home"><span className="auth-story-mark"><MessageCircle size={22} strokeWidth={2.5}/></span><span><strong>MobiWave</strong><small>WA</small></span></a>
+          <div className="auth-story-content">
+            <div className="auth-story-kicker"><span/> WHATSAPP BUSINESS, IN ONE PLACE</div>
+            <h1>Better conversations.<br/><em>Stronger relationships.</em></h1>
+            <p>Bring your customer conversations, team inbox, approved campaigns and helpful automation into one clear workspace.</p>
+            <div className="auth-story-list">
+              <div><span><Check size={15}/></span><section><strong>A shared inbox for your team</strong><small>Keep customer conversations moving with human handoff.</small></section></div>
+              <div><span><Check size={15}/></span><section><strong>Messaging with safeguards</strong><small>Use official Meta Cloud API and recorded consent.</small></section></div>
+              <div><span><Check size={15}/></span><section><strong>Your business knowledge stays yours</strong><small>Workspace data is isolated and AI is always optional.</small></section></div>
+            </div>
+          </div>
+          <div className="auth-story-footer"><ShieldCheck size={15}/> Official Meta Cloud API connectivity <span>·</span> Built by MobiWave Innovations Ltd</div>
+        </section>
+        <section className="auth-form-side">
+          <form className="auth-form-card" onSubmit={forgotMode ? sendPasswordReset : signIn}>
+            <div className="auth-mobile-brand"><Brand /></div>
+            <div className="auth-form-topline"><span className="auth-eyebrow">{forgotMode ? "ACCOUNT RECOVERY" : authMode === "signin" ? "WELCOME BACK" : "GET STARTED"}</span><span className="auth-secure"><LockKeyhole size={13}/> Secure sign-in</span></div>
+            <h2>{forgotMode ? "Reset your password" : authMode === "signin" ? "Sign in to your workspace" : "Create your account"}</h2>
+            <p className="auth-form-description">{forgotMode ? "Enter the email address linked to your account and we’ll send a password-reset link if it exists." : authMode === "signin" ? "Pick up where your team left off." : "Create an account to set up your business workspace."}</p>
+            <label htmlFor="auth-email">Work email</label>
+            <div className="auth-input-wrap"><Mail size={17}/><input id="auth-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required placeholder="you@company.co.ke" /></div>
+            {!forgotMode && <>
+              <div className="auth-password-label"><label htmlFor="auth-password">Password</label>{authMode === "signin" && <button type="button" className="auth-text-link" onClick={() => { setForgotMode(true); setNotice(""); }}>Forgot password?</button>}</div>
+              <div className="auth-input-wrap"><LockKeyhole size={17}/><input id="auth-password" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} autoComplete={authMode === "signin" ? "current-password" : "new-password"} required placeholder={authMode === "signin" ? "Enter your password" : "At least 8 characters"} /><button type="button" className="auth-password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div>
+            </>}
+            <button className="auth-submit" disabled={busy}>{busy ? "Please wait…" : forgotMode ? "Send reset link" : authMode === "signin" ? "Sign in securely" : "Create account"} <ArrowUpRight size={16}/></button>
+            {notice && <div className="auth-feedback" role="status">{notice}</div>}
+            {forgotMode ? <button type="button" className="auth-mode-switch" onClick={() => { setForgotMode(false); setNotice(""); }}> <ArrowLeft size={14}/> Back to sign in</button> : <div className="auth-mode-prompt"><span>{authMode === "signin" ? "New to MobiWave WA?" : "Already have an account?"}</span><button type="button" className="auth-text-link" onClick={() => { setAuthMode(authMode === "signin" ? "signup" : "signin"); setNotice(""); setForgotMode(false); }}>{authMode === "signin" ? "Create an account" : "Sign in instead"}</button></div>}
+            <div className="auth-assurance"><ShieldCheck size={15}/><span>Your workspace is protected by authenticated access and tenant-level data isolation.</span></div>
+          </form>
+          <div className="auth-form-legal"><a href="/">MobiWave WA</a><span>·</span><a href="https://mobiwave.co.ke/">MobiWave Innovations</a><span>·</span><span>© 2026</span></div>
+        </section>
+      </div>
+    </div>;
+  }
 
   if (!tenants.length) return <div className="auth-screen"><form className="auth-card" onSubmit={createWorkspace}><Brand /><div className="auth-eyebrow">FIRST-TIME SETUP</div><h1>Create a workspace</h1><p>Your business data, knowledge base, approved memory and contacts will be isolated in this workspace.</p><label>Business / workspace name</label><input value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} required minLength={2} maxLength={160} placeholder="e.g. MobiWave Demo" /><button className="primary-button full" disabled={busy}>{busy ? "Creating…" : "Create workspace"}</button>{notice && <div className="inline-notice">{notice}</div>}<button type="button" className="auth-switch" onClick={signOut}>Sign out</button></form></div>;
 
