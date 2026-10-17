@@ -61,6 +61,35 @@ export class AppErrorBoundary extends Component<BoundaryProps, BoundaryState> {
     return { hasError: true };
   }
 
+  componentDidMount() {
+    window.addEventListener("error", this.handleWindowError);
+    window.addEventListener("unhandledrejection", this.handleUnhandledRejection);
+    window.addEventListener("vite:preloadError", this.handlePreloadError);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener("error", this.handleWindowError);
+    window.removeEventListener("unhandledrejection", this.handleUnhandledRejection);
+    window.removeEventListener("vite:preloadError", this.handlePreloadError);
+  }
+
+  private handleWindowError = (event: ErrorEvent) => {
+    if (!event.error) return;
+    console.error("MobiWave WA uncaught runtime error:", event.error);
+    this.setState({ hasError: true });
+  };
+
+  private handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+    console.error("MobiWave WA unhandled async error:", event.reason);
+    this.setState({ hasError: true });
+  };
+
+  private handlePreloadError = (event: Event) => {
+    event.preventDefault();
+    console.error("MobiWave WA failed to load an application resource.");
+    this.setState({ hasError: true });
+  };
+
   componentDidCatch(error: Error, info: ErrorInfo) {
     // Keep diagnostic details in the browser console, not in the customer-facing UI.
     console.error("MobiWave WA render error:", error, info.componentStack);
