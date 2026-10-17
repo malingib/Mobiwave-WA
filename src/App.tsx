@@ -117,7 +117,7 @@ export default function App() {
 
   useEffect(() => { void loadTenants(); }, [loadTenants]);
   useEffect(() => { setProfileName(String(user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "")); }, [user]);
-  useEffect(() => { setNewApiKey(""); setNewWebhookSecret(""); }, [tenantId]);
+  useEffect(() => { setNewApiKey(""); setNewWebhookSecret(""); setMetaWebhookToken(""); }, [tenantId]);
 
   const activeTenant = tenants.find((t) => t.id === tenantId);
   const isAdmin = activeTenant ? ["owner", "admin"].includes(activeTenant.role) : false;
@@ -125,7 +125,7 @@ export default function App() {
   const loadWorkspace = useCallback(async () => {
     if (!supabase || !tenantId) {
       setSources([]); setMemories([]); setContacts([]); setTemplates([]); setCampaigns([]); setConversations([]);
-      setMetaStatus(null); setApiKeys([]); setWebhooks([]); setUsageStats({ messages: 0, aiRequests: 0, messageLimit: 1000, aiLimit: 500 }); return;
+      setMetaStatus(null); setMetaPhoneId(""); setMetaWabaId(""); setMetaWebhookToken(""); setApiKeys([]); setWebhooks([]); setUsageStats({ messages: 0, aiRequests: 0, messageLimit: 1000, aiLimit: 500 }); return;
     }
     setLoading(true);
     const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
@@ -153,6 +153,8 @@ export default function App() {
     setCampaigns((ca.data ?? []) as Campaign[]);
     setConversations((co.data ?? []) as unknown as Conversation[]);
     setMetaStatus(mi.data);
+    setMetaPhoneId(mi.data?.phone_number_id ?? "");
+    setMetaWabaId(mi.data?.waba_id ?? "");
     setApiKeys((ak.data ?? []) as ApiKey[]);
     setWebhooks((wh.data ?? []) as TenantWebhook[]);
     setUsageStats({ messages: um.count ?? 0, aiRequests: ua.count ?? 0, messageLimit: ul.data?.monthly_message_limit ?? 1000, aiLimit: ul.data?.monthly_ai_request_limit ?? 500 });
