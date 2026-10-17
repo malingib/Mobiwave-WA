@@ -18,6 +18,7 @@ type Campaign = { id: string; name: string; status: string; created_at: string; 
 type Conversation = { id: string; status: string; bot_paused: boolean; last_message_at?: string; contacts?: { display_name?: string; phone_e164: string } };
 type ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };
 type TenantWebhook = { id: string; name: string; endpoint_url: string; events: string[]; enabled: boolean; last_delivery_at?: string; last_status?: string; last_error?: string; created_at: string };
+type WebhookDelivery = { id: string; webhook_id: string; event_type: string; status: string; attempt_count: number; response_status?: number; last_error?: string; created_at: string; delivered_at?: string };
 type ChatMessage = { id: string; direction: string; actor_type: string; body?: string; status: string; created_at: string };
 type Settings = { ai_enabled: boolean; system_instructions: string; context_retention_days: number; max_ai_reply_tokens: number; human_handoff_enabled: boolean };
 type UsageStats = { messages: number; aiRequests: number; messageLimit: number; aiLimit: number };
@@ -89,6 +90,7 @@ export default function App() {
   const [apiKeyName, setApiKeyName] = useState("Production integration");
   const [newApiKey, setNewApiKey] = useState("");
   const [webhooks, setWebhooks] = useState<TenantWebhook[]>([]);
+  const [webhookDeliveries, setWebhookDeliveries] = useState<WebhookDelivery[]>([]);
   const [webhookName, setWebhookName] = useState("Support event receiver");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [webhookEvents, setWebhookEvents] = useState<string[]>(["message.inbound","message.status"]);
@@ -125,7 +127,7 @@ export default function App() {
   const loadWorkspace = useCallback(async () => {
     if (!supabase || !tenantId) {
       setSources([]); setMemories([]); setContacts([]); setTemplates([]); setCampaigns([]); setConversations([]);
-      setMetaStatus(null); setMetaPhoneId(""); setMetaWabaId(""); setMetaWebhookToken(""); setApiKeys([]); setWebhooks([]); setUsageStats({ messages: 0, aiRequests: 0, messageLimit: 1000, aiLimit: 500 }); return;
+      setMetaStatus(null); setMetaPhoneId(""); setMetaWabaId(""); setMetaWebhookToken(""); setApiKeys([]); setWebhooks([]); setWebhookDeliveries([]); setUsageStats({ messages: 0, aiRequests: 0, messageLimit: 1000, aiLimit: 500 }); return;
     }
     setLoading(true);
     const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
@@ -157,6 +159,9 @@ export default function App() {
     setMetaWabaId(mi.data?.waba_id ?? "");
     setApiKeys((ak.data ?? []) as ApiKey[]);
     setWebhooks((wh.data ?? []) as TenantWebhook[]);
+    const { data: deliveryRows, error: deliveryError } = await supabase.from("webhook_deliveries").select("id,webhook_id,event_type,status,attempt_count,response_status,last_error,created_at,delivered_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(50);
+    if (deliveryError) setNotice("Could not load webhook delivery history: " + deliveryError.message);
+    setWebhookDeliveries((deliveryRows ?? []) as WebhookDelivery[]);
     setUsageStats({ messages: um.count ?? 0, aiRequests: ua.count ?? 0, messageLimit: ul.data?.monthly_message_limit ?? 1000, aiLimit: ul.data?.monthly_ai_request_limit ?? 500 });
     setLoading(false);
   }, [tenantId]);
@@ -408,6 +413,24 @@ export default function App() {
     await loadWorkspace();
   }
 
+  async function testWebhook(hook: TenantWebhook) {
+    if (!supabase) return;
+    setBusy(true);
+    const { data, error } = await supabase.functions.invoke("manage-webhook", { body: { tenant_id: tenantId, action: "test", webhook_id: hook.id } });
+    setBusy(false);
+    setNotice(error ? error.message : data?.error ?? data?.message ?? "Webhook test completed.");
+    await loadWorkspace();
+  }
+
+  async function retryWebhookDelivery(delivery: WebhookDelivery) {
+    if (!supabase || !confirm("Retry this failed webhook delivery?")) return;
+    setBusy(true);
+    const { data, error } = await supabase.functions.invoke("manage-webhook", { body: { tenant_id: tenantId, action: "retry", delivery_id: delivery.id } });
+    setBusy(false);
+    setNotice(error ? error.message : data?.error ?? data?.message ?? "Webhook retry completed.");
+    await loadWorkspace();
+  }
+
   async function copyWebhookSecret() {
     try { await navigator.clipboard.writeText(newWebhookSecret); setNotice("Webhook signing secret copied."); }
     catch { setNotice("Clipboard unavailable. Select and copy the signing secret manually."); }
@@ -588,7 +611,9 @@ Content-Type: application/json
           <p className="muted small">This is separate from the Meta callback above. Customer webhooks send signed MobiWave events to your server; they do not receive Meta's inbound WhatsApp webhook.</p>
           {isAdmin&&<form className="webhook-create" onSubmit={createWebhook}><div className="form-grid"><div className="field"><label>Webhook name</label><input value={webhookName} onChange={(e)=>setWebhookName(e.target.value)} required minLength={2} maxLength={120}/></div><div className="field"><label>HTTPS endpoint URL</label><input type="url" value={webhookUrl} onChange={(e)=>setWebhookUrl(e.target.value)} required placeholder="https://api.yourbusiness.co.ke/hooks/mobiwave"/></div></div><div className="webhook-event-options">{[["message.inbound","Inbound message"],["message.status","Delivery status"],["message.outbound","Outbound message"],["campaign.completed","Campaign completed"],["knowledge.indexed","Knowledge indexed"],["conversation.updated","Conversation updated"]].map(([value,label])=><label key={value} className="checkbox-line"><input type="checkbox" checked={webhookEvents.includes(value)} onChange={(e)=>setWebhookEvents(current=>e.target.checked?[...current,value]:current.filter(item=>item!==value))}/>{label}</label>)}</div><div className="form-actions"><span className="muted small">HTTPS only · public host required</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add webhook</button></div></form>}
           {newWebhookSecret&&<div className="new-key-box"><strong>Copy your webhook signing secret now</strong><code>{newWebhookSecret}</code><button className="secondary-button" onClick={()=>void copyWebhookSecret()}>Copy secret</button><small>Use this secret to verify X-MobiWave-Signature. It cannot be retrieved again.</small></div>}
-          <div className="api-key-list">{webhooks.length===0?<p className="muted small">No customer webhooks configured.</p>:webhooks.map(h=><div className="api-key-row" key={h.id}><div><strong>{h.name}</strong><code>{h.endpoint_url}</code><small>Events: {h.events.join(", ")}</small>{h.last_error&&<small className="error-text">{h.last_error}</small>}{h.last_delivery_at&&<small>Last delivery: {new Date(h.last_delivery_at).toLocaleString()}</small>}</div><Status status={h.enabled?(h.last_status||"active"):"disabled"}/>{isAdmin&&<button className="secondary-button compact" onClick={()=>void manageWebhook(h,h.enabled?"disable":"enable")}>{h.enabled?"Disable":"Enable"}</button>}{isAdmin&&<button className="icon-button" onClick={()=>void manageWebhook(h,"delete")} aria-label="Delete webhook"><Trash2 size={15}/></button>}</div>)}</div>
+          <div className="api-key-list">{webhooks.length===0?<p className="muted small">No customer webhooks configured.</p>:webhooks.map(h=><div className="api-key-row" key={h.id}><div><strong>{h.name}</strong><code>{h.endpoint_url}</code><small>Events: {h.events.join(", ")}</small>{h.last_error&&<small className="error-text">{h.last_error}</small>}{h.last_delivery_at&&<small>Last delivery: {new Date(h.last_delivery_at).toLocaleString()}</small>}</div><Status status={h.enabled?(h.last_status||"active"):"disabled"}/>{isAdmin&&h.enabled&&<button className="secondary-button compact" onClick={()=>void testWebhook(h)} disabled={busy}>Send test</button>}{isAdmin&&<button className="secondary-button compact" onClick={()=>void manageWebhook(h,h.enabled?"disable":"enable")}>{h.enabled?"Disable":"Enable"}</button>}{isAdmin&&<button className="icon-button" onClick={()=>void manageWebhook(h,"delete")} aria-label="Delete webhook"><Trash2 size={15}/></button>}</div>)}</div>
+          <div className="section-header"><div><h3>Recent delivery history</h3><p>Latest 50 attempts across this workspace.</p></div></div>
+          <div className="api-key-list">{webhookDeliveries.length===0?<p className="muted small">No webhook deliveries yet. Use Send test to validate an endpoint.</p>:webhookDeliveries.map(delivery=><div className="api-key-row" key={delivery.id}><div><strong>{delivery.event_type}</strong><small>{new Date(delivery.created_at).toLocaleString()} · Attempt {delivery.attempt_count}{delivery.response_status?" · HTTP "+delivery.response_status:""}</small>{delivery.last_error&&<small className="error-text">{delivery.last_error}</small>}</div><Status status={delivery.status}/>{isAdmin&&["failed","dead"].includes(delivery.status)&&<button className="secondary-button compact" onClick={()=>void retryWebhookDelivery(delivery)} disabled={busy}>Retry</button>}</div>)}</div>
           <div className="muted small">Signatures use HMAC-SHA256 over the exact raw JSON body. Use X-MobiWave-Delivery for idempotency.</div>
         </details>
       </section>}
