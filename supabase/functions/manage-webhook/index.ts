@@ -39,7 +39,7 @@ Deno.serve(async (request) => {
       const { data: delivery, error: insertError } = await auth.admin.from("webhook_deliveries").insert({
         tenant_id: tenantId, webhook_id: webhookId, event_type: "webhook.test",
         payload: { test: true, message: "MobiWave webhook test event", tenant_id: tenantId, sent_at: new Date().toISOString() },
-        status: "queued", attempt_count: 0, next_attempt_at: new Date().toISOString(),
+        status: "queued", attempt_count: 0, next_attempt_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       }).select("id").single();
       if (insertError) throw insertError;
       const result = await deliverWebhook(auth.admin, delivery.id);
@@ -51,7 +51,7 @@ Deno.serve(async (request) => {
       const { data: delivery, error: lookupError } = await auth.admin.from("webhook_deliveries").select("id,status").eq("tenant_id", tenantId).eq("id", deliveryId).maybeSingle();
       if (lookupError) throw lookupError;
       if (!delivery || !["failed", "dead"].includes(delivery.status)) return json({ error: "Only failed or dead deliveries can be retried." }, 409);
-      const { error: resetError } = await auth.admin.from("webhook_deliveries").update({ status: "queued", next_attempt_at: new Date().toISOString(), last_error: null }).eq("tenant_id", tenantId).eq("id", deliveryId);
+      const { error: resetError } = await auth.admin.from("webhook_deliveries").update({ status: "queued", next_attempt_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), last_error: null }).eq("tenant_id", tenantId).eq("id", deliveryId);
       if (resetError) throw resetError;
       const result = await deliverWebhook(auth.admin, deliveryId);
       return result.ok ? json({ ok: true, delivery_id: deliveryId, message: "Delivery retried successfully." }) : json({ error: result.error ?? "Retry failed.", delivery_id: deliveryId }, 502);
