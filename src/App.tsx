@@ -431,6 +431,9 @@ export default function App() {
   const filteredContacts = useMemo(() => contacts.filter((c) => (c.phone_e164 + " " + (c.display_name ?? "")).toLowerCase().includes(search.toLowerCase())), [contacts, search]);
   const approvedTemplates = templates.filter((t) => t.meta_status === "approved");
 
+  // The root URL is always the public home page; authentication is entered explicitly at /login.
+  if (window.location.pathname === "/") return <LandingPage />;
+
   if (!isSupabaseConfigured) return <div className="auth-screen"><div className="auth-card"><Brand /><h1>Connect your workspace</h1><p>Configure the Supabase URL and publishable/anon key in <code>.env.local</code> before running the dashboard.</p><pre>VITE_SUPABASE_URL=https://your-project.supabase.co{"\n"}VITE_SUPABASE_ANON_KEY=your-publishable-key</pre><a href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md">Deployment guide <ArrowUpRight size={14} /></a></div></div>;
   if (authLoading) return <div className="auth-screen"><LoaderCircle className="spin" /><span>Loading secure session…</span></div>;
   if (!session || !user) {
