@@ -116,7 +116,7 @@ function metadataText(html: string): string {
 
 function structuredDataText(html: string): string {
   const values: string[] = [];
-  for (const match of html.matchAll(/<script\\b[^>]*type\\s*=\\s*["']application\\/ld\\+json["'][^>]*>([\\s\\S]*?)<\\/script>/gi)) {
+  for (const match of html.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
     try {
       const data = JSON.parse(match[1]);
       const visit = (value: unknown) => {
@@ -132,28 +132,28 @@ function structuredDataText(html: string): string {
       visit(data);
     } catch { /* malformed JSON-LD is ignored */ }
   }
-  return [...new Set(values)].join("\\n\\n");
+  return [...new Set(values)].join("\n\n");
 }
 function extractReadableContent(html: string): string {
   const removeNoise = (value: string) => value
-    .replace(/<(script|style|noscript|svg|nav|footer|header|aside|form)\\b[^>]*>[\\s\\S]*?<\\/\\1>/gi, " ")
+    .replace(/<(script|style|noscript|svg|nav|footer|header|aside|form)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
-    .replace(/[\\t\\r ]+/g, " ").replace(/\\s*\\n\\s*/g, "\\n").trim();
+    .replace(/[\t\r ]+/g, " ").replace(/\s*\n\s*/g, "\n").trim();
   const preferred: string[] = [];
-  for (const match of html.matchAll(/<(main|article)\\b[^>]*>([\\s\\S]*?)<\\/\\1>/gi)) {
+  for (const match of html.matchAll(/<(main|article)\b[^>]*>([\s\S]*?)<\/\1>/gi)) {
     const text = removeNoise(match[2]);
     if (text.length > 80) preferred.push(text);
   }
-  const primary = [...new Set(preferred)].join("\\n\\n");
+  const primary = [...new Set(preferred)].join("\n\n");
   const fallback = htmlToText(html);
   const jsonLd = structuredDataText(html);
   // Prefer actual article/main text; use structured data only to supplement or rescue thin pages.
-  if (primary.length >= 180) return primary.length >= 300 ? primary : [primary, jsonLd].filter(Boolean).join("\\n\\n");
-  if (fallback.length >= 180) return [fallback, jsonLd].filter(Boolean).join("\\n\\n");
-  return [primary, jsonLd].filter(Boolean).join("\\n\\n");
+  if (primary.length >= 180) return primary.length >= 300 ? primary : [primary, jsonLd].filter(Boolean).join("\n\n");
+  if (fallback.length >= 180) return [fallback, jsonLd].filter(Boolean).join("\n\n");
+  return [primary, jsonLd].filter(Boolean).join("\n\n");
 }
 
 function linksFromHtml(html: string, base: URL, host: string): string[] {
