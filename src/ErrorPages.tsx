@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
 import { AlertTriangle, ArrowLeft, Home, RefreshCw } from "lucide-react";
 
 type ErrorPageProps = {
@@ -99,4 +99,26 @@ export class AppErrorBoundary extends Component<BoundaryProps, BoundaryState> {
     if (this.state.hasError) return <ErrorPage kind="error" />;
     return this.props.children;
   }
+}
+
+export function NetworkStatus() {
+  const [offline, setOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine);
+
+  useEffect(() => {
+    const goOffline = () => setOffline(true);
+    const goOnline = () => setOffline(false);
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+    };
+  }, []);
+
+  if (!offline) return null;
+  return <div className="mw-network-banner" role="status">
+    <AlertTriangle size={16} />
+    <span>You appear to be offline. Some workspace actions may not work until your connection returns.</span>
+    <button type="button" onClick={() => window.location.reload()}>Retry</button>
+  </div>;
 }
