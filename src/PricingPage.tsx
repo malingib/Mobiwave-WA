@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowUpRight, Check, MessageCircle, Minus, ShieldCheck, X } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Check, MessageCircle, ShieldCheck, X } from "lucide-react";
 
 const plans = [
   { name: "Starter", price: "2,000", setup: "2,000", users: "2 users", intro: "A clear starting point for small teams", featured: false, ai: false, api: false, webhooks: false, chatbot: false },
