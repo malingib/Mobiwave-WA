@@ -113,6 +113,49 @@ function metadataText(html: string): string {
   }
   return [...new Set(values)].join("\n");
 }
+
+function structuredDataText(html: string): string {
+  const values: string[] = [];
+  for (const match of html.matchAll(/<script\\b[^>]*type\\s*=\\s*["']application\\/ld\\+json["'][^>]*>([\\s\\S]*?)<\\/script>/gi)) {
+    try {
+      const data = JSON.parse(match[1]);
+      const visit = (value: unknown) => {
+        if (!value || typeof value !== "object") return;
+        if (Array.isArray(value)) { value.forEach(visit); return; }
+        const item = value as Record<string, unknown>;
+        for (const key of ["headline", "name", "description", "articleBody", "text", "abstract", "about"]) {
+          const v = item[key];
+          if (typeof v === "string" && v.trim().length > 30) values.push(v.trim());
+        }
+        for (const key of ["@graph", "mainEntity", "mainEntityOfPage", "article", "itemListElement"]) visit(item[key]);
+      };
+      visit(data);
+    } catch { /* malformed JSON-LD is ignored */ }
+  }
+  return [...new Set(values)].join("\\n\\n");
+}
+function extractReadableContent(html: string): string {
+  const removeNoise = (value: string) => value
+    .replace(/<(script|style|noscript|svg|nav|footer|header|aside|form)\\b[^>]*>[\\s\\S]*?<\\/\\1>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
+    .replace(/[\\t\\r ]+/g, " ").replace(/\\s*\\n\\s*/g, "\\n").trim();
+  const preferred: string[] = [];
+  for (const match of html.matchAll(/<(main|article)\\b[^>]*>([\\s\\S]*?)<\\/\\1>/gi)) {
+    const text = removeNoise(match[2]);
+    if (text.length > 80) preferred.push(text);
+  }
+  const primary = [...new Set(preferred)].join("\\n\\n");
+  const fallback = htmlToText(html);
+  const jsonLd = structuredDataText(html);
+  // Prefer actual article/main text; use structured data only to supplement or rescue thin pages.
+  if (primary.length >= 180) return primary.length >= 300 ? primary : [primary, jsonLd].filter(Boolean).join("\\n\\n");
+  if (fallback.length >= 180) return [fallback, jsonLd].filter(Boolean).join("\\n\\n");
+  return [primary, jsonLd].filter(Boolean).join("\\n\\n");
+}
+
 function linksFromHtml(html: string, base: URL, host: string): string[] {
   const matches = [...html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi)].map((m) => m[1]);
   const out = new Set<string>();
@@ -214,6 +257,11 @@ Deno.serve(async (request) => {
     const visited = new Set<string>();
     let pagesIndexed = 0;
     let charsIndexed = 0;
+    let pagesReadable = 0;
+    let duplicatesSkipped = 0;
+    let thinPagesSkipped = 0;
+    let fetchFailures = 0;
+    const seenContentHashes = new Set<string>();
 
     // Respect robots.txt for the submitted host. Crawl is restricted to submitted URL or exact same host.
     let robotsDisallowAll = false;
@@ -255,11 +303,7 @@ Deno.serve(async (request) => {
       if (buffer.byteLength > MAX_BODY_BYTES) throw new Error("Fetched page exceeded the 1.5 MB limit.");
       const rawText = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
       const html = (response.headers.get("content-type") ?? "").includes("text/html");
-      let extracted = html ? htmlToText(rawText) : rawText.trim();
-      if (html && extracted.length < 300) {
-        const metadata = metadataText(rawText);
-        if (metadata) extracted = [extracted, metadata].filter(Boolean).join("\n\n").trim();
-      }
+      const extracted = html ? extractReadableContent(rawText) : rawText.trim();
       // Discover same-host links before skipping thin JavaScript app-shell pages.
       // Otherwise a nearly empty homepage prevents the crawler reaching readable routes.
       if (scope === "same_domain" && html) {
@@ -274,9 +318,13 @@ Deno.serve(async (request) => {
           }
         }
       }
-      if (extracted.length < 80) continue;
+      if (extracted.length < 180) { thinPagesSkipped++; continue; }
+      pagesReadable++;
       const title = html ? pageTitle(rawText, finalUrl.pathname || finalUrl.hostname) : finalUrl.pathname || finalUrl.hostname;
-      const hash = await sha256(extracted);
+      const normalizedContent = extracted.toLowerCase().replace(/https?:\\/\\/\\S+/g, " ").replace(/[^\\p{L}\\p{N}]+/gu, " ").replace(/\\s+/g, " ").trim();
+      const hash = await sha256(normalizedContent);
+      if (seenContentHashes.has(hash)) { duplicatesSkipped++; continue; }
+      seenContentHashes.add(hash);
       const { data: document, error: docError } = await admin.from("knowledge_documents").upsert({
         tenant_id: tenantId, source_id: sourceId, canonical_url: finalUrl.toString(), title,
         content_hash: hash, extracted_text: extracted.slice(0, 500_000),
@@ -300,7 +348,7 @@ Deno.serve(async (request) => {
     await admin.from("source_ingestion_runs").update({ status: "succeeded", pages_discovered: visited.size, pages_indexed: pagesIndexed, finished_at: new Date().toISOString() }).eq("id", runId);
     await admin.from("knowledge_sources").update({ status: "indexed", canonical_url: startUrl.toString(), last_successful_at: new Date().toISOString(), last_error_code: null }).eq("id", sourceId).eq("tenant_id", tenantId);
     await emitWebhook(admin, tenantId, "knowledge.indexed", { source_id: sourceId, pages_indexed: pagesIndexed, characters_indexed: charsIndexed });
-    return json({ ok: true, source_id: sourceId, pages_indexed: pagesIndexed, characters_indexed: charsIndexed, message: "Submitted source content indexed. No general internet search was performed." });
+    return json({ ok: true, source_id: sourceId, pages_discovered: visited.size, pages_readable: pagesReadable, pages_indexed: pagesIndexed, duplicates_skipped: duplicatesSkipped, thin_pages_skipped: thinPagesSkipped, fetch_failures: fetchFailures, characters_indexed: charsIndexed, message: "Source crawl completed with content extraction and duplicate filtering. No general internet search was performed." });
   } catch (error) {
     const message = errorMessage(error);
     if (runId && admin) {
