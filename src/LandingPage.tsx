@@ -25,6 +25,7 @@ export default function LandingPage() {
           <a href="#features">Features</a>
           <a href="#how-it-works">How it works</a>
           <a href="#security">Security</a>
+          <a href="#faq">FAQs</a>
         </nav>
         <div className="marketing-nav-actions">
           <a className="marketing-signin" href="/login">Sign in</a>
@@ -36,7 +37,7 @@ export default function LandingPage() {
         <section className="marketing-hero">
           <div className="marketing-hero-copy">
             <div className="marketing-kicker"><span/> CUSTOMER MESSAGING, MADE CLEAR</div>
-            <h1>Better customer conversations. <em>Less busywork.</em></h1>
+            <h1>WhatsApp Business messaging. <em>Less busywork.</em></h1>
             <p className="marketing-hero-description">Bring WhatsApp conversations, team collaboration, campaigns and useful AI automation into one focused workspace for your business.</p>
             <div className="marketing-hero-actions">
               <a className="marketing-primary" href="/login?mode=signup">Get started <ArrowRight size={16}/></a>
@@ -74,6 +75,17 @@ export default function LandingPage() {
         <section className="marketing-how" id="how-it-works">
           <div className="marketing-how-copy"><div className="marketing-kicker">GET STARTED IN STEPS</div><h2>Set up for your business. <em>Not someone else's.</em></h2><p>Start with a workspace for your team, connect your own WhatsApp Business account, and configure the tools that fit your customer experience.</p><a className="marketing-primary" href="/login?mode=signup">Create your workspace <ArrowRight size={16}/></a></div>
           <div className="marketing-steps"><div><span>01</span><section><strong>Create your workspace</strong><p>Set up your team and business space.</p></section><CircleCheck size={18}/></div><div><span>02</span><section><strong>Connect your WhatsApp account</strong><p>Use your own eligible Meta Business integration.</p></section><CircleCheck size={18}/></div><div><span>03</span><section><strong>Bring your customer workflow together</strong><p>Configure your inbox, contacts, campaigns and optional AI.</p></section><CircleCheck size={18}/></div></div>
+        </section>
+
+        <section className="marketing-faq" id="faq">
+          <div className="marketing-section-heading"><div className="marketing-kicker">COMMON QUESTIONS</div><h2>Good to know <em>before you start.</em></h2><p>Clear answers about connecting WhatsApp and working with your team.</p></div>
+          <div className="marketing-faq-list">
+            <details><summary>Does MobiWave WA use the official WhatsApp API?</summary><p>Yes. MobiWave WA is designed to connect through Meta's official WhatsApp Cloud API, not unofficial WhatsApp automation engines.</p></details>
+            <details><summary>Can my business connect its own WhatsApp account?</summary><p>Yes. Each client workspace is designed for its own business integration and settings. Your business needs an eligible WhatsApp Business account and the required Meta permissions.</p></details>
+            <details><summary>Can my team manage conversations together?</summary><p>The platform brings customer conversations into a shared workspace to support team visibility and handoffs.</p></details>
+            <details><summary>Can I send WhatsApp campaigns?</summary><p>Campaign messaging must follow Meta's policies, including required approved message templates and appropriate customer opt-in. Availability depends on your connected account and permissions.</p></details>
+            <details><summary>Is AI automation required?</summary><p>No. AI assistance is optional. Configure the messaging workflow that suits your business and keep human handoff available where needed.</p></details>
+          </div>
         </section>
 
         <section className="marketing-final-cta"><div><div className="marketing-kicker">READY WHEN YOU ARE</div><h2>Make every conversation count.</h2><p>Bring your customer messaging into one clear, connected workspace.</p></div><a className="marketing-primary" href="/login?mode=signup">Get started <ArrowRight size={16}/></a></section>
