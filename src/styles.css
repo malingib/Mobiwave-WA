@@ -241,3 +241,42 @@ html,body,#root{height:100%;min-height:100%;overflow:hidden}
 .setup-steps li{padding-left:3px}
 details.panel>summary{cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 details.panel[open]>summary{margin-bottom:16px}
+
+
+/* MobiWave WA subscription pricing */
+.wa-pricing-page{background:#fff;color:var(--mk-ink,#172b27)}
+.wa-pricing-hero{max-width:900px;margin:0 auto;text-align:center;padding:78px 25px 42px}
+.wa-pricing-hero>.marketing-kicker{justify-content:center}
+.wa-pricing-hero h1{font:750 clamp(36px,5vw,56px)/1.12 Manrope,sans-serif;letter-spacing:-2px;margin:19px 0 17px}
+.wa-pricing-hero h1 em{font-style:normal;color:var(--mk-green,#0b6b58)}
+.wa-pricing-hero>p{max-width:660px;margin:0 auto;color:var(--mk-muted,#74817d);font-size:14px;line-height:1.8}
+.wa-pricing-trust{display:flex;justify-content:center;align-items:center;gap:12px 24px;flex-wrap:wrap;margin-top:24px;color:#49675a;font-size:10px;font-weight:600}
+.wa-pricing-trust span{display:inline-flex;align-items:center;gap:7px}
+.wa-pricing-trust svg{color:var(--mk-green,#0b6b58)}
+.wa-pricing-plans{max-width:1240px;margin:0 auto;padding:10px 25px 65px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:stretch}
+.wa-plan{position:relative;min-width:0;border:1px solid #dfe8e2;border-radius:12px;padding:24px 20px 22px;background:#fff;display:flex;flex-direction:column}
+.wa-plan.featured{border:2px solid #0b6b58;padding:23px 19px 21px}
+.wa-plan-badge{position:absolute;top:-12px;left:20px;background:#0b6b58;color:#fff;border-radius:4px;padding:5px 8px;font-size:8px;letter-spacing:.7px;font-weight:800}
+.wa-plan-head h2{font:750 19px Manrope,sans-serif;letter-spacing:-.5px;margin:0 0 8px}
+.wa-plan-head p{min-height:34px;font-size:10px;line-height:1.65;color:#74817d;margin:0}
+.wa-plan-price{display:flex;align-items:baseline;gap:5px;margin:22px 0 7px;white-space:nowrap}
+.wa-plan-price>span{font-size:10px;color:#65756d;font-weight:700}
+.wa-plan-price strong{font:800 clamp(25px,2.3vw,34px) Manrope,sans-serif;letter-spacing:-1.4px;color:#18392f}
+.wa-plan-price small{font-size:9px;color:#74817d}
+.wa-plan-setup{min-height:29px;font-size:9px;line-height:1.5;color:#74817d;margin:0 0 17px}
+.wa-plan-setup strong{color:#344d41}
+.wa-plan-cta{width:100%;min-height:40px;display:flex;justify-content:center;align-items:center;gap:7px;border-radius:7px;font-size:10px;font-weight:700;text-decoration:none}
+.wa-plan-divider{height:1px;background:#e7ece8;margin:23px 0 17px}
+.wa-plan>h3{font-size:10px;margin:0 0 13px;color:#31483d}
+.wa-price-features{display:flex;flex-direction:column;gap:12px;padding:0;margin:0;list-style:none}
+.wa-price-feature{display:flex;align-items:flex-start;gap:8px;font-size:10px;line-height:1.5;color:#3e5448}
+.wa-price-feature svg{flex-shrink:0;color:#0b795d;margin-top:1px}
+.wa-price-feature.unavailable{color:#9aa49d}
+.wa-price-feature.unavailable svg{color:#b3bcb6}
+.wa-pricing-notes{max-width:1140px;margin:0 auto 30px;padding:26px 28px;display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:28px;border-top:1px solid #e5ebe6;border-bottom:1px solid #e5ebe6}
+.wa-pricing-notes h2{font:750 19px Manrope,sans-serif;letter-spacing:-.5px;margin:0 0 9px}
+.wa-pricing-notes h3{font-size:11px;margin:2px 0 9px}
+.wa-pricing-notes p{font-size:10px;line-height:1.8;color:#74817d;margin:0}
+.wa-pricing-faq{padding-top:62px}
+@media(max-width:1050px){.wa-pricing-plans{grid-template-columns:repeat(2,minmax(0,1fr));max-width:790px;row-gap:22px}.wa-plan-price strong{font-size:34px}.wa-pricing-notes{margin-left:25px;margin-right:25px}}
+@media(max-width:620px){.wa-pricing-hero{padding:50px 20px 30px}.wa-pricing-hero h1{font-size:38px;letter-spacing:-1.5px}.wa-pricing-hero>p{font-size:12px}.wa-pricing-trust{align-items:flex-start;flex-direction:column;margin-left:auto;margin-right:auto;width:max-content;max-width:100%}.wa-pricing-plans{grid-template-columns:1fr;padding:13px 19px 45px;max-width:430px;gap:18px}.wa-plan,.wa-plan.featured{padding:23px 21px}.wa-plan-badge{left:20px}.wa-plan-head p{min-height:0}.wa-plan-price strong{font-size:36px}.wa-pricing-notes{grid-template-columns:1fr;gap:22px;margin:0 19px;padding:25px 4px}.wa-pricing-faq{padding-top:48px}}
