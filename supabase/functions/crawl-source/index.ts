@@ -293,12 +293,12 @@ Deno.serve(async (request) => {
     while (queue.length && visited.size < (scope === "same_domain" ? MAX_PAGES : 1)) {
       const rawUrl = queue.shift()!;
       let safeUrl: URL;
-      try { safeUrl = await validatePublicHttpUrl(rawUrl); } catch { continue; }
+      try { safeUrl = await validatePublicHttpUrl(rawUrl); } catch { fetchFailures++; continue; }
       if (safeUrl.hostname !== originHost) continue;
       const normalized = safeUrl.toString();
       if (visited.has(normalized)) continue;
       visited.add(normalized);
-      const { response, url: finalUrl } = await safeFetch(normalized, originHost, scope);
+      let response: Response;\n      let finalUrl: URL;\n      try {\n        const fetched = await safeFetch(normalized, originHost, scope);\n        response = fetched.response;\n        finalUrl = fetched.url;\n      } catch { fetchFailures++; continue; }
       const buffer = await response.arrayBuffer();
       if (buffer.byteLength > MAX_BODY_BYTES) throw new Error("Fetched page exceeded the 1.5 MB limit.");
       const rawText = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
