@@ -596,7 +596,7 @@ export default function App() {
         <div className="panel form-panel">
           <h2>2. Configure Meta's webhook callback</h2>
           <p className="muted small">Meta requires a callback URL and verification token. Copy both values into your Meta app's Webhooks configuration. The token is stored as a hash and shown only when generated; it cannot be retrieved after leaving this screen.</p>
-          <div className="field"><label>Callback URL</label><div className="copyable-value"><code>{(import.meta.env.VITE_SUPABASE_URL||"").replace(/\/$/,"")+"/functions/v1/meta-webhook"}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue((import.meta.env.VITE_SUPABASE_URL||"").replace(/\/$/,"")+"/functions/v1/meta-webhook","Callback URL")}>Copy URL</button></div></div>
+          <div className="field"><label>Callback URL</label><div className="copyable-value"><code>{window.location.origin.replace(/\/$/,"")+"/api/webhooks/whatsapp"}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(window.location.origin.replace(/\/$/,"")+"/api/webhooks/whatsapp","Callback URL")}>Copy URL</button></div></div>
           <div className="field"><label>Webhook verification token</label>{metaWebhookToken?<div className="copyable-value"><code>{metaWebhookToken}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(metaWebhookToken,"Verification token")}>Copy token</button></div>:<p className="muted small">Generate a token to configure a new callback or replace a lost token.</p>}</div>
           {isAdmin&&<div className="form-actions"><button type="button" className="primary-button" onClick={()=>void generateMetaWebhookToken()} disabled={busy}><ShieldCheck size={15}/>{metaWebhookToken?"Generate replacement token":"Generate verification token"}</button></div>}
           <ol className="setup-steps">
@@ -605,7 +605,7 @@ export default function App() {
             <li>Verify and save the callback, then subscribe to the <code>messages</code> field and <code>message_template_status_update</code> where available.</li>
             <li>Subscribe the app to your WhatsApp Business Account and send a test message to confirm it appears in Shared inbox.</li>
           </ol>
-          <p className="muted small">Webhook verification is separate from access-token verification. The platform's Meta App Secret must be configured as the <code>META_APP_SECRET</code> Supabase Edge Function secret to validate POST signatures.</p>
+          <p className="muted small">Webhook verification is separate from access-token verification. The platform's Meta App Secret must be configured in the server environment as <code>META_APP_SECRET</code> to validate POST signatures.</p>
         </div>
         <div className="panel form-panel">
           <h2>Developer API</h2><p className="muted small">Use workspace-scoped keys for server-to-server integrations. Never put API keys in browser code or public repositories.</p>
