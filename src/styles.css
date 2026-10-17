@@ -280,3 +280,32 @@ details.panel[open]>summary{margin-bottom:16px}
 .wa-pricing-faq{padding-top:62px}
 @media(max-width:1050px){.wa-pricing-plans{grid-template-columns:repeat(2,minmax(0,1fr));max-width:790px;row-gap:22px}.wa-plan-price strong{font-size:34px}.wa-pricing-notes{margin-left:25px;margin-right:25px}}
 @media(max-width:620px){.wa-pricing-hero{padding:50px 20px 30px}.wa-pricing-hero h1{font-size:38px;letter-spacing:-1.5px}.wa-pricing-hero>p{font-size:12px}.wa-pricing-trust{align-items:flex-start;flex-direction:column;margin-left:auto;margin-right:auto;width:max-content;max-width:100%}.wa-pricing-plans{grid-template-columns:1fr;padding:13px 19px 45px;max-width:430px;gap:18px}.wa-plan,.wa-plan.featured{padding:23px 21px}.wa-plan-badge{left:20px}.wa-plan-head p{min-height:0}.wa-plan-price strong{font-size:36px}.wa-pricing-notes{grid-template-columns:1fr;gap:22px;margin:0 19px;padding:25px 4px}.wa-pricing-faq{padding-top:48px}}
+
+
+/* Branded recovery pages */
+.mw-error-screen{min-height:100vh;background:#f7f9f8;color:#172b27;display:flex;flex-direction:column;padding:0 clamp(20px,5vw,72px);font-family:'DM Sans',sans-serif}
+.mw-error-top{min-height:82px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e4eae7;gap:16px}
+.mw-error-brand{display:flex;align-items:center;gap:10px;color:#172b27;text-decoration:none}
+.mw-error-mark{width:38px;height:38px;border-radius:10px;background:#0b6b58;color:#fff;display:grid;place-items:center;font-size:11px;font-weight:800;letter-spacing:-.3px}
+.mw-error-brand strong{font:800 17px Manrope,sans-serif;letter-spacing:-.5px;display:block}
+.mw-error-brand small{display:block;color:#74817d;font-size:10px;letter-spacing:1.5px;font-weight:700;margin-top:1px}
+.mw-error-secure{font-size:11px;color:#74817d}
+.mw-error-content{width:100%;max-width:560px;margin:auto;align-self:center;padding:72px 0 90px}
+.mw-error-symbol{width:54px;height:54px;border-radius:14px;display:grid;place-items:center;background:#e8f4f0;color:#0b6b58;margin-bottom:25px}
+.mw-error-code{font-size:10px;font-weight:800;letter-spacing:1.5px;color:#0b6b58;margin:0 0 12px}
+.mw-error-code span{padding:0 5px;color:#9aa8a1}
+.mw-error-content h1{font:800 clamp(29px,4vw,42px)/1.16 Manrope,sans-serif;letter-spacing:-1.4px;margin:0;color:#17342d}
+.mw-error-description{font-size:14px;line-height:1.8;color:#6c7c74;max-width:490px;margin:16px 0 27px}
+.mw-error-actions{display:flex;flex-wrap:wrap;gap:10px}
+.mw-error-primary,.mw-error-secondary{min-height:43px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 15px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none}
+.mw-error-primary{border:1px solid #0b6b58;background:#0b6b58;color:#fff}
+.mw-error-primary:hover{background:#084d40}
+.mw-error-secondary{border:1px solid #dce5e0;background:#fff;color:#42554d}
+.mw-error-secondary:hover{background:#f1f6f3}
+.mw-error-help{font-size:11px;color:#84918b;margin-top:30px}
+.mw-error-help a{color:#0b6b58;font-weight:700;text-decoration:none}
+.mw-error-help a:hover{text-decoration:underline}
+.mw-error-footer{min-height:58px;border-top:1px solid #e4eae7;display:flex;align-items:center;justify-content:space-between;gap:12px;color:#8a9690;font-size:10px}
+.mw-error-footer a{display:inline-flex;align-items:center;gap:5px;color:#6c7c74;text-decoration:none}
+.mw-error-footer a svg{transform:rotate(135deg)}
+@media(max-width:540px){.mw-error-top{min-height:72px}.mw-error-secure{font-size:10px}.mw-error-content{padding:55px 0 65px}.mw-error-footer{align-items:flex-start;justify-content:center;flex-direction:column;padding:15px 0}}
