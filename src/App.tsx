@@ -168,7 +168,7 @@ export default function App() {
     setMetaWabaId(mi.data?.waba_id ?? "");
     setApiKeys((ak.data ?? []) as ApiKey[]);
     setWebhooks((wh.data ?? []) as TenantWebhook[]);
-    const { data: deliveryRows, error: deliveryError } = await supabase.from("webhook_deliveries").select("id,webhook_id,event_type,status,attempt_count,response_status,last_error,created_at,delivered_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(50);
+    const { data: deliveryRows, error: deliveryError } = await supabase.from("webhook_deliveries").select("id,webhook_id,event_type,status,attempt_count,response_status,last_error,created_at,delivered_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(50).catch((cause: unknown) => { console.error("MobiWave WA webhook history load failed:", cause); return { data: null, error: { message: "Could not load webhook history. Refresh and try again." } }; });
     if (deliveryError) setNotice("Could not load webhook delivery history: " + deliveryError.message);
     setWebhookDeliveries((deliveryRows ?? []) as WebhookDelivery[]);
     setUsageStats({ messages: um.count ?? 0, aiRequests: ua.count ?? 0, messageLimit: ul.data?.monthly_message_limit ?? 1000, aiLimit: ul.data?.monthly_ai_request_limit ?? 500 });
@@ -179,7 +179,7 @@ export default function App() {
 
   const loadMessages = useCallback(async () => {
     if (!supabase || !tenantId || !selectedConversation) { setMessages([]); return; }
-    const { data, error } = await supabase.from("messages").select("id,direction,actor_type,body,status,created_at").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).order("created_at", { ascending: true }).limit(200);
+    const { data, error } = await supabase.from("messages").select("id,direction,actor_type,body,status,created_at").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).order("created_at", { ascending: true }).limit(200).catch((cause: unknown) => { console.error("MobiWave WA message load failed:", cause); return { data: null, error: { message: "Could not load messages. Check your connection and retry." } }; });
     if (error) setNotice(error.message);
     setMessages((data ?? []) as ChatMessage[]);
   }, [tenantId, selectedConversation]);
