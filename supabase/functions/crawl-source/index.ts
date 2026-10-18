@@ -228,7 +228,8 @@ function contentQuality(text: string): { ok: boolean; words: number; uniqueRatio
   if (uniqueRatio < 0.28) return { ok: false, words: words.length, uniqueRatio, reason: "repetitive_content" };
   return { ok: true, words: words.length, uniqueRatio, reason: "ok" };
 }
-\nfunction chunksFor(text: string): string[] {
+
+function chunksFor(text: string): string[] {
   const chunks: string[] = [];
   const size = 1400, overlap = 180;
   for (let start = 0; start < text.length; start += size - overlap) {
