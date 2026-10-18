@@ -213,7 +213,22 @@ async function discoverSitemapPages(startUrl: URL, originHost: string): Promise<
   return [...pages];
 }
 
-function chunksFor(text: string): string[] {
+
+function normalizedContent(text: string): string {
+  return text.normalize("NFKC").toLowerCase()
+    .replace(/https?:\\/\\/\\S+/g, " ")
+    .replace(/[^\\p{L}\\p{N}]+/gu, " ").replace(/\\s+/g, " ").trim();
+}
+function contentQuality(text: string): { ok: boolean; words: number; uniqueRatio: number; reason: string } {
+  const normalized = normalizedContent(text);
+  const words = normalized ? normalized.split(" ") : [];
+  const uniqueRatio = words.length ? new Set(words).size / words.length : 0;
+  if (normalized.length < 180) return { ok: false, words: words.length, uniqueRatio, reason: "too_short" };
+  if (words.length < 30) return { ok: false, words: words.length, uniqueRatio, reason: "too_few_words" };
+  if (uniqueRatio < 0.28) return { ok: false, words: words.length, uniqueRatio, reason: "repetitive_content" };
+  return { ok: true, words: words.length, uniqueRatio, reason: "ok" };
+}
+\nfunction chunksFor(text: string): string[] {
   const chunks: string[] = [];
   const size = 1400, overlap = 180;
   for (let start = 0; start < text.length; start += size - overlap) {
@@ -261,6 +276,7 @@ Deno.serve(async (request) => {
     let duplicatesSkipped = 0;
     let thinPagesSkipped = 0;
     let fetchFailures = 0;
+    let wordsIndexed = 0;
     const seenContentHashes = new Set<string>();
 
     // Respect robots.txt for the submitted host. Crawl is restricted to submitted URL or exact same host.
@@ -347,14 +363,14 @@ Deno.serve(async (request) => {
         })));
         if (chunkError) throw chunkError;
       }
-      pagesIndexed++; charsIndexed += extracted.length;
+      pagesIndexed++; charsIndexed += extracted.length; wordsIndexed += quality.words;
     }
 
-    if (!pagesIndexed) throw new Error("No readable pages were indexed. Check the URL, access rules, robots.txt and page content.");
+    if (!pagesIndexed) throw new Error("No unique, meaningful pages were indexed. Pages may be JavaScript-only, too short, repetitive, blocked by robots.txt, or duplicates. Check crawl diagnostics and source content.");
     await admin.from("source_ingestion_runs").update({ status: "succeeded", pages_discovered: visited.size, pages_indexed: pagesIndexed, finished_at: new Date().toISOString() }).eq("id", runId);
     await admin.from("knowledge_sources").update({ status: "indexed", canonical_url: startUrl.toString(), last_successful_at: new Date().toISOString(), last_error_code: null }).eq("id", sourceId).eq("tenant_id", tenantId);
     await emitWebhook(admin, tenantId, "knowledge.indexed", { source_id: sourceId, pages_indexed: pagesIndexed, characters_indexed: charsIndexed });
-    return json({ ok: true, source_id: sourceId, pages_discovered: visited.size, pages_readable: pagesReadable, pages_indexed: pagesIndexed, duplicates_skipped: duplicatesSkipped, thin_pages_skipped: thinPagesSkipped, fetch_failures: fetchFailures, characters_indexed: charsIndexed, message: "Source crawl completed with content extraction and duplicate filtering. No general internet search was performed." });
+    return json({ ok: true, source_id: sourceId, pages_discovered: visited.size, pages_readable: pagesReadable, pages_indexed: pagesIndexed, duplicates_skipped: duplicatesSkipped, thin_pages_skipped: thinPagesSkipped, fetch_failures: fetchFailures, characters_indexed: charsIndexed, words_indexed: wordsIndexed, content_quality_gate: "30+ words, 180+ normalized characters, 28%+ unique-word ratio", message: "Source crawl completed with content extraction and duplicate filtering. No general internet search was performed." });
   } catch (error) {
     const message = errorMessage(error);
     if (runId && admin) {
