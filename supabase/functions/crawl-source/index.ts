@@ -170,15 +170,6 @@ function robotsPathAllowed(path: string, rules: { allow: boolean; pattern: strin
   }
   return winner?.allow ?? true;
 }
-function linksFromHtml(").replace(/\\\*/g, ".*");
-    const regex = new RegExp("^" + escaped + (anchored ? "$" : ".*"));
-    if (!regex.test(path)) continue;
-    const specificity = raw.replace(/\*/g, "").length;
-    if (!winner || specificity > winner.length || (specificity === winner.length && rule.allow)) winner = { allow: rule.allow, length: specificity };
-  }
-  return winner?.allow ?? true;
-}
-
 function linksFromHtml(html: string, base: URL, host: string): string[] {
   const matches = [...html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi)].map((m) => m[1]);
   const out = new Set<string>();
