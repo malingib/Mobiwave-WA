@@ -156,6 +156,21 @@ function extractReadableContent(html: string): string {
   return [primary, jsonLd].filter(Boolean).join("\n\n");
 }
 
+function robotsPathAllowed(path: string, rules: { allow: boolean; pattern: string }[]): boolean {
+  let winner: { allow: boolean; length: number } | null = null;
+  for (const rule of rules) {
+    if (!rule.pattern) continue;
+    const anchored = rule.pattern.endsWith("$");
+    const raw = anchored ? rule.pattern.slice(0, -1) : rule.pattern;
+    const escaped = raw.replace(/[|\\{}()[\]^$+?.]/g, "\\function linksFromHtml(").replace(/\\\*/g, ".*");
+    const regex = new RegExp("^" + escaped + (anchored ? "$" : ".*"));
+    if (!regex.test(path)) continue;
+    const specificity = raw.replace(/\*/g, "").length;
+    if (!winner || specificity > winner.length || (specificity === winner.length && rule.allow)) winner = { allow: rule.allow, length: specificity };
+  }
+  return winner?.allow ?? true;
+}
+
 function linksFromHtml(html: string, base: URL, host: string): string[] {
   const matches = [...html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi)].map((m) => m[1]);
   const out = new Set<string>();
@@ -281,22 +296,35 @@ Deno.serve(async (request) => {
     const seenContentHashes = new Set<string>();
 
     // Respect robots.txt for the submitted host. Crawl is restricted to submitted URL or exact same host.
-    let robotsDisallowAll = false;
     const robotsSitemaps: string[] = [];
+    const robotsRules: { allow: boolean; pattern: string }[] = [];
     try {
       const robotsUrl = new URL("/robots.txt", startUrl.origin);
       const { response } = await safeFetch(robotsUrl.toString(), originHost, "same_domain");
       const robotsText = (await response.text()).slice(0, 100_000);
-      let active = false;
+      let groupAgents: string[] = [];
+      let groupRules: { allow: boolean; pattern: string }[] = [];
+      const flushGroup = () => {
+        if (groupAgents.some((agent) => agent === "*" || "mobiWaveknowledgebot".toLowerCase().includes(agent))) robotsRules.push(...groupRules);
+      };
       for (const line of robotsText.split(/\r?\n/)) {
-        const [key, ...rest] = line.split(":");
-        const value = rest.join(":").trim();
-        if (key?.trim().toLowerCase() === "sitemap" && value) robotsSitemaps.push(value);
-        if (key?.trim().toLowerCase() === "user-agent") active = value === "*" || value.toLowerCase() === "mobiWaveknowledgebot";
-        if (active && key?.trim().toLowerCase() === "disallow" && (value === "/" || value === "")) robotsDisallowAll = value === "/";
+        const trimmed = line.split("#", 1)[0].trim();
+        if (!trimmed) continue;
+        const separator = trimmed.indexOf(":");
+        if (separator < 0) continue;
+        const key = trimmed.slice(0, separator).trim().toLowerCase();
+        const value = trimmed.slice(separator + 1).trim();
+        if (key === "sitemap" && value) { robotsSitemaps.push(value); continue; }
+        if (key === "user-agent") {
+          if (groupRules.length) { flushGroup(); groupAgents = []; groupRules = []; }
+          groupAgents.push(value.toLowerCase());
+        } else if ((key === "allow" || key === "disallow") && groupAgents.length && value) {
+          groupRules.push({ allow: key === "allow", pattern: value });
+        }
       }
+      flushGroup();
     } catch { /* robots unavailable: continue only with explicit submitted scope and bounded fetches */ }
-    if (robotsDisallowAll) throw new Error("robots.txt disallows crawling this host.");
+    if (!robotsPathAllowed(startUrl.pathname, robotsRules)) throw new Error("robots.txt disallows crawling the submitted path.");
     if (scope === "same_domain") {
       for (const sitemapPage of [...robotsSitemaps, ...await discoverSitemapPages(startUrl, originHost)]) {
         if (queue.length >= MAX_PAGES) break;
@@ -312,6 +340,7 @@ Deno.serve(async (request) => {
       let safeUrl: URL;
       try { safeUrl = await validatePublicHttpUrl(rawUrl); } catch { fetchFailures++; continue; }
       if (safeUrl.hostname !== originHost) continue;
+      if (!robotsPathAllowed(safeUrl.pathname, robotsRules)) { thinPagesSkipped++; continue; }
       const normalized = safeUrl.toString();
       if (visited.has(normalized)) continue;
       visited.add(normalized);
