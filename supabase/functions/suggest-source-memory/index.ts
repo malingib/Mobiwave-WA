@@ -1,6 +1,10 @@
 import { requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { corsHeaders, json, errorMessage } from "../_shared/cors.ts";
 
+function normalizedText(value: string): string {
+  return value.normalize("NFKC").toLowerCase().replace(/https?:\/\/\S+/g, " ").replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
@@ -28,12 +32,15 @@ Deno.serve(async (request) => {
     if (docsError) throw docsError;
     if (!docs?.length) return json({ error: "This source has no indexed documents yet. Crawl it first." }, 409);
 
-    const clean = (value: string) => value.replace(/\s+/g, " ").trim();
+    const clean = (value: string) => value.normalize("NFKC").replace(/\s+/g, " ").trim();
     const unique = new Map<string, { url: string; title: string; text: string }>();
     for (const doc of docs) {
       const text = clean(String(doc.extracted_text ?? ""));
-      if (text.length < 180) continue;
-      const key = text.toLowerCase();
+      const normalized = normalizedText(text);
+      const words = normalized ? normalized.split(" ") : [];
+      const uniqueRatio = words.length ? new Set(words).size / words.length : 0;
+      if (normalized.length < 180 || words.length < 30 || uniqueRatio < 0.28) continue;
+      const key = normalized;
       if (!unique.has(key)) unique.set(key, { url: String(doc.canonical_url), title: String(doc.title ?? ""), text: text.slice(0, 7000) });
     }
     const pages = [...unique.values()];
