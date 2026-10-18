@@ -13,12 +13,19 @@ function ipv4IsPrivate(ip: string): boolean {
   return p[0] === 0 || p[0] === 10 || p[0] === 127 || p[0] >= 224 ||
     (p[0] === 169 && p[1] === 254) || (p[0] === 172 && p[1] >= 16 && p[1] <= 31) ||
     (p[0] === 192 && p[1] === 168) || (p[0] === 100 && p[1] >= 64 && p[1] <= 127) ||
-    (p[0] === 192 && p[1] === 0) || (p[0] === 198 && (p[1] === 18 || p[1] === 19));
+    (p[0] === 192 && p[1] === 0) || (p[0] === 192 && p[1] === 88 && p[2] === 99) ||
+    (p[0] === 192 && p[1] === 0 && p[2] === 2) ||
+    (p[0] === 198 && (p[1] === 18 || p[1] === 19 || (p[1] === 51 && p[2] === 100))) ||
+    (p[0] === 203 && p[1] === 0 && p[2] === 113);
 }
 function ipv6IsPrivate(ip: string): boolean {
   const s = ip.toLowerCase().split("%")[0];
+  // Deny unspecified/loopback, unique-local, link-local, multicast, mapped IPv4,
+  // documentation, and other special-purpose IPv6 ranges.
   return s === "::" || s === "::1" || s.startsWith("fc") || s.startsWith("fd") ||
-    /^fe[89ab]/.test(s) || s.startsWith("ff") || s.startsWith("::ffff:") || s === "2001:db8::";
+    /^fe[89ab]/.test(s) || s.startsWith("ff") || s.startsWith("::ffff:") ||
+    s.startsWith("2001:db8:") || s.startsWith("2001:10:") || s.startsWith("2001:20:") ||
+    s.startsWith("2001:2:") || s.startsWith("100:") || s.startsWith("2002:");
 }
 async function validatePublicHttpUrl(raw: string): Promise<URL> {
   const url = new URL(raw);
