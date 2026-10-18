@@ -162,7 +162,15 @@ function robotsPathAllowed(path: string, rules: { allow: boolean; pattern: strin
     if (!rule.pattern) continue;
     const anchored = rule.pattern.endsWith("$");
     const raw = anchored ? rule.pattern.slice(0, -1) : rule.pattern;
-    const escaped = raw.replace(/[|\\{}()[\]^$+?.]/g, "\\function linksFromHtml(").replace(/\\\*/g, ".*");
+    const escaped = raw.split("").map((ch) => ch === "*" ? ".*" : ".+?^${}()|[]\\".includes(ch) ? "\\" + ch : ch).join("");
+    const regex = new RegExp("^" + escaped + (anchored ? "$" : ".*"));
+    if (!regex.test(path)) continue;
+    const specificity = raw.replace(/\*/g, "").length;
+    if (!winner || specificity > winner.length || (specificity === winner.length && rule.allow)) winner = { allow: rule.allow, length: specificity };
+  }
+  return winner?.allow ?? true;
+}
+function linksFromHtml(").replace(/\\\*/g, ".*");
     const regex = new RegExp("^" + escaped + (anchored ? "$" : ".*"));
     if (!regex.test(path)) continue;
     const specificity = raw.replace(/\*/g, "").length;
