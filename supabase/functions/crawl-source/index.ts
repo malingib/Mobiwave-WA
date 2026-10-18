@@ -216,8 +216,8 @@ async function discoverSitemapPages(startUrl: URL, originHost: string): Promise<
 
 function normalizedContent(text: string): string {
   return text.normalize("NFKC").toLowerCase()
-    .replace(/https?:\\/\\/\\S+/g, " ")
-    .replace(/[^\\p{L}\\p{N}]+/gu, " ").replace(/\\s+/g, " ").trim();
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
 }
 function contentQuality(text: string): { ok: boolean; words: number; uniqueRatio: number; reason: string } {
   const normalized = normalizedContent(text);
