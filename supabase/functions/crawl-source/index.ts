@@ -156,6 +156,20 @@ function extractReadableContent(html: string): string {
   return [primary, jsonLd].filter(Boolean).join("\n\n");
 }
 
+function robotsPathAllowed(path: string, rules: { allow: boolean; pattern: string }[]): boolean {
+  let winner: { allow: boolean; length: number } | null = null;
+  for (const rule of rules) {
+    if (!rule.pattern) continue;
+    const anchored = rule.pattern.endsWith("$");
+    const raw = anchored ? rule.pattern.slice(0, -1) : rule.pattern;
+    const escaped = raw.split("").map((ch) => ch === "*" ? ".*" : ".+?^${}()|[]\\".includes(ch) ? "\\" + ch : ch).join("");
+    const regex = new RegExp("^" + escaped + (anchored ? "$" : ".*"));
+    if (!regex.test(path)) continue;
+    const specificity = raw.replace(/\*/g, "").length;
+    if (!winner || specificity > winner.length || (specificity === winner.length && rule.allow)) winner = { allow: rule.allow, length: specificity };
+  }
+  return winner?.allow ?? true;
+}
 function linksFromHtml(html: string, base: URL, host: string): string[] {
   const matches = [...html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi)].map((m) => m[1]);
   const out = new Set<string>();
@@ -214,13 +228,13 @@ async function discoverSitemapPages(startUrl: URL, originHost: string): Promise<
 }
 
 
-function normalizedContent(text: string): string {
+function normalizedContentForHash(text: string): string {
   return text.normalize("NFKC").toLowerCase()
     .replace(/https?:\/\/\S+/g, " ")
     .replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
 }
 function contentQuality(text: string): { ok: boolean; words: number; uniqueRatio: number; reason: string } {
-  const normalized = normalizedContent(text);
+  const normalized = normalizedContentForHash(text);
   const words = normalized ? normalized.split(" ") : [];
   const uniqueRatio = words.length ? new Set(words).size / words.length : 0;
   if (normalized.length < 180) return { ok: false, words: words.length, uniqueRatio, reason: "too_short" };
@@ -281,22 +295,35 @@ Deno.serve(async (request) => {
     const seenContentHashes = new Set<string>();
 
     // Respect robots.txt for the submitted host. Crawl is restricted to submitted URL or exact same host.
-    let robotsDisallowAll = false;
     const robotsSitemaps: string[] = [];
+    const robotsRules: { allow: boolean; pattern: string }[] = [];
     try {
       const robotsUrl = new URL("/robots.txt", startUrl.origin);
       const { response } = await safeFetch(robotsUrl.toString(), originHost, "same_domain");
       const robotsText = (await response.text()).slice(0, 100_000);
-      let active = false;
+      let groupAgents: string[] = [];
+      let groupRules: { allow: boolean; pattern: string }[] = [];
+      const flushGroup = () => {
+        if (groupAgents.some((agent) => agent === "*" || "mobiWaveknowledgebot".toLowerCase().includes(agent))) robotsRules.push(...groupRules);
+      };
       for (const line of robotsText.split(/\r?\n/)) {
-        const [key, ...rest] = line.split(":");
-        const value = rest.join(":").trim();
-        if (key?.trim().toLowerCase() === "sitemap" && value) robotsSitemaps.push(value);
-        if (key?.trim().toLowerCase() === "user-agent") active = value === "*" || value.toLowerCase() === "mobiWaveknowledgebot";
-        if (active && key?.trim().toLowerCase() === "disallow" && (value === "/" || value === "")) robotsDisallowAll = value === "/";
+        const trimmed = line.split("#", 1)[0].trim();
+        if (!trimmed) continue;
+        const separator = trimmed.indexOf(":");
+        if (separator < 0) continue;
+        const key = trimmed.slice(0, separator).trim().toLowerCase();
+        const value = trimmed.slice(separator + 1).trim();
+        if (key === "sitemap" && value) { robotsSitemaps.push(value); continue; }
+        if (key === "user-agent") {
+          if (groupRules.length) { flushGroup(); groupAgents = []; groupRules = []; }
+          groupAgents.push(value.toLowerCase());
+        } else if ((key === "allow" || key === "disallow") && groupAgents.length && value) {
+          groupRules.push({ allow: key === "allow", pattern: value });
+        }
       }
+      flushGroup();
     } catch { /* robots unavailable: continue only with explicit submitted scope and bounded fetches */ }
-    if (robotsDisallowAll) throw new Error("robots.txt disallows crawling this host.");
+    if (!robotsPathAllowed(startUrl.pathname, robotsRules)) throw new Error("robots.txt disallows crawling the submitted path.");
     if (scope === "same_domain") {
       for (const sitemapPage of [...robotsSitemaps, ...await discoverSitemapPages(startUrl, originHost)]) {
         if (queue.length >= MAX_PAGES) break;
@@ -312,6 +339,7 @@ Deno.serve(async (request) => {
       let safeUrl: URL;
       try { safeUrl = await validatePublicHttpUrl(rawUrl); } catch { fetchFailures++; continue; }
       if (safeUrl.hostname !== originHost) continue;
+      if (!robotsPathAllowed(safeUrl.pathname, robotsRules)) { thinPagesSkipped++; continue; }
       const normalized = safeUrl.toString();
       if (visited.has(normalized)) continue;
       visited.add(normalized);
@@ -341,12 +369,22 @@ Deno.serve(async (request) => {
           }
         }
       }
-      if (extracted.length < 180) { thinPagesSkipped++; continue; }
-      pagesReadable++;
+      const quality = contentQuality(extracted);
       const title = html ? pageTitle(rawText, finalUrl.pathname || finalUrl.hostname) : finalUrl.pathname || finalUrl.hostname;
-      const normalizedContent = extracted.toLowerCase().replace(/https?:\/\/\S+/g, " ").replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
+      if (!quality.ok) {
+        thinPagesSkipped++;
+        await admin.from("knowledge_documents").update({ is_current: false }).eq("tenant_id", tenantId).eq("source_id", sourceId).eq("canonical_url", finalUrl.toString()).eq("is_current", true);
+        continue;
+      }
+      pagesReadable++;
+      const normalizedContent = normalizedContentForHash(extracted);
       const hash = await sha256(normalizedContent);
-      if (seenContentHashes.has(hash)) { duplicatesSkipped++; continue; }
+      if (seenContentHashes.has(hash)) {
+        duplicatesSkipped++;
+        // This URL now duplicates another page in this crawl; do not leave its stale copy current.
+        await admin.from("knowledge_documents").update({ is_current: false }).eq("tenant_id", tenantId).eq("source_id", sourceId).eq("canonical_url", finalUrl.toString()).eq("is_current", true);
+        continue;
+      }
       seenContentHashes.add(hash);
       const { data: document, error: docError } = await admin.from("knowledge_documents").upsert({
         tenant_id: tenantId, source_id: sourceId, canonical_url: finalUrl.toString(), title,
@@ -354,7 +392,8 @@ Deno.serve(async (request) => {
         content_type: html ? "text/html" : "text/plain", fetched_at: new Date().toISOString(), is_current: true,
       }, { onConflict: "tenant_id,canonical_url,content_hash" }).select("id").single();
       if (docError) throw docError;
-      await admin.from("knowledge_documents").update({ is_current: false }).eq("tenant_id", tenantId).eq("canonical_url", finalUrl.toString()).neq("id", document.id);
+      const { error: staleDocsError } = await admin.from("knowledge_documents").update({ is_current: false }).eq("tenant_id", tenantId).eq("source_id", sourceId).eq("canonical_url", finalUrl.toString()).neq("id", document.id);
+      if (staleDocsError) throw staleDocsError;
       const parts = chunksFor(extracted);
       await admin.from("knowledge_chunks").delete().eq("tenant_id", tenantId).eq("document_id", document.id);
       if (parts.length) {
@@ -371,7 +410,7 @@ Deno.serve(async (request) => {
     await admin.from("source_ingestion_runs").update({ status: "succeeded", pages_discovered: visited.size, pages_indexed: pagesIndexed, finished_at: new Date().toISOString() }).eq("id", runId);
     await admin.from("knowledge_sources").update({ status: "indexed", canonical_url: startUrl.toString(), last_successful_at: new Date().toISOString(), last_error_code: null }).eq("id", sourceId).eq("tenant_id", tenantId);
     await emitWebhook(admin, tenantId, "knowledge.indexed", { source_id: sourceId, pages_indexed: pagesIndexed, characters_indexed: charsIndexed });
-    return json({ ok: true, source_id: sourceId, pages_discovered: visited.size, pages_readable: pagesReadable, pages_indexed: pagesIndexed, duplicates_skipped: duplicatesSkipped, thin_pages_skipped: thinPagesSkipped, fetch_failures: fetchFailures, characters_indexed: charsIndexed, words_indexed: wordsIndexed, content_quality_gate: "30+ words, 180+ normalized characters, 28%+ unique-word ratio", message: "Source crawl completed with content extraction and duplicate filtering. No general internet search was performed." });
+    return json({ ok: true, source_id: sourceId, pages_discovered: visited.size, pages_readable: pagesReadable, pages_indexed: pagesIndexed, duplicates_skipped: duplicatesSkipped, thin_pages_skipped: thinPagesSkipped, fetch_failures: fetchFailures, characters_indexed: charsIndexed, words_indexed: wordsIndexed, content_quality_gate: "30+ words, 180+ normalized characters, 28%+ unique-word ratio", warning: pagesIndexed < 2 || charsIndexed < 1200 ? "Crawl succeeded, but the corpus may be too small for AI memory suggestions. Add readable pages with distinct content." : null, message: "Source crawl completed with content extraction and duplicate filtering. No general internet search was performed." });
   } catch (error) {
     const message = errorMessage(error);
     if (runId && admin) {

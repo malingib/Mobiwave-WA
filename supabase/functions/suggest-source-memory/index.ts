@@ -28,28 +28,35 @@ Deno.serve(async (request) => {
     const { data: docs, error: docsError } = await auth.admin.from("knowledge_documents")
       .select("canonical_url,title,extracted_text,fetched_at")
       .eq("tenant_id", tenantId).eq("source_id", sourceId).eq("is_current", true)
-      .order("fetched_at", { ascending: false }).limit(20);
+      .order("fetched_at", { ascending: false }).limit(100);
     if (docsError) throw docsError;
     if (!docs?.length) return json({ error: "This source has no indexed documents yet. Crawl it first." }, 409);
 
     const clean = (value: string) => value.normalize("NFKC").replace(/\s+/g, " ").trim();
     const unique = new Map<string, { url: string; title: string; text: string }>();
+    let rejectedThinOrRepetitive = 0;
+    let duplicatesRemoved = 0;
     for (const doc of docs) {
       const text = clean(String(doc.extracted_text ?? ""));
       const normalized = normalizedText(text);
       const words = normalized ? normalized.split(" ") : [];
       const uniqueRatio = words.length ? new Set(words).size / words.length : 0;
-      if (normalized.length < 180 || words.length < 30 || uniqueRatio < 0.28) continue;
+      if (normalized.length < 180 || words.length < 30 || uniqueRatio < 0.28) { rejectedThinOrRepetitive++; continue; }
       const key = normalized;
       if (!unique.has(key)) unique.set(key, { url: String(doc.canonical_url), title: String(doc.title ?? ""), text: text.slice(0, 7000) });
+      else duplicatesRemoved++;
     }
     const pages = [...unique.values()];
     const totalChars = pages.reduce((sum, page) => sum + page.text.length, 0);
     if (pages.length < 2 || totalChars < 1200) {
       return json({
         error: "The crawl completed, but its pages contain too little distinct text to create reliable AI memories. The crawler appears to have captured repeated page metadata rather than each page's main content. Improve page text extraction and re-crawl before generating memories.",
+        documents_examined: docs.length,
         distinct_pages: pages.length,
         distinct_characters: totalChars,
+        thin_or_repetitive_pages_rejected: rejectedThinOrRepetitive,
+        duplicate_pages_removed: duplicatesRemoved,
+        minimum_requirements: { distinct_pages: 2, distinct_characters: 1200, per_page_words: 30, unique_word_ratio: 0.28 },
       }, 422);
     }
 
