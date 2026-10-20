@@ -26,7 +26,7 @@ Configure server-side secrets in the Supabase project dashboard:
 - `INTERNAL_FUNCTION_TOKEN` — high-entropy internal token used by server-to-server worker calls.
 - `APP_ALLOWED_ORIGIN` — exact dashboard origin: `https://mobiwavewa.vercel.app`.
 
-Use unique random values and a password manager. Do not send secrets in chat or commit them to Git. Losing the encryption key prevents decrypting existing saved Meta credentials.
+Use unique random values and a password manager. Do not send secrets in chat or commit them to Git. Configure `CRAWL_RENDERER_SECRET` on both Vercel (server-side only, never a `VITE_*` variable) and Supabase Edge Function secrets; set `CRAWL_RENDERER_URL` only once the production endpoint is deployed. Losing the encryption key prevents decrypting existing saved Meta credentials.
 
 ## Supabase Auth
 
@@ -59,4 +59,4 @@ Before production campaigns, test sign-up/sign-in, workspace creation and tenant
 
 ## Scope limits
 
-The crawler is a bounded HTML/text extractor, not a browser renderer; JavaScript-rendered pages, PDFs and authenticated pages are not supported. Respect website terms, robots rules and content permissions. DNS preflight alone cannot fully eliminate DNS-rebinding races; for high-assurance production, route crawling through an egress proxy enforcing destination IP policy at connection time. Campaign launches are bounded per invocation; continue processing batches while recipients remain queued.
+The crawler supports bounded HTML/text extraction and an optional authenticated Playwright fallback for JavaScript-rendered pages; PDFs and authenticated pages remain unsupported. Respect website terms, robots rules and content permissions. DNS preflight alone cannot fully eliminate DNS-rebinding races; for high-assurance production, route crawling through an egress proxy enforcing destination IP policy at connection time. Campaign launches are bounded per invocation; continue processing batches while recipients remain queued.
