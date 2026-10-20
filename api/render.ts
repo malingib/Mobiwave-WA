@@ -31,10 +31,14 @@ function privateIPv6(ip: string) {
 async function assertPublicHost(host: string) {
   const normalized = host.toLowerCase().replace(/^\[|\]$/g, "");
   if (!normalized || normalized === "localhost" || normalized.endsWith(".localhost") ||
-      normalized.endsWith(".local") || normalized.endsWith(".internal")) throw new Error("Local hosts are blocked.");
+      normalized.endsWith(".local") || normalized.endsWith(".internal") ||
+      normalized.endsWith(".test") || normalized.endsWith(".invalid") ||
+      normalized.endsWith(".example") || normalized.endsWith(".onion")) {
+    throw new Error("Local or reserved hosts are blocked.");
+  }
   const ipType = isIP(normalized);
-  if (ipType === 4 && privateIPv4(normalized)) throw new Error("Private IP addresses are blocked.");
-  if (ipType === 6 && privateIPv6(normalized)) throw new Error("Private IP addresses are blocked.");
+  // Match the Edge Function policy: callers must submit a public DNS name, not an IP literal.
+  if (ipType) throw new Error("IP-literal URLs are not accepted. Submit a public domain name.");
   if (!ipType) {
     const records = await lookup(normalized, { all: true, verbatim: true });
     if (!records.length || records.some((r) => r.family === 4 ? privateIPv4(r.address) : privateIPv6(r.address))) {
@@ -44,10 +48,21 @@ async function assertPublicHost(host: string) {
 }
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Cache-Control", "no-store");
-  if (req.method !== "POST") return res.status(405).json({ error: "POST required." });
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return res.status(405).json({ error: "POST required." });
+  }
+  if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+    return res.status(415).json({ error: "Content-Type must be application/json." });
+  }
   const secret = process.env.CRAWL_RENDERER_SECRET;
   if (!secret || req.headers.authorization !== `Bearer ${secret}`) return res.status(401).json({ error: "Unauthorized." });
-  const rawUrl = typeof req.body?.url === "string" ? req.body.url : "";
+  let bodyBytes = 0;
+  try { bodyBytes = Buffer.byteLength(JSON.stringify(req.body ?? {}), "utf8"); } catch { bodyBytes = 10_001; }
+  if (bodyBytes > 10_000) return res.status(413).json({ error: "Request body is too large." });
+  const rawUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+  if (!rawUrl || rawUrl.length > 2048) return res.status(400).json({ error: "A URL of at most 2048 characters is required." });
   let target: URL;
   try {
     target = new URL(rawUrl);
