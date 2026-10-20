@@ -39,8 +39,10 @@ In Supabase Dashboard → Edge Functions → Secrets, configure the following. V
 | `APP_ALLOWED_ORIGIN` | Exact dashboard origin: `https://mobiwavewa.vercel.app` |
 | `OPENAI_API_KEY` | Optional; only required to enable AI replies and memory suggestions |
 | `OPENAI_MODEL` | Optional model override if AI is enabled |
+| `CRAWL_RENDERER_URL` | Optional authenticated renderer endpoint, e.g. `https://mobiwavewa.vercel.app/api/render`; enable only after the renderer is deployed to production |
+| `CRAWL_RENDERER_SECRET` | High-entropy shared secret, identical in Supabase Edge Function secrets and Vercel server-side Production environment variables |
 
-Generate the encryption and internal tokens in a trusted password manager or local secure terminal. Do not send secrets in this chat or in issue/PR comments. Do not place server secrets in Vercel's `VITE_*` variables. The browser's Supabase publishable key is designed to be public; service-role keys are not.
+Generate the encryption, internal tokens, and crawler shared secret in a trusted password manager or local secure terminal. Do not send secrets in this chat or in issue/PR comments. Do not place server secrets in Vercel's `VITE_*` variables. Set `CRAWL_RENDERER_SECRET` as a sensitive server-side Vercel environment variable (Production, and Preview only if explicitly testing there) and as a Supabase Edge Function secret; the values must match exactly. Set `CRAWL_RENDERER_URL` only after the renderer is available in the production deployment. The browser's Supabase publishable key is designed to be public; service-role keys are not.
 
 After secrets are saved, verify that all deployed functions use the expected runtime variables. Rotate any credential that has been accidentally exposed.
 
@@ -82,5 +84,5 @@ The workflow fails clearly if a required secret is missing. GitHub schedule even
 ## Known scope limits
 
 - Campaign launcher is intentionally bounded per invocation; run subsequent batches until the queue is drained.
-- Crawler supports bounded HTML/text extraction, not PDFs, authenticated pages, or JavaScript-rendered sites.
+- Crawler supports bounded HTML/text extraction and an optional authenticated Playwright fallback for JavaScript-rendered pages. PDFs and authenticated pages are not supported. The renderer only permits same-host navigation and is a defense-in-depth control, not a substitute for connection-time egress filtering against DNS rebinding.
 - This is an MVP foundation. Before broad production rollout, add load/penetration tests, privacy/compliance review, backup/restore verification, alerting, and a review of usage limits and billing.
