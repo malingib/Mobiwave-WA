@@ -9,15 +9,24 @@ const NAV_TIMEOUT = 12_000;
 
 function privateIPv4(ip: string) {
   const p = ip.split(".").map(Number);
-  return p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255) ||
-    p[0] === 0 || p[0] === 10 || p[0] === 127 || p[0] >= 224 ||
-    (p[0] === 169 && p[1] === 254) || (p[0] === 172 && p[1] >= 16 && p[1] <= 31) ||
-    (p[0] === 192 && p[1] === 168) || (p[0] === 100 && p[1] >= 64 && p[1] <= 127);
+  if (p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+  return p[0] === 0 || p[0] === 10 || p[0] === 127 || p[0] >= 224 ||
+    (p[0] === 100 && p[1] >= 64 && p[1] <= 127) ||
+    (p[0] === 169 && p[1] === 254) ||
+    (p[0] === 172 && p[1] >= 16 && p[1] <= 31) ||
+    (p[0] === 192 && (p[1] === 0 || p[1] === 168)) ||
+    (p[0] === 192 && p[1] === 88 && p[2] === 99) ||
+    (p[0] === 198 && (p[1] === 18 || p[1] === 19 || p[1] === 51)) ||
+    (p[0] === 203 && p[1] === 0 && p[2] === 113);
 }
 function privateIPv6(ip: string) {
-  const s = ip.toLowerCase();
-  return s === "::" || s === "::1" || s.startsWith("fc") || s.startsWith("fd") ||
-    /^fe[89ab]/.test(s) || s.startsWith("ff") || s.startsWith("::ffff:") || s.startsWith("2001:db8:");
+  const s = ip.toLowerCase().split("%")[0];
+  if (s === "::" || s === "::1" || s.startsWith("::ffff:") || s.startsWith("fc") ||
+      s.startsWith("fd") || /^fe[89ab]/.test(s) || s.startsWith("ff") ||
+      s.startsWith("2001:db8:") || s.startsWith("2001:10:") || s.startsWith("2001:20:") ||
+      s.startsWith("2001:2:") || s.startsWith("100:") || s.startsWith("2002:")) return true;
+  const first = parseInt(s.split(":")[0] || "0", 16);
+  return !Number.isFinite(first) || first < 0x2000 || first > 0x3fff;
 }
 async function assertPublicHost(host: string) {
   const normalized = host.toLowerCase().replace(/^\[|\]$/g, "");
@@ -43,7 +52,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     target = new URL(rawUrl);
     if (!["http:", "https:"].includes(target.protocol) || target.username || target.password ||
-        (target.port && !["80", "443"].includes(target.port))) throw new Error("Only standard public HTTP(S) URLs are supported.");
+        (target.port && target.port !== (target.protocol === "https:" ? "443" : "80"))) {
+      throw new Error("Only standard public HTTP(S) URLs are supported.");
+    }
     await assertPublicHost(target.hostname);
   } catch (e) {
     return res.status(400).json({ error: e instanceof Error ? e.message : "Invalid URL." });
@@ -54,7 +65,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const context = await browser.newContext({ javaScriptEnabled: true, serviceWorkers: "block" });
     const page = await context.newPage();
     page.setDefaultNavigationTimeout(NAV_TIMEOUT);
+    let requestCount = 0;
+    const startedAt = Date.now();
     await page.route("**/*", async (route) => {
+      requestCount++;
+      if (requestCount > 250 || Date.now() - startedAt > 25_000) return route.abort();
       const requestUrl = route.request().url();
       try {
         const u = new URL(requestUrl);
