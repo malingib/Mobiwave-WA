@@ -386,11 +386,12 @@ Deno.serve(async (request) => {
       if (buffer.byteLength > MAX_BODY_BYTES) throw new Error("Fetched page exceeded the 1.5 MB limit.");
       const rawText = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
       const html = (response.headers.get("content-type") ?? "").includes("text/html");
-      const extracted = html ? extractReadableContent(rawText) : rawText.trim();
+      let effectiveHtml = rawText;
+      let extracted = html ? extractReadableContent(rawText) : rawText.trim();
       // Discover same-host links before skipping thin JavaScript app-shell pages.
       // Otherwise a nearly empty homepage prevents the crawler reaching readable routes.
       if (scope === "same_domain" && html) {
-        for (const link of linksFromHtml(rawText, finalUrl, originHost)) {
+        for (const link of linksFromHtml(effectiveHtml, finalUrl, originHost)) {
           if (!visited.has(link) && !queue.includes(link) && queue.length < MAX_PAGES) queue.push(link);
         }
         if (visited.size === 1 && queue.length === 0) {
@@ -401,8 +402,34 @@ Deno.serve(async (request) => {
           }
         }
       }
-      const quality = contentQuality(extracted);
-      const title = html ? pageTitle(rawText, finalUrl.pathname || finalUrl.hostname) : finalUrl.pathname || finalUrl.hostname;
+      let quality = contentQuality(extracted);
+      // Opt-in JS rendering fallback, isolated from the Supabase Edge runtime.
+      const rendererUrl = Deno.env.get("CRAWL_RENDERER_URL");
+      const rendererSecret = Deno.env.get("CRAWL_RENDERER_SECRET");
+      if (html && !quality.ok && rendererUrl && rendererSecret) {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 18000);
+          let renderedResponse: Response;
+          try {
+            renderedResponse = await fetch(rendererUrl, { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", "Authorization": "Bearer " + rendererSecret }, body: JSON.stringify({ url: finalUrl.toString() }) });
+          } finally { clearTimeout(timeout); }
+          if (renderedResponse.ok) {
+            const rendered = await renderedResponse.json();
+            if (rendered.rendered === true && typeof rendered.html === "string" && typeof rendered.finalUrl === "string" && new URL(rendered.finalUrl).hostname === originHost) {
+              effectiveHtml = rendered.html.slice(0, MAX_BODY_BYTES);
+              extracted = extractReadableContent(effectiveHtml);
+              quality = contentQuality(extracted);
+              if (scope === "same_domain" && Array.isArray(rendered.links)) {
+                for (const candidate of rendered.links.slice(0, 500)) {
+                  try { const link = new URL(candidate, finalUrl); link.hash = ""; if (link.hostname === originHost && ["http:", "https:"].includes(link.protocol) && !visited.has(link.toString()) && !queue.includes(link.toString()) && queue.length < MAX_PAGES) queue.push(link.toString()); } catch { /* malformed rendered link */ }
+                }
+              }
+            }
+          } else recordFetchFailure("JavaScript renderer returned HTTP " + renderedResponse.status);
+        } catch { recordFetchFailure("JavaScript renderer unavailable or timed out"); }
+      }
+      const title = html ? pageTitle(effectiveHtml, finalUrl.pathname || finalUrl.hostname) : finalUrl.pathname || finalUrl.hostname;
       if (!quality.ok) {
         thinPagesSkipped++;
         await admin.from("knowledge_documents").update({ is_current: false }).eq("tenant_id", tenantId).eq("source_id", sourceId).eq("canonical_url", finalUrl.toString()).eq("is_current", true);
