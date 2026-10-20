@@ -142,37 +142,33 @@ function structuredDataText(html: string): string {
   return [...new Set(values)].join("\n\n");
 }
 function extractReadableContent(html: string): string {
-  // A large share of React/Vite sites ship useful metadata and headings even when
-  // the body parser's preferred <main>/<article> heuristic misses their markup.
-  // Include those signals in the candidate set instead of silently discarding them.
+  // Consider independent sources because some React/Vite pages contain useful
+  // body copy outside <main>/<article>, or expose descriptions in metadata/JSON-LD.
   const removeNoise = (value: string) => value
-    .replace(/<(script|style|noscript|svg|nav|footer|header|aside|form)\\b[^>]*>[\\s\\S]*?<\\/\\1>/gi, " ")
-    .replace(/<!--[\\s\\S]*?-->/g, " ")
+    .replace(/<(script|style|noscript|svg|nav|footer|header|aside|form)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
-    .replace(/&#(\\d+);/g, (_m, n) => String.fromCodePoint(Math.min(Number(n), 0x10ffff)))
-    .replace(/[\\t\\r ]+/g, " ").replace(/\\s*\\n\\s*/g, "\\n").trim();
+    .replace(/&#(\d+);/g, (_m, n) => String.fromCodePoint(Math.min(Number(n), 0x10ffff)))
+    .replace(/[\t\r ]+/g, " ").replace(/\s*\n\s*/g, "\n").trim();
 
   const candidates: string[] = [];
-  for (const match of html.matchAll(/<(main|article)\\b[^>]*>([\\s\\S]*?)<\\/\\1>/gi)) {
+  for (const match of html.matchAll(/<(main|article)\b[^>]*>([\s\S]*?)<\/\1>/gi)) {
     const text = removeNoise(match[2]);
     if (text.length > 40) candidates.push(text);
   }
-  // Use body text as an independent candidate; malformed/nested layout markup can
-  // make the preferred-container regex return an incomplete result.
-  const body = html.match(/<body\\b[^>]*>([\\s\\S]*?)<\\/body>/i)?.[1];
+  const body = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1];
   if (body) candidates.push(removeNoise(body));
   candidates.push(htmlToText(html));
+
   const metadata = metadataText(html);
-  if (metadata) candidates.push(metadata);
   const jsonLd = structuredDataText(html);
+  if (metadata) candidates.push(metadata);
   if (jsonLd) candidates.push(jsonLd);
 
-  // Choose the most substantial candidate. Metadata is useful as a supplement,
-  // but must not drown out actual page copy or repeated navigation.
-  const unique = [...new Set(candidates.map((v) => v.trim()).filter(Boolean))];
+  const unique = [...new Set(candidates.map((value) => value.trim()).filter(Boolean))];
   unique.sort((a, b) => {
     const qa = contentQuality(a);
     const qb = contentQuality(b);
@@ -181,8 +177,8 @@ function extractReadableContent(html: string): string {
   });
   const primary = unique[0] ?? "";
   if (!primary) return "";
-  const supplements = [metadata, jsonLd].filter((v) => v && !primary.includes(v));
-  return [primary, ...supplements].join("\\n\\n").slice(0, 500_000);
+  const supplements = [metadata, jsonLd].filter((value) => value && !primary.includes(value));
+  return [primary, ...supplements].join("\n\n").slice(0, 500_000);
 }
 
 function robotsPathAllowed(path: string, rules: { allow: boolean; pattern: string }[]): boolean {
