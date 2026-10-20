@@ -25,6 +25,32 @@ type ChatMessage = { id: string; direction: string; actor_type: string; body?: s
 type Settings = { ai_enabled: boolean; system_instructions: string; context_retention_days: number; max_ai_reply_tokens: number; human_handoff_enabled: boolean };
 type UsageStats = { messages: number; aiRequests: number; messageLimit: number; aiLimit: number };
 
+async function functionErrorPayload(error: unknown): Promise<any> {
+  const context = (error as { context?: unknown } | null)?.context;
+  if (context && typeof (context as Response).json === "function") {
+    try { return await (context as Response).clone().json(); } catch { /* retain fallback message */ }
+  }
+  return null;
+}
+
+function crawlFailureMessage(payload: any, fallback = "The crawl could not be completed."): string {
+  const message = String(payload?.error || fallback);
+  const d = payload?.diagnostics;
+  if (!d) return message;
+  const reasons = Array.isArray(d.fetch_failure_reasons)
+    ? d.fetch_failure_reasons.slice(0, 3).map((item: any) => `${item.reason} (${item.count})`).join("; ")
+    : "";
+  const details = [
+    `Pages checked: ${Number(d.pages_discovered ?? 0)}`,
+    `readable: ${Number(d.pages_readable ?? 0)}`,
+    `indexed: ${Number(d.pages_indexed ?? 0)}`,
+    `fetch failures: ${Number(d.fetch_failures ?? 0)}`,
+    `thin pages skipped: ${Number(d.thin_pages_skipped ?? 0)}`,
+    `duplicates skipped: ${Number(d.duplicates_skipped ?? 0)}`,
+  ].join(" · ");
+  return [message, details, reasons ? `Fetch details: ${reasons}` : ""].filter(Boolean).join("\\n");
+}
+
 const views: { label: View; icon: typeof LayoutDashboard; section?: string }[] = [
   { label: "Overview", icon: LayoutDashboard, section: "WORKSPACE" },
   { label: "Knowledge sources", icon: BookOpen },
@@ -234,16 +260,34 @@ export default function App() {
     if (error) { setBusy(false); setNotice(error.message); return; }
     setSourceUrl(""); setSourceName("");
     const crawl = await supabase.functions.invoke("crawl-source", { body: { tenant_id: tenantId, source_id: data.id } });
+    const crawlPayload = crawl.data ?? (crawl.error ? await functionErrorPayload(crawl.error) : null);
     setBusy(false);
-    if (crawl.error || crawl.data?.error) setNotice("Source saved. Crawl did not complete: " + (crawl.data?.error ?? crawl.error?.message));
-    else setNotice("Source indexed: " + crawl.data.pages_indexed + " page(s).");
+    if (crawl.error || crawlPayload?.error || crawlPayload?.ok === false) {
+      setNotice("Source saved, but crawl failed:\\n" + crawlFailureMessage(crawlPayload, crawl.error?.message));
+    } else {
+      setNotice(`Source indexed: ${crawlPayload?.pages_indexed ?? 0} page(s).${crawlPayload?.warning ? " " + crawlPayload.warning : ""}`);
+    }
     await loadWorkspace();
   }
 
   async function recrawlSource(sourceId: string) {
-    if (!supabase) return; setBusy(true);
-    const { data, error } = await supabase.functions.invoke("crawl-source", { body: { tenant_id: tenantId, source_id: sourceId } });
-    setBusy(false); setNotice(error ? error.message : data?.error ?? ("Indexed " + (data?.pages_indexed ?? 0) + " page(s).")); await loadWorkspace();
+    if (!supabase) return;
+    setBusy(true); setNotice("");
+    try {
+      const { data, error } = await supabase.functions.invoke("crawl-source", { body: { tenant_id: tenantId, source_id: sourceId } });
+      const payload = data ?? (error ? await functionErrorPayload(error) : null);
+      if (error || payload?.error || payload?.ok === false) {
+        setNotice("Crawl failed:\\n" + crawlFailureMessage(payload, error?.message));
+      } else {
+        setNotice(`Crawl complete: ${payload?.pages_indexed ?? 0} page(s) indexed, ${payload?.pages_discovered ?? 0} checked.${payload?.warning ? " " + payload.warning : ""}`);
+      }
+    } catch (cause) {
+      console.error("MobiWave WA crawl request failed:", cause);
+      setNotice("Could not reach the crawler. Check your connection and sign-in, then try again.");
+    } finally {
+      setBusy(false);
+      await loadWorkspace();
+    }
   }
 
   async function removeSource(sourceId: string) {
