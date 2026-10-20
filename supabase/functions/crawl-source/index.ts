@@ -439,8 +439,13 @@ Deno.serve(async (request) => {
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 18000);
           try {
-            const renderedResponse = await fetch(rendererUrl, {
+            const rendererTarget = new URL(rendererUrl);
+            if (rendererTarget.protocol !== "https:" || rendererTarget.username || rendererTarget.password) {
+              throw new Error("Renderer endpoint must be an HTTPS URL without embedded credentials.");
+            }
+            const renderedResponse = await fetch(rendererTarget.toString(), {
               method: "POST",
+              redirect: "error",
               signal: controller.signal,
               headers: { "Content-Type": "application/json", "Authorization": "Bearer " + rendererSecret },
               body: JSON.stringify({ url: finalUrl.toString() }),
