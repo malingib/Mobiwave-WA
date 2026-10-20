@@ -48,7 +48,7 @@ function crawlFailureMessage(payload: any, fallback = "The crawl could not be co
     `thin pages skipped: ${Number(d.thin_pages_skipped ?? 0)}`,
     `duplicates skipped: ${Number(d.duplicates_skipped ?? 0)}`,
   ].join(" · ");
-  return [message, details, reasons ? `Fetch details: ${reasons}` : ""].filter(Boolean).join("\\n");
+  return [message, details, reasons ? `Fetch details: ${reasons}` : ""].filter(Boolean).join(" · ");
 }
 
 const views: { label: View; icon: typeof LayoutDashboard; section?: string }[] = [
@@ -263,7 +263,7 @@ export default function App() {
     const crawlPayload = crawl.data ?? (crawl.error ? await functionErrorPayload(crawl.error) : null);
     setBusy(false);
     if (crawl.error || crawlPayload?.error || crawlPayload?.ok === false) {
-      setNotice("Source saved, but crawl failed:\\n" + crawlFailureMessage(crawlPayload, crawl.error?.message));
+      setNotice("Source saved, but crawl failed: " + crawlFailureMessage(crawlPayload, crawl.error?.message));
     } else {
       setNotice(`Source indexed: ${crawlPayload?.pages_indexed ?? 0} page(s).${crawlPayload?.warning ? " " + crawlPayload.warning : ""}`);
     }
@@ -277,7 +277,7 @@ export default function App() {
       const { data, error } = await supabase.functions.invoke("crawl-source", { body: { tenant_id: tenantId, source_id: sourceId } });
       const payload = data ?? (error ? await functionErrorPayload(error) : null);
       if (error || payload?.error || payload?.ok === false) {
-        setNotice("Crawl failed:\\n" + crawlFailureMessage(payload, error?.message));
+        setNotice("Crawl failed: " + crawlFailureMessage(payload, error?.message));
       } else {
         setNotice(`Crawl complete: ${payload?.pages_indexed ?? 0} page(s) indexed, ${payload?.pages_discovered ?? 0} checked.${payload?.warning ? " " + payload.warning : ""}`);
       }
