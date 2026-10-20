@@ -26,3 +26,5 @@ jobs:
           deno-version: v2.x
       - name: Type-check Supabase Edge Functions
         run: deno check supabase/functions/*/index.ts
+      - name: Test bounded renderer response handling
+        run: deno test supabase/functions/_shared/renderer-response_test.ts
