@@ -142,25 +142,43 @@ function structuredDataText(html: string): string {
   return [...new Set(values)].join("\n\n");
 }
 function extractReadableContent(html: string): string {
+  // Consider independent sources because some React/Vite pages contain useful
+  // body copy outside <main>/<article>, or expose descriptions in metadata/JSON-LD.
   const removeNoise = (value: string) => value
     .replace(/<(script|style|noscript|svg|nav|footer|header|aside|form)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_m, n) => String.fromCodePoint(Math.min(Number(n), 0x10ffff)))
     .replace(/[\t\r ]+/g, " ").replace(/\s*\n\s*/g, "\n").trim();
-  const preferred: string[] = [];
+
+  const candidates: string[] = [];
   for (const match of html.matchAll(/<(main|article)\b[^>]*>([\s\S]*?)<\/\1>/gi)) {
     const text = removeNoise(match[2]);
-    if (text.length > 80) preferred.push(text);
+    if (text.length > 40) candidates.push(text);
   }
-  const primary = [...new Set(preferred)].join("\n\n");
-  const fallback = htmlToText(html);
+  const body = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1];
+  if (body) candidates.push(removeNoise(body));
+  candidates.push(htmlToText(html));
+
+  const metadata = metadataText(html);
   const jsonLd = structuredDataText(html);
-  // Prefer actual article/main text; use structured data only to supplement or rescue thin pages.
-  if (primary.length >= 180) return primary.length >= 300 ? primary : [primary, jsonLd].filter(Boolean).join("\n\n");
-  if (fallback.length >= 180) return [fallback, jsonLd].filter(Boolean).join("\n\n");
-  return [primary, jsonLd].filter(Boolean).join("\n\n");
+  if (metadata) candidates.push(metadata);
+  if (jsonLd) candidates.push(jsonLd);
+
+  const unique = [...new Set(candidates.map((value) => value.trim()).filter(Boolean))];
+  unique.sort((a, b) => {
+    const qa = contentQuality(a);
+    const qb = contentQuality(b);
+    if (qa.ok !== qb.ok) return qa.ok ? -1 : 1;
+    return b.length - a.length;
+  });
+  const primary = unique[0] ?? "";
+  if (!primary) return "";
+  const supplements = [metadata, jsonLd].filter((value) => value && !primary.includes(value));
+  return [primary, ...supplements].join("\n\n").slice(0, 500_000);
 }
 
 function robotsPathAllowed(path: string, rules: { allow: boolean; pattern: string }[]): boolean {
