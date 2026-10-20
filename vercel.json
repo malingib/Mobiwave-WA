@@ -77,5 +77,11 @@
         }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "api/render.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
 }
