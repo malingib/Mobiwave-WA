@@ -410,23 +410,32 @@ Deno.serve(async (request) => {
         try {
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 18000);
-          let renderedResponse: Response;
           try {
-            renderedResponse = await fetch(rendererUrl, { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", "Authorization": "Bearer " + rendererSecret }, body: JSON.stringify({ url: finalUrl.toString() }) });
-          } finally { clearTimeout(timeout); }
-          if (renderedResponse.ok) {
-            const rendered = await renderedResponse.json();
-            if (rendered.rendered === true && typeof rendered.html === "string" && typeof rendered.finalUrl === "string" && new URL(rendered.finalUrl).hostname === originHost) {
-              effectiveHtml = rendered.html.slice(0, MAX_BODY_BYTES);
-              extracted = extractReadableContent(effectiveHtml);
-              quality = contentQuality(extracted);
-              if (scope === "same_domain" && Array.isArray(rendered.links)) {
-                for (const candidate of rendered.links.slice(0, 500)) {
-                  try { const link = new URL(candidate, finalUrl); link.hash = ""; if (link.hostname === originHost && ["http:", "https:"].includes(link.protocol) && !visited.has(link.toString()) && !queue.includes(link.toString()) && queue.length < MAX_PAGES) queue.push(link.toString()); } catch { /* malformed rendered link */ }
+            const renderedResponse = await fetch(rendererUrl, {
+              method: "POST",
+              signal: controller.signal,
+              headers: { "Content-Type": "application/json", "Authorization": "Bearer " + rendererSecret },
+              body: JSON.stringify({ url: finalUrl.toString() }),
+            });
+            if (renderedResponse.ok) {
+              const declaredLength = Number(renderedResponse.headers.get("content-length") ?? 0);
+              const MAX_RENDERER_RESPONSE_BYTES = 1_250_000;
+              if (declaredLength > MAX_RENDERER_RESPONSE_BYTES) throw new Error("Renderer response exceeded size limit.");
+              const renderedText = await renderedResponse.text();
+              if (new TextEncoder().encode(renderedText).byteLength > MAX_RENDERER_RESPONSE_BYTES) throw new Error("Renderer response exceeded size limit.");
+              const rendered = JSON.parse(renderedText);
+              if (rendered.rendered === true && typeof rendered.html === "string" && typeof rendered.finalUrl === "string" && new URL(rendered.finalUrl).hostname === originHost) {
+                effectiveHtml = rendered.html.slice(0, MAX_BODY_BYTES);
+                extracted = extractReadableContent(effectiveHtml);
+                quality = contentQuality(extracted);
+                if (scope === "same_domain" && Array.isArray(rendered.links)) {
+                  for (const candidate of rendered.links.slice(0, 500)) {
+                    try { const link = new URL(candidate, finalUrl); link.hash = ""; if (link.hostname === originHost && ["http:", "https:"].includes(link.protocol) && !visited.has(link.toString()) && !queue.includes(link.toString()) && queue.length < MAX_PAGES) queue.push(link.toString()); } catch { /* malformed rendered link */ }
+                  }
                 }
               }
-            }
-          } else recordFetchFailure("JavaScript renderer returned HTTP " + renderedResponse.status);
+            } else recordFetchFailure("JavaScript renderer returned HTTP " + renderedResponse.status);
+          } finally { clearTimeout(timeout); }
         } catch { recordFetchFailure("JavaScript renderer unavailable or timed out"); }
       }
       const title = html ? pageTitle(effectiveHtml, finalUrl.pathname || finalUrl.hostname) : finalUrl.pathname || finalUrl.hostname;
