@@ -271,6 +271,7 @@ Deno.serve(async (request) => {
   let runId: string | undefined;
   let admin: any;
   let source: any;
+  let crawlDiagnostics: Record<string, unknown> | null = null;
   try {
     const auth = await requireUser(request);
     admin = auth.admin;
@@ -419,7 +420,33 @@ Deno.serve(async (request) => {
       pagesIndexed++; charsIndexed += extracted.length; wordsIndexed += quality.words;
     }
 
-    if (!pagesIndexed) throw new Error("No unique, meaningful pages were indexed. Pages may be JavaScript-only, too short, repetitive, blocked by robots.txt, or duplicates. Check crawl diagnostics and source content.");
+    crawlDiagnostics = {
+      pages_discovered: visited.size,
+      pages_readable: pagesReadable,
+      pages_indexed: pagesIndexed,
+      fetch_failures: fetchFailures,
+      fetch_failure_reasons: Object.entries(fetchFailureReasons).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([reason, count]) => ({ reason, count })),
+      thin_pages_skipped: thinPagesSkipped,
+      duplicates_skipped: duplicatesSkipped,
+      characters_indexed: charsIndexed,
+      words_indexed: wordsIndexed,
+      quality_gate: "30+ words, 180+ normalized characters, 28%+ unique-word ratio",
+    };
+    if (!pagesIndexed) {
+      const reasons = Object.keys(fetchFailureReasons);
+      const blocked = reasons.some((reason) => /HTTP (401|403|406|429|503)|bot|forbidden|blocked/i.test(reason));
+      const timedOut = reasons.some((reason) => /abort|timeout|timed out/i.test(reason));
+      const primary = fetchFailures > 0
+        ? (blocked
+          ? "The website refused or challenged the crawler. Check the website firewall, bot protection, or access rules for MobiWaveKnowledgeBot."
+          : timedOut
+            ? "The website did not respond in time. Check server availability and try crawling again."
+            : "The crawler could not fetch one or more pages. Review the fetch diagnostics below.")
+        : thinPagesSkipped > 0
+          ? "The pages were fetched, but their readable text was too short or repetitive to index. The site may render its content with JavaScript."
+          : "The crawler did not find any unique, meaningful page content to index.";
+      throw new Error(primary);
+    }
     await admin.from("source_ingestion_runs").update({ status: "succeeded", pages_discovered: visited.size, pages_indexed: pagesIndexed, finished_at: new Date().toISOString() }).eq("id", runId);
     await admin.from("knowledge_sources").update({ status: "indexed", canonical_url: startUrl.toString(), last_successful_at: new Date().toISOString(), last_error_code: null }).eq("id", sourceId).eq("tenant_id", tenantId);
     await emitWebhook(admin, tenantId, "knowledge.indexed", { source_id: sourceId, pages_indexed: pagesIndexed, characters_indexed: charsIndexed });
@@ -430,7 +457,18 @@ Deno.serve(async (request) => {
       await admin.from("source_ingestion_runs").update({ status: "failed", error_code: message.slice(0, 180), finished_at: new Date().toISOString() }).eq("id", runId);
       if (source?.id) await admin.from("knowledge_sources").update({ status: "failed", last_error_code: message.slice(0, 180) }).eq("id", source.id);
     }
-    const status = /sign in|session is invalid/i.test(message) ? 401 : /permission/i.test(message) ? 403 : 400;
-    return json({ error: message }, status);
+    const status = /sign in|session is invalid/i.test(message) ? 401 : /permission/i.test(message) ? 403 : crawlDiagnostics ? 422 : 400;
+    return json({
+      ok: false,
+      error: message,
+      code: crawlDiagnostics ? "CRAWL_NO_INDEXABLE_CONTENT" : status === 401 ? "AUTH_REQUIRED" : status === 403 ? "PERMISSION_DENIED" : "CRAWL_FAILED",
+      diagnostics: crawlDiagnostics,
+      suggestions: crawlDiagnostics ? [
+        "Open the submitted URL in a private browser window and confirm it returns a public page.",
+        "If your site uses a firewall or bot protection, allow server-side requests from the crawler without disabling general security.",
+        "For a JavaScript-rendered site, try submitting a specific public page that includes readable HTML text.",
+        "Check robots.txt and ensure it allows the URL you want indexed."
+      ] : undefined
+    }, status);
   }
 });
