@@ -84,12 +84,26 @@ Deno.serve(async (request) => {
       return json({ error: "Google AI Studio could not generate website memory suggestions. Check model availability and API status." }, 502);
     }
     const payload = await response.json();
-    const generatedText = (payload.candidates?.[0]?.content?.parts ?? []).map((part: any) => String(part.text ?? "")).join("\n");
-    let parsed: any = {};
-    try { parsed = JSON.parse(generatedText); } catch { /* handled as empty suggestions */ }
+    const candidate = payload.candidates?.[0];
+    const generatedText = (candidate?.content?.parts ?? []).map((part: any) => String(part.text ?? "")).join("\n").trim();
+    if (!generatedText) {
+      const reason = String(candidate?.finishReason ?? payload.promptFeedback?.blockReason ?? "empty_response");
+      console.error("Gemini returned no website-memory content", reason);
+      return json({ error: "Google AI Studio returned no memory suggestions. Check the model/API availability and whether the source content can be processed.", provider_reason: reason }, 502);
+    }
+    let parsed: any;
+    try {
+      parsed = JSON.parse(generatedText);
+    } catch {
+      console.error("Gemini returned invalid JSON for website-memory suggestions");
+      return json({ error: "Google AI Studio returned an unreadable response. Please retry; no memory items were saved." }, 502);
+    }
+    if (!parsed || !Array.isArray(parsed.suggestions)) {
+      return json({ error: "Google AI Studio returned an unexpected response format. No memory items were saved." }, 502);
+    }
     const allowed = new Set(["business_rule", "business_preference"]);
     const seen = new Set<string>();
-    const rows = (Array.isArray(parsed.suggestions) ? parsed.suggestions : []).slice(0, 8).map((item: any) => ({
+    const rows = parsed.suggestions.filter((item: any) => item && typeof item === "object").slice(0, 8).map((item: any) => ({
       tenant_id: tenantId,
       title: String(item.title ?? "").trim().slice(0, 200),
       memory_text: String(item.memory_text ?? "").trim().slice(0, 6000),
@@ -115,6 +129,13 @@ Deno.serve(async (request) => {
     });
   } catch (error) {
     const message = errorMessage(error);
-    return json({ error: message }, /sign in|session is invalid/i.test(message) ? 401 : /permission/i.test(message) ? 403 : 400);
+    console.error("Website memory suggestion request failed", message);
+    const status = /sign in|session is invalid/i.test(message) ? 401
+      : /permission/i.test(message) ? 403
+      : error instanceof DOMException && error.name === "AbortError" ? 504
+      : error instanceof TypeError ? 502
+      : /required\.|not found|crawl it first|too little distinct text/i.test(message) ? 400
+      : 500;
+    return json({ error: status >= 500 ? "Website memory generation failed unexpectedly. Check the Edge Function logs and try again." : message }, status);
   }
 });
