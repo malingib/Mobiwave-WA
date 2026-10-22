@@ -37,9 +37,9 @@ export default function LandingPage() {
       <main>
         <section className="marketing-hero">
           <div className="marketing-hero-copy">
-            <div className="marketing-kicker"><span/> CUSTOMER MESSAGING, MADE CLEAR</div>
-            <h1>WhatsApp Business messaging. <em>Less busywork.</em></h1>
-            <p className="marketing-hero-description">Bring WhatsApp conversations, team collaboration and consent-led campaigns into one focused workspace for your business.</p>
+            <div className="marketing-kicker"><span/> A BETTER WAY TO WORK WITH WHATSAPP</div>
+            <h1>WhatsApp conversations, <em>without the chaos.</em></h1>
+            <p className="marketing-hero-description">Give your team one place to answer customers, coordinate handoffs and run consent-led campaigns—with your own official WhatsApp Business connection.</p>
             <div className="marketing-hero-actions">
               <a className="marketing-primary" href="/login?mode=signup">Get started <ArrowRight size={16}/></a>
               <a className="marketing-secondary" href="#features">Explore the platform <ChevronRight size={16}/></a>
@@ -69,7 +69,7 @@ export default function LandingPage() {
         </section>
 
         <section className="marketing-features" id="features">
-          <div className="marketing-section-heading"><div className="marketing-kicker">ONE WORKSPACE, LESS FRICTION</div><h2>The tools to serve customers <em>thoughtfully.</em></h2><p>Keep everyday messaging simple, while giving your team the controls to grow with confidence.</p></div>
+          <div className="marketing-section-heading"><div className="marketing-kicker">ONE WORKSPACE, LESS FRICTION</div><h2>Everything your team needs. <em>Nothing in the way.</em></h2><p>A shared inbox, organized contacts and accountable campaigns—designed around real customer work.</p></div>
           <div className="marketing-feature-grid">{features.map(({ icon: Icon, title, text }) => <article className="marketing-feature" key={title}><span className="marketing-feature-icon"><Icon size={19}/></span><h3>{title}</h3><p>{text}</p><a href="/login">Explore workspace <ArrowUpRight size={14}/></a></article>)}</div>
         </section>
 
@@ -89,7 +89,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="marketing-final-cta"><div><div className="marketing-kicker">READY WHEN YOU ARE</div><h2>Make every conversation count.</h2><p>Bring your customer messaging into one clear, connected workspace.</p></div><a className="marketing-primary" href="/login?mode=signup">Get started <ArrowRight size={16}/></a></section>
+        <section className="marketing-final-cta"><div><div className="marketing-kicker">READY WHEN YOU ARE</div><h2>Give every conversation a clear next step.</h2><p>Bring your customer messaging into one clear, connected workspace.</p></div><a className="marketing-primary" href="/login?mode=signup">Get started <ArrowRight size={16}/></a></section>
       </main>
       <footer className="marketing-footer"><a className="marketing-brand" href="/"><span className="marketing-brand-icon"><MessageCircle size={19}/></span><span><strong>MobiWave</strong><small>WA</small></span></a><p>WhatsApp customer messaging for business teams.</p><div><a href="/privacy-policy/">Privacy</a><a href="/terms-of-service/">Terms</a><a href="/data-deletion/">Data deletion</a><a href="mailto:info@mobiwave.co.ke">Contact</a></div><small>© {new Date().getFullYear()} MobiWave Innovations Ltd</small></footer>
     </div>
