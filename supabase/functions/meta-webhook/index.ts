@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
-import { retrieveApprovedContext, buildGroundedPrompt } from "../_shared/knowledge.ts";
 import { decryptToken, verifyMetaSignature } from "../_shared/meta.ts";
 import { emitWebhook } from "../_shared/customer-webhooks.ts";
 import { corsHeaders, json } from "../_shared/cors.ts";
@@ -80,83 +79,6 @@ Deno.serve(async (request) => {
           message: { type: message.type, text: text.slice(0, 3000), timestamp: message.timestamp },
         }, false);
         await admin.from("conversations").update({ last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", conversation.id);
-
-        // Explicit opt-in is required before proactive campaigns. Inbound messages open a customer-service window,
-        // but do not by themselves opt a contact into future marketing campaigns.
-        if (contact.consent_status === "opted_out" || conversation.bot_paused || message.type !== "text") continue;
-        const { data: settings } = await admin.from("tenant_settings").select("*").eq("tenant_id", tenantId).maybeSingle();
-        if (!settings?.ai_enabled) continue;
-        const apiKey = Deno.env.get("OPENAI_API_KEY");
-        if (!apiKey) continue;
-        const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
-        const [{ data: limits }, { count: aiUsed }] = await Promise.all([
-          admin.from("tenant_usage_limits").select("monthly_ai_request_limit").eq("tenant_id", tenantId).maybeSingle(),
-          admin.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "ai_request").gte("occurred_at", monthStart.toISOString()),
-        ]);
-        if ((aiUsed ?? 0) >= (limits?.monthly_ai_request_limit ?? 500)) continue;
-        const context = await retrieveApprovedContext(admin, tenantId, text);
-        if (!context.sources.length && !context.memories.length) {
-          if (settings.human_handoff_enabled) await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
-          continue;
-        }
-        const prompt = buildGroundedPrompt(text, context, settings.system_instructions ?? "");
-        let aiResponse: Response;
-        try {
-          aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-            method: "POST", headers: { "Authorization": "Bearer " + apiKey, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: settings.ai_model || Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini", temperature: 0.1, max_tokens: settings.max_ai_reply_tokens ?? 500, response_format: { type: "json_object" }, messages: [{ role: "system", content: prompt.system }, { role: "user", content: prompt.user }] }),
-            signal: AbortSignal.timeout(16000),
-          });
-        } catch {
-          if (settings.human_handoff_enabled) await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
-          continue;
-        }
-        await admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "ai_request", quantity: 1, metadata: { channel: "inbound_chatbot" } });
-        if (!aiResponse.ok) {
-          if (settings.human_handoff_enabled) await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
-          continue;
-        }
-        const aiPayload = await aiResponse.json();
-        let ai: any;
-        try { ai = JSON.parse(aiPayload.choices?.[0]?.message?.content ?? "{}"); } catch { ai = {}; }
-        const answer = typeof ai.answer === "string" ? ai.answer.trim().slice(0, 3000) : "";
-        const evidence = Array.isArray(ai.evidence) ? ai.evidence.filter((v: unknown) => typeof v === "string").slice(0, 6) : [];
-        if (ai.handoff === true || !answer || !evidence.some((ref: string) => prompt.allowedEvidence.includes(ref))) {
-          if (settings.human_handoff_enabled) await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
-          continue;
-        }
-        const monthStartForMessages = new Date(); monthStartForMessages.setUTCDate(1); monthStartForMessages.setUTCHours(0,0,0,0);
-        const [{ data: messageLimits }, { count: messageUsage }] = await Promise.all([
-          admin.from("tenant_usage_limits").select("monthly_message_limit").eq("tenant_id", tenantId).maybeSingle(),
-          admin.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStartForMessages.toISOString()),
-        ]);
-        if ((messageUsage ?? 0) >= (messageLimits?.monthly_message_limit ?? 1000)) {
-          if (settings.human_handoff_enabled) await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
-          continue;
-        }
-        const token = await decryptToken(integration.encrypted_access_token);
-        let send: Response;
-        try {
-          send = await fetch("https://graph.facebook.com/" + GRAPH_VERSION + "/" + phoneNumberId + "/messages", {
-          method: "POST", headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
-          body: JSON.stringify({ messaging_product: "whatsapp", to: from, type: "text", text: { preview_url: false, body: answer } }),
-          signal: AbortSignal.timeout(15000),
-          });
-        } catch {
-          if (settings.human_handoff_enabled) await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
-          continue;
-        }
-        const sendResult = await send.json();
-        if (send.ok && sendResult.messages?.[0]?.id) {
-          await admin.from("messages").insert({
-            tenant_id: tenantId, conversation_id: conversation.id, direction: "outbound", actor_type: "bot", message_type: "text",
-            body: answer, status: "sent", meta_message_id: sendResult.messages[0].id, metadata: { evidence, model: settings.ai_model || "gpt-4o-mini" },
-          });
-          await admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "message_submitted", quantity: 1, reference_id: sendResult.messages[0].id, metadata: { channel: "inbound_chatbot" } });
-          await emitWebhook(admin, tenantId, "message.outbound", { message_id: sendResult.messages[0].id, to: phone, type: "text", actor: "bot", status: "sent_to_meta" }, false);
-        } else if (settings.human_handoff_enabled) {
-          await admin.from("conversations").update({ bot_paused: true, status: "pending" }).eq("id", conversation.id);
-        }
       }
       for (const status of value.statuses ?? []) {
         const statusName = String(status.status ?? "");
