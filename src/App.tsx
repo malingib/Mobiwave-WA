@@ -1,19 +1,16 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import {
-  Activity, ArrowLeft, ArrowUpRight, BookOpen, Bot, Check, ChevronDown, CircleHelp,
-  Globe2, LayoutDashboard, Link2, LogOut, MessageCircle, Plus, RefreshCw, Search,
-  Send, Settings2, ShieldCheck, Sparkles, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail,
+  Activity, ArrowLeft, ArrowUpRight, BookOpen, Check, ChevronDown, CircleHelp,
+  LayoutDashboard, LogOut, MessageCircle, Plus, RefreshCw, Search,
+  Send, Settings2, ShieldCheck, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail,
 } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import LandingPage from "./LandingPage";
 import PricingPage from "./PricingPage";
 import { ErrorPage } from "./ErrorPages";
-
-type View = "Overview" | "Knowledge sources" | "AI memory" | "Chatbot settings" | "Shared inbox" | "Contacts" | "Campaigns" | "Integrations" | "Profile" | "Settings";
+type View = "Overview" | "Shared inbox" | "Contacts" | "Campaigns" | "Integrations" | "Profile" | "Settings";
 type Tenant = { id: string; name: string; slug: string; role: string };
-type Source = { id: string; submitted_url: string; display_name: string; scope: string; status: string; last_successful_at?: string; last_error_code?: string; created_at: string };
-type Memory = { id: string; title: string; memory_text: string; memory_type: string; status: string; updated_at: string; source_reference?: string };
 type Contact = { id: string; phone_e164: string; display_name?: string; consent_status: string; consent_source?: string };
 type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string };
 type Campaign = { id: string; name: string; status: string; created_at: string; template_id?: string };
@@ -22,40 +19,8 @@ type ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: str
 type TenantWebhook = { id: string; name: string; endpoint_url: string; events: string[]; enabled: boolean; last_delivery_at?: string; last_status?: string; last_error?: string; created_at: string };
 type WebhookDelivery = { id: string; webhook_id: string; event_type: string; status: string; attempt_count: number; response_status?: number; last_error?: string; created_at: string; delivered_at?: string };
 type ChatMessage = { id: string; direction: string; actor_type: string; body?: string; status: string; created_at: string };
-type Settings = { ai_enabled: boolean; system_instructions: string; context_retention_days: number; max_ai_reply_tokens: number; human_handoff_enabled: boolean };
-type UsageStats = { messages: number; aiRequests: number; messageLimit: number; aiLimit: number };
-
-async function functionErrorPayload(error: unknown): Promise<any> {
-  const context = (error as { context?: unknown } | null)?.context;
-  if (context && typeof (context as Response).json === "function") {
-    try { return await (context as Response).clone().json(); } catch { /* retain fallback message */ }
-  }
-  return null;
-}
-
-function crawlFailureMessage(payload: any, fallback = "The crawl could not be completed."): string {
-  const message = String(payload?.error || fallback);
-  const d = payload?.diagnostics;
-  if (!d) return message;
-  const reasons = Array.isArray(d.fetch_failure_reasons)
-    ? d.fetch_failure_reasons.slice(0, 3).map((item: any) => `${item.reason} (${item.count})`).join("; ")
-    : "";
-  const details = [
-    `Pages checked: ${Number(d.pages_discovered ?? 0)}`,
-    `readable: ${Number(d.pages_readable ?? 0)}`,
-    `indexed: ${Number(d.pages_indexed ?? 0)}`,
-    `fetch failures: ${Number(d.fetch_failures ?? 0)}`,
-    `thin pages skipped: ${Number(d.thin_pages_skipped ?? 0)}`,
-    `duplicates skipped: ${Number(d.duplicates_skipped ?? 0)}`,
-  ].join(" · ");
-  return [message, details, reasons ? `Fetch details: ${reasons}` : ""].filter(Boolean).join(" · ");
-}
-
 const views: { label: View; icon: typeof LayoutDashboard; section?: string }[] = [
   { label: "Overview", icon: LayoutDashboard, section: "WORKSPACE" },
-  { label: "Knowledge sources", icon: BookOpen },
-  { label: "AI memory", icon: Sparkles },
-  { label: "Chatbot settings", icon: Bot },
   { label: "Shared inbox", icon: MessageCircle, section: "MESSAGING" },
   { label: "Contacts", icon: Users },
   { label: "Campaigns", icon: Zap },
@@ -63,7 +28,6 @@ const views: { label: View; icon: typeof LayoutDashboard; section?: string }[] =
   { label: "Profile", icon: UserRound, section: "ACCOUNT" },
   { label: "Settings", icon: SettingsIcon },
 ];
-
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -82,9 +46,6 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
-  const [sources, setSources] = useState<Source[]>([]);
-  const [memories, setMemories] = useState<Memory[]>([]);
-  const [settings, setSettings] = useState<Settings>({ ai_enabled: false, system_instructions: "", context_retention_days: 30, max_ai_reply_tokens: 500, human_handoff_enabled: true });
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -92,14 +53,6 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedConversation, setSelectedConversation] = useState("");
   const [search, setSearch] = useState("");
-  const [sourceUrl, setSourceUrl] = useState("");
-  const [sourceName, setSourceName] = useState("");
-  const [sourceScope, setSourceScope] = useState("submitted_url");
-  const [memoryTitle, setMemoryTitle] = useState("");
-  const [memoryText, setMemoryText] = useState("");
-  const [memoryType, setMemoryType] = useState("business_rule");
-  const [memoryConversationId, setMemoryConversationId] = useState("");
-  const [memorySourceId, setMemorySourceId] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactOptIn, setContactOptIn] = useState(false);
@@ -123,10 +76,6 @@ export default function App() {
   const [webhookUrl, setWebhookUrl] = useState("");
   const [webhookEvents, setWebhookEvents] = useState<string[]>(["message.inbound","message.status"]);
   const [newWebhookSecret, setNewWebhookSecret] = useState("");
-  const [usageStats, setUsageStats] = useState<UsageStats>({ messages: 0, aiRequests: 0, messageLimit: 1000, aiLimit: 500 });
-  const [aiQuestion, setAiQuestion] = useState("");
-  const [aiAnswer, setAiAnswer] = useState<any>(null);
-
   useEffect(() => {
     if (!supabase) { setAuthLoading(false); return; }
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setUser(data.session?.user ?? null); setAuthLoading(false); }).catch((error: unknown) => { console.error("MobiWave WA session check failed:", error); setNotice("We could not verify your session. Check your connection and reload the page."); setAuthLoading(false); });
@@ -135,7 +84,6 @@ export default function App() {
     });
     return () => listener.subscription.unsubscribe();
   }, []);
-
   const loadTenants = useCallback(async () => {
     if (!supabase || !user) return;
     const { data, error } = await supabase.from("tenant_members").select("tenant_id,role,tenants(id,name,slug)").eq("user_id", user.id);
@@ -144,34 +92,25 @@ export default function App() {
     setTenants(mapped);
     setTenantId((current) => mapped.some((t) => t.id === current) ? current : mapped[0]?.id ?? "");
   }, [user]);
-
   useEffect(() => { void loadTenants(); }, [loadTenants]);
   useEffect(() => { setProfileName(String(user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "")); }, [user]);
   useEffect(() => { setNewApiKey(""); setNewWebhookSecret(""); setMetaWebhookToken(""); }, [tenantId]);
-
   const activeTenant = tenants.find((t) => t.id === tenantId);
   const isAdmin = activeTenant ? ["owner", "admin"].includes(activeTenant.role) : false;
-
   const loadWorkspace = useCallback(async () => {
     if (!supabase || !tenantId) {
-      setSources([]); setMemories([]); setContacts([]); setTemplates([]); setCampaigns([]); setConversations([]);
-      setMetaStatus(null); setMetaPhoneId(""); setMetaWabaId(""); setMetaWebhookToken(""); setApiKeys([]); setWebhooks([]); setWebhookDeliveries([]); setUsageStats({ messages: 0, aiRequests: 0, messageLimit: 1000, aiLimit: 500 }); return;
+      setContacts([]); setTemplates([]); setCampaigns([]); setConversations([]);
+      setMetaStatus(null); setMetaPhoneId(""); setMetaWabaId(""); setMetaWebhookToken(""); setApiKeys([]); setWebhooks([]); setWebhookDeliveries([]); return;
     }
     setLoading(true);
     const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
     const results = await Promise.all([
-      supabase.from("knowledge_sources").select("id,submitted_url,display_name,scope,status,last_successful_at,last_error_code,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
-      supabase.from("ai_memory_items").select("id,title,memory_text,memory_type,status,updated_at,source_reference").eq("tenant_id", tenantId).order("updated_at", { ascending: false }),
-      supabase.from("tenant_settings").select("ai_enabled,system_instructions,context_retention_days,max_ai_reply_tokens,human_handoff_enabled").eq("tenant_id", tenantId).maybeSingle(),
       supabase.from("contacts").select("id,phone_e164,display_name,consent_status,consent_source").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(500),
       supabase.from("wa_templates").select("id,meta_template_name,language_code,category,meta_status").eq("tenant_id", tenantId).order("meta_template_name"),
       supabase.from("campaigns").select("id,name,status,created_at,template_id").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
       supabase.from("conversations").select("id,status,bot_paused,last_message_at,contacts(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
       supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at").eq("tenant_id", tenantId).maybeSingle(),
       supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
-      supabase.from("tenant_usage_limits").select("monthly_message_limit,monthly_ai_request_limit").eq("tenant_id", tenantId).maybeSingle(),
-      supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString()),
-      supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "ai_request").gte("occurred_at", monthStart.toISOString()),
       supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
     ]).catch((cause: unknown) => {
       console.error("MobiWave WA workspace load failed:", cause);
@@ -180,11 +119,8 @@ export default function App() {
       return null;
     });
     if (!results) return;
-    const [s, m, st, c, t, ca, co, mi, ak, ul, um, ua, wh] = results;
-    if (s.error) setNotice("Could not load workspace data. Please refresh and try again.");
-    setSources((s.data ?? []) as Source[]);
-    setMemories((m.data ?? []) as Memory[]);
-    if (st.data) setSettings(st.data as Settings);
+    const [c, t, ca, co, mi, ak, wh] = results;
+    if (c.error || t.error || ca.error || co.error || mi.error) setNotice("Could not load workspace data. Please refresh and try again.");
     setContacts((c.data ?? []) as Contact[]);
     setTemplates((t.data ?? []) as Template[]);
     setCampaigns((ca.data ?? []) as Campaign[]);
@@ -197,21 +133,16 @@ export default function App() {
     const { data: deliveryRows, error: deliveryError } = await Promise.resolve(supabase.from("webhook_deliveries").select("id,webhook_id,event_type,status,attempt_count,response_status,last_error,created_at,delivered_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(50)).catch((cause: unknown) => { console.error("MobiWave WA webhook history load failed:", cause); return { data: null, error: { message: "Could not load webhook history. Refresh and try again." } }; });
     if (deliveryError) setNotice("Could not load webhook delivery history: " + deliveryError.message);
     setWebhookDeliveries((deliveryRows ?? []) as WebhookDelivery[]);
-    setUsageStats({ messages: um.count ?? 0, aiRequests: ua.count ?? 0, messageLimit: ul.data?.monthly_message_limit ?? 1000, aiLimit: ul.data?.monthly_ai_request_limit ?? 500 });
     setLoading(false);
   }, [tenantId]);
-
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
-
   const loadMessages = useCallback(async () => {
     if (!supabase || !tenantId || !selectedConversation) { setMessages([]); return; }
     const { data, error } = await Promise.resolve(supabase.from("messages").select("id,direction,actor_type,body,status,created_at").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).order("created_at", { ascending: true }).limit(200)).catch((cause: unknown) => { console.error("MobiWave WA message load failed:", cause); return { data: null, error: { message: "Could not load messages. Check your connection and retry." } }; });
     if (error) setNotice(error.message);
     setMessages((data ?? []) as ChatMessage[]);
   }, [tenantId, selectedConversation]);
-
   useEffect(() => { void loadMessages(); }, [loadMessages]);
-
   async function signIn(event: FormEvent) {
     event.preventDefault(); if (!supabase) return;
     setBusy(true); setNotice("");
@@ -223,7 +154,6 @@ export default function App() {
     else if (authMode === "signup" && !result.data.session) setNotice("Check your email to confirm your account, then sign in.");
     else setNotice(authMode === "signup" ? "Account created." : "Signed in.");
   }
-
   async function sendPasswordReset(event: FormEvent) {
     event.preventDefault();
     if (!supabase || !email.trim()) { setNotice("Enter your account email address first."); return; }
@@ -234,7 +164,6 @@ export default function App() {
     setBusy(false);
     setNotice(error ? error.message : "If an account exists for that email, a password-reset link will be sent.");
   }
-
   async function createWorkspace(event: FormEvent) {
     event.preventDefault(); if (!supabase) return;
     const name = workspaceName.trim();
@@ -246,103 +175,6 @@ export default function App() {
     if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Workspace creation failed."); return; }
     setWorkspaceName(""); setNotice("Workspace created."); await loadTenants();
   }
-
-  async function addSource(event: FormEvent) {
-    event.preventDefault(); if (!supabase || !activeTenant || !user) return;
-    let url: URL;
-    try { url = new URL(sourceUrl.trim()); if (!["https:","http:"].includes(url.protocol)) throw new Error(); }
-    catch { setNotice("Enter a valid HTTP or HTTPS URL."); return; }
-    setBusy(true); setNotice("");
-    const { data, error } = await supabase.from("knowledge_sources").insert({
-      tenant_id: tenantId, submitted_url: url.toString().replace(/\/$/, ""), display_name: sourceName.trim() || url.hostname,
-      scope: sourceScope, status: "pending", created_by: user.id,
-    }).select("id").single();
-    if (error) { setBusy(false); setNotice(error.message); return; }
-    setSourceUrl(""); setSourceName("");
-    const crawl = await supabase.functions.invoke("crawl-source", { body: { tenant_id: tenantId, source_id: data.id } });
-    const crawlPayload = crawl.data ?? (crawl.error ? await functionErrorPayload(crawl.error) : null);
-    setBusy(false);
-    if (crawl.error || crawlPayload?.error || crawlPayload?.ok === false) {
-      setNotice("Source saved, but crawl failed: " + crawlFailureMessage(crawlPayload, crawl.error?.message));
-    } else {
-      setNotice(`Source indexed: ${crawlPayload?.pages_indexed ?? 0} page(s).${crawlPayload?.warning ? " " + crawlPayload.warning : ""}`);
-    }
-    await loadWorkspace();
-  }
-
-  async function recrawlSource(sourceId: string) {
-    if (!supabase) return;
-    setBusy(true); setNotice("");
-    try {
-      const { data, error } = await supabase.functions.invoke("crawl-source", { body: { tenant_id: tenantId, source_id: sourceId } });
-      const payload = data ?? (error ? await functionErrorPayload(error) : null);
-      if (error || payload?.error || payload?.ok === false) {
-        setNotice("Crawl failed: " + crawlFailureMessage(payload, error?.message));
-      } else {
-        setNotice(`Crawl complete: ${payload?.pages_indexed ?? 0} page(s) indexed, ${payload?.pages_discovered ?? 0} checked.${payload?.warning ? " " + payload.warning : ""}`);
-      }
-    } catch (cause) {
-      console.error("MobiWave WA crawl request failed:", cause);
-      setNotice("Could not reach the crawler. Check your connection and sign-in, then try again.");
-    } finally {
-      setBusy(false);
-      await loadWorkspace();
-    }
-  }
-
-  async function removeSource(sourceId: string) {
-    if (!supabase || !confirm("Remove this source and its indexed documents?")) return;
-    const { error } = await supabase.from("knowledge_sources").delete().eq("id", sourceId).eq("tenant_id", tenantId);
-    setNotice(error ? error.message : "Source removed."); await loadWorkspace();
-  }
-
-  async function addMemory(event: FormEvent) {
-    event.preventDefault(); if (!supabase || !user) return;
-    setBusy(true);
-    const { error } = await supabase.from("ai_memory_items").insert({ tenant_id: tenantId, title: memoryTitle.trim(), memory_text: memoryText.trim(), memory_type: memoryType, status: "needs_review", source_type: "manual", created_by: user.id });
-    setBusy(false);
-    if (error) setNotice(error.message); else { setMemoryTitle(""); setMemoryText(""); setNotice("Memory added to review queue."); }
-    await loadWorkspace();
-  }
-
-  async function reviewMemory(memory: Memory, approve: boolean) {
-    if (!supabase || !user) return;
-    const patch: any = { status: approve ? "approved" : "rejected", updated_at: new Date().toISOString() };
-    if (approve) { patch.approved_by = user.id; patch.approved_at = new Date().toISOString(); }
-    const { error } = await supabase.from("ai_memory_items").update(patch).eq("id", memory.id).eq("tenant_id", tenantId);
-    setNotice(error ? error.message : approve ? "Memory approved for use by the assistant." : "Memory rejected."); await loadWorkspace();
-  }
-
-  async function suggestMemory(event: FormEvent) {
-    event.preventDefault(); if (!supabase || !memoryConversationId) return; setBusy(true);
-    const { data, error } = await supabase.functions.invoke("suggest-memory", { body: { tenant_id: tenantId, conversation_id: memoryConversationId } });
-    setBusy(false); setNotice(error ? error.message : data?.error ?? data?.message ?? "Memory suggestions created."); await loadWorkspace();
-  }
-
-  async function suggestSourceMemory(event: FormEvent) {
-    event.preventDefault(); if (!supabase || !memorySourceId) return; setBusy(true);
-    const { data, error } = await supabase.functions.invoke("suggest-source-memory", { body: { tenant_id: tenantId, source_id: memorySourceId } });
-    setBusy(false); setNotice(error ? (data?.error ?? error.message) : data?.error ?? data?.message ?? "Website memory suggestions created."); await loadWorkspace();
-  }
-
-  async function deleteMemory(memoryId: string) {
-    if (!supabase || !confirm("Permanently delete this memory item?")) return;
-    const { error } = await supabase.from("ai_memory_items").delete().eq("id", memoryId).eq("tenant_id", tenantId);
-    setNotice(error ? error.message : "Memory deleted."); await loadWorkspace();
-  }
-
-  async function saveSettings(event: FormEvent) {
-    event.preventDefault(); if (!supabase) return; setBusy(true);
-    const { error } = await supabase.from("tenant_settings").update({ ai_enabled: settings.ai_enabled, system_instructions: settings.system_instructions, context_retention_days: settings.context_retention_days, max_ai_reply_tokens: settings.max_ai_reply_tokens, human_handoff_enabled: settings.human_handoff_enabled, updated_at: new Date().toISOString() }).eq("tenant_id", tenantId);
-    setBusy(false); setNotice(error ? error.message : "Chatbot settings saved."); await loadWorkspace();
-  }
-
-  async function testAi(event: FormEvent) {
-    event.preventDefault(); if (!supabase) return; setBusy(true); setAiAnswer(null);
-    const { data, error } = await supabase.functions.invoke("ai-reply", { body: { tenant_id: tenantId, question: aiQuestion } });
-    setBusy(false); setAiAnswer(error ? { error: error.message } : data); 
-  }
-
   async function addContact(event: FormEvent) {
     event.preventDefault(); if (!supabase) return;
     if (contactOptIn && !contactConsentSource.trim()) { setNotice("Record how and when consent was obtained before marking a contact opted in."); return; }
@@ -356,13 +188,11 @@ export default function App() {
     if (error) setNotice(error.message); else { setContactPhone(""); setContactName(""); setContactOptIn(false); setContactConsentSource(""); setNotice("Contact added."); }
     await loadWorkspace();
   }
-
   async function optOut(contact: Contact) {
     if (!supabase) return;
     const { error } = await supabase.from("contacts").update({ consent_status: "opted_out", opted_out_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", contact.id).eq("tenant_id", tenantId);
     setNotice(error ? error.message : "Contact opted out and suppressed from campaigns."); await loadWorkspace();
   }
-
   async function createCampaign(event: FormEvent) {
     event.preventDefault(); if (!supabase || !user) return;
     const chosen = contacts.filter((c) => campaignContacts.includes(c.id) && c.consent_status === "opted_in");
@@ -380,7 +210,6 @@ export default function App() {
     else { setCampaignName(""); setCampaignContacts([]); setCampaignParameters("[]"); setNotice("Campaign draft created with " + chosen.length + " opted-in recipients."); }
     await loadWorkspace();
   }
-
   async function launchCampaign(campaignId: string) {
     if (!supabase || !confirm("Send this campaign now using the selected approved Meta template?")) return;
     setBusy(true);
@@ -388,7 +217,6 @@ export default function App() {
     setBusy(false); setNotice(error ? error.message : data?.error ?? ("Campaign batch: " + data.sent + " sent, " + data.skipped + " skipped, " + data.failed + " failed. " + data.remaining + " remain queued."));
     await loadWorkspace();
   }
-
   async function sendReply(event: FormEvent) {
     event.preventDefault(); if (!supabase || !selectedConversation || !replyText.trim()) return;
     const conversation = conversations.find((c) => c.id === selectedConversation);
@@ -400,24 +228,20 @@ export default function App() {
     else { setReplyText(""); setNotice("Message submitted to Meta."); }
     await loadMessages(); await loadWorkspace();
   }
-
   async function resolveConversation(conversation: Conversation) {
     if (!supabase) return;
     const { data, error } = await supabase.functions.invoke("conversation-control", { body: { tenant_id: tenantId, conversation_id: conversation.id, action: "resolve" } });
     setNotice(error ? error.message : data?.error ?? "Conversation resolved. You can now suggest reusable business memory."); await loadWorkspace();
   }
-
   async function handoffConversation(conversation: Conversation, pause: boolean) {
     if (!supabase) return;
     const { data, error } = await supabase.functions.invoke("conversation-control", { body: { tenant_id: tenantId, conversation_id: conversation.id, action: pause ? "pause_bot" : "resume_bot" } });
     setNotice(error ? error.message : data?.error ?? (pause ? "Bot paused for this conversation." : "Bot resumed for this conversation.")); await loadWorkspace();
   }
-
   async function copyIntegrationValue(value: string, label: string) {
     try { await navigator.clipboard.writeText(value); setNotice(label + " copied."); }
     catch { setNotice("Clipboard unavailable. Select and copy the value manually."); }
   }
-
   async function generateMetaWebhookToken() {
     if (!supabase || !tenantId) return;
     const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -429,7 +253,6 @@ export default function App() {
     setMetaWebhookToken(raw);
     setNotice("Verification token saved securely. Copy it now and paste the same value into Meta.");
   }
-
   async function saveMeta(event: FormEvent) {
     event.preventDefault(); if (!supabase) return; setBusy(true);
     const { data, error } = await supabase.functions.invoke("meta-config", { body: { tenant_id: tenantId, phone_number_id: metaPhoneId.trim(), waba_id: metaWabaId.trim(), access_token: metaToken.trim() } });
@@ -437,19 +260,16 @@ export default function App() {
     if (error || data?.error) setNotice(data?.error ?? error?.message ?? "Save failed.");
     else { setMetaToken(""); setNotice("Meta token encrypted and saved. Verify the connection next."); await loadWorkspace(); }
   }
-
   async function verifyMeta() {
     if (!supabase) return; setBusy(true);
     const { data, error } = await supabase.functions.invoke("meta-verify", { body: { tenant_id: tenantId } });
     setBusy(false); setNotice(error ? error.message : data?.error ?? "Meta connection verified."); await loadWorkspace();
   }
-
   async function syncTemplates() {
     if (!supabase) return; setBusy(true);
     const { data, error } = await supabase.functions.invoke("meta-sync-templates", { body: { tenant_id: tenantId } });
     setBusy(false); setNotice(error ? error.message : data?.error ?? ("Templates synced: " + data?.synced)); await loadWorkspace();
   }
-
   async function createWebhook(event: FormEvent) {
     event.preventDefault(); if (!supabase) return; setBusy(true); setNewWebhookSecret("");
     const { data, error } = await supabase.functions.invoke("manage-webhook", { body: { tenant_id: tenantId, action: "create", name: webhookName.trim(), endpoint_url: webhookUrl.trim(), events: webhookEvents } });
@@ -457,7 +277,6 @@ export default function App() {
     if (error || data?.error) setNotice(data?.error ?? error?.message ?? "Could not create webhook.");
     else { setNewWebhookSecret(data.signing_secret); setWebhookUrl(""); setWebhookName("Support event receiver"); setNotice("Webhook created. Copy the signing secret now."); await loadWorkspace(); }
   }
-
   async function manageWebhook(webhook: TenantWebhook, action: "enable" | "disable" | "delete") {
     if (!supabase) return;
     if (action === "delete" && !confirm("Delete this webhook subscription and its delivery history?")) return;
@@ -465,7 +284,6 @@ export default function App() {
     setNotice(error ? error.message : data?.error ?? (action === "delete" ? "Webhook deleted." : "Webhook updated."));
     await loadWorkspace();
   }
-
   async function testWebhook(hook: TenantWebhook) {
     if (!supabase) return;
     setBusy(true);
@@ -474,7 +292,6 @@ export default function App() {
     setNotice(error ? error.message : data?.error ?? data?.message ?? "Webhook test completed.");
     await loadWorkspace();
   }
-
   async function retryWebhookDelivery(delivery: WebhookDelivery) {
     if (!supabase || !confirm("Retry this failed webhook delivery?")) return;
     setBusy(true);
@@ -483,12 +300,10 @@ export default function App() {
     setNotice(error ? error.message : data?.error ?? data?.message ?? "Webhook retry completed.");
     await loadWorkspace();
   }
-
   async function copyWebhookSecret() {
     try { await navigator.clipboard.writeText(newWebhookSecret); setNotice("Webhook signing secret copied."); }
     catch { setNotice("Clipboard unavailable. Select and copy the signing secret manually."); }
   }
-
   async function createApiKey(event: FormEvent) {
     event.preventDefault(); if (!supabase) return; setBusy(true); setNewApiKey("");
     const { data, error } = await supabase.functions.invoke("create-api-key", { body: { tenant_id: tenantId, name: apiKeyName.trim() } });
@@ -496,19 +311,16 @@ export default function App() {
     if (error || data?.error) setNotice(data?.error ?? error?.message ?? "Could not create API key.");
     else { setNewApiKey(data.api_key); setApiKeyName("Production integration"); setNotice("API key created. Copy it now; the secret will not be shown again."); await loadWorkspace(); }
   }
-
   async function revokeApiKey(key: ApiKey) {
     if (!supabase || !confirm("Revoke API key " + key.name + "? Requests using it will stop working.")) return;
     const { error } = await supabase.from("tenant_api_keys").update({ revoked_at: new Date().toISOString() }).eq("id", key.id).eq("tenant_id", tenantId);
     setNotice(error ? error.message : "API key revoked."); await loadWorkspace();
   }
-
   async function copyApiKey() {
     if (!newApiKey) return;
     try { await navigator.clipboard.writeText(newApiKey); setNotice("API key copied to clipboard."); }
     catch { setNotice("Copy is unavailable. Select and copy the displayed key manually."); }
   }
-
   async function saveProfile(event: FormEvent) {
     event.preventDefault(); if (!supabase) return;
     setBusy(true);
@@ -520,20 +332,15 @@ export default function App() {
     setNewPassword(""); setNotice("Profile updated successfully.");
     const { data } = await supabase.auth.getUser(); if (data.user) setUser(data.user);
   }
-
   async function signOut() { if (supabase) await supabase.auth.signOut(); setTenants([]); setTenantId(""); }
-
-  const filteredSources = useMemo(() => sources.filter((s) => (s.display_name + " " + s.submitted_url).toLowerCase().includes(search.toLowerCase())), [sources, search]);
   const filteredContacts = useMemo(() => contacts.filter((c) => (c.phone_e164 + " " + (c.display_name ?? "")).toLowerCase().includes(search.toLowerCase())), [contacts, search]);
   const approvedTemplates = templates.filter((t) => t.meta_status === "approved");
-
   // Public routes are available without authentication; account access starts at /login.
   const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
   if (pathname === "/pricing") return <PricingPage />;
   if (pathname === "/") return <LandingPage />;
   const knownRoute = pathname === "/login" || ["/dashboard", "/admin", "/workspace", "/settings"].some((prefix) => pathname === prefix || pathname.startsWith(prefix + "/"));
   if (!knownRoute) return <ErrorPage kind="not-found" />;
-
   if (!isSupabaseConfigured) return <div className="auth-screen"><div className="auth-card"><Brand /><h1>Connect your workspace</h1><p>Configure the Supabase URL and publishable/anon key in <code>.env.local</code> before running the dashboard.</p><pre>VITE_SUPABASE_URL=https://your-project.supabase.co{"\n"}VITE_SUPABASE_ANON_KEY=your-publishable-key</pre><a href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md">Deployment guide <ArrowUpRight size={14} /></a></div></div>;
   if (authLoading) return <div className="auth-screen"><LoaderCircle className="spin" /><span>Loading secure session…</span></div>;
   if (!session || !user) {
@@ -577,38 +384,21 @@ export default function App() {
       </div>
     </div>;
   }
-
   if (!tenants.length) return <div className="auth-screen"><form className="auth-card" onSubmit={createWorkspace}><Brand /><div className="auth-eyebrow">FIRST-TIME SETUP</div><h1>Create a workspace</h1><p>Your business data, knowledge base, approved memory and contacts will be isolated in this workspace.</p><label>Business / workspace name</label><input value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} required minLength={2} maxLength={160} placeholder="e.g. MobiWave Demo" /><button className="primary-button full" disabled={busy}>{busy ? "Creating…" : "Create workspace"}</button>{notice && <div className="inline-notice">{notice}</div>}<button type="button" className="auth-switch" onClick={signOut}>Sign out</button></form></div>;
-
   return <div className="app-shell">
     <aside className="sidebar">
       <Brand />
       <div className="workspace-picker"><div className="workspace-avatar">{activeTenant?.name.slice(0,2).toUpperCase() ?? "MW"}</div><select value={tenantId} onChange={(e) => { setTenantId(e.target.value); setSelectedConversation(""); }} aria-label="Select workspace">{tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select><ChevronDown size={15} /></div>
-      {views.map((item) => <div key={item.label}>{item.section && <div className="nav-label">{item.section}</div>}<button className={view === item.label ? "nav-item active" : "nav-item"} onClick={() => setView(item.label)}><item.icon size={18} /><span>{item.label}</span>{item.label === "AI memory" && <span className="nav-count">{memories.length}</span>}</button></div>)}
+      {views.map((item) => <div key={item.label}>{item.section && <div className="nav-label">{item.section}</div>}<button className={view === item.label ? "nav-item active" : "nav-item"} onClick={() => setView(item.label)}><item.icon size={18} /><span>{item.label}</span></button></div>)}
       <div className="sidebar-bottom"><div className="help-card"><CircleHelp size={18} /><div><strong>Need a hand?</strong><span>Read the setup guide</span></div><a href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md" aria-label="Open setup guide"><ArrowUpRight size={15} /></a></div><div className="profile"><div className="profile-avatar">{user.email?.slice(0,1).toUpperCase() ?? "U"}</div><div><strong>{user.email}</strong><span>{activeTenant?.role ?? "Member"}</span></div><button className="icon-button" onClick={signOut} aria-label="Sign out"><LogOut size={17} /></button></div></div>
     </aside>
     <main className="main">
       <header className="topbar"><div className="breadcrumbs"><span>{activeTenant?.name ?? "Workspace"}</span><span className="crumb-sep">/</span><strong>{view}</strong></div><div className="top-actions"><span className="environment"><span className="status-dot" /> {metaStatus?.enabled ? "Meta connected" : "Meta not connected"}</span><button className="icon-button" aria-label="Refresh" onClick={() => void loadWorkspace()}><RefreshCw size={17} /></button><div className="mini-avatar">{user.email?.slice(0,1).toUpperCase()}</div></div></header>
       {view === "Overview" && <section className="content">
-        <PageHeading eyebrow="WORKSPACE" title="Overview" description="Manage official WhatsApp messaging, approved knowledge and optional AI support." />
-        <div className="callout"><div className="callout-icon"><ShieldCheck size={20} /></div><div><strong>Your sources. Your AI. Your customer data.</strong><p>The assistant answers only from your approved sources and memories. It does not search the wider internet, and AI can be paused without interrupting human messaging.</p></div></div>
-        <div className="metric-grid"><Metric icon={<Globe2 size={18}/>} label="Knowledge sources" value={sources.length} note="Tenant-submitted only"/><Metric icon={<BookOpen size={18}/>} label="Indexed pages" value={sources.filter(s=>s.status==="indexed").length} note="Ready for retrieval"/><Metric icon={<Sparkles size={18}/>} label="Approved memory" value={memories.filter(m=>m.status==="approved").length} note="Curated business knowledge"/><Metric icon={<MessageCircle size={18}/>} label="Conversations" value={conversations.length} note="Shared inbox"/><Metric icon={<Send size={18}/>} label="Messages this month" value={usageStats.messages} note={"Limit: "+usageStats.messageLimit}/><Metric icon={<Bot size={18}/>} label="AI requests this month" value={usageStats.aiRequests} note={"Limit: "+usageStats.aiLimit}/></div>
-        <div className="section-header"><div><h2>Launch checklist</h2><p>Complete configuration before sending messages to real customers.</p></div></div>
-        <div className="checklist"><SetupRow done label="Workspace and tenant isolation" detail="Each workspace has separate data and access policies."/><SetupRow done={sources.some(s=>s.status==="indexed")} label="Build the knowledge base" detail="Add approved help pages and crawl only the URLs you authorize."/><SetupRow done={Boolean(metaStatus?.verified && metaStatus?.enabled)} label="Connect official Meta Cloud API" detail="Save credentials securely, verify access and sync approved templates."/><SetupRow done={settings.ai_enabled} label="Enable optional AI replies" detail="Review source content and business memories before enabling automation."/><SetupRow done={contacts.some(c=>c.consent_status==="opted_in")} label="Record customer consent" detail="Only opted-in contacts can receive campaign templates." /></div>
-      </section>}
-      {view === "Knowledge sources" && <section className="content"><PageHeading eyebrow="AI KNOWLEDGE" title="Knowledge sources" description="Add only the websites and pages your business authorizes the assistant to use."/><div className="callout"><div className="callout-icon"><ShieldCheck size={20}/></div><div><strong>No general internet search</strong><p>The crawler follows only the submitted URL or pages on the same host, depending on your selected scope. Page text is treated as untrusted reference material.</p></div></div>
-        {isAdmin && <form className="panel form-panel" onSubmit={addSource}><h2>Add a source</h2><div className="form-grid"><div className="field wide"><label>URL *</label><input type="url" value={sourceUrl} onChange={(e)=>setSourceUrl(e.target.value)} placeholder="https://yourbusiness.co.ke/help" required/></div><div className="field"><label>Display name</label><input value={sourceName} onChange={(e)=>setSourceName(e.target.value)} placeholder="Help centre"/></div><div className="field"><label>Crawl scope</label><select value={sourceScope} onChange={(e)=>setSourceScope(e.target.value)}><option value="submitted_url">Submitted URL only</option><option value="same_domain">Same host (max 20 pages)</option></select></div></div><div className="form-actions"><span className="muted small">HTML and plain text only · max 1.5 MB/page</span><button className="primary-button" disabled={busy}><Plus size={16}/>{busy?"Processing…":"Save and crawl"}</button></div></form>}
-        <div className="section-header"><div><h2>Connected sources</h2><p>{sources.length} source(s) in this workspace.</p></div><div className="search-field"><Search size={16}/><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search sources…"/></div></div><div className="source-list"><div className="source-table-head"><span>SOURCE</span><span>SCOPE</span><span>STATUS</span><span/></div>{filteredSources.length===0?<Empty icon={<Globe2 size={25}/>} title="No sources yet" text="Add a URL above to build your knowledge base."/>:filteredSources.map(s=><div className="source-row" key={s.id}><div className="source-main"><div className="source-icon"><Globe2 size={18}/></div><div className="source-text"><strong>{s.display_name}</strong><a href={s.submitted_url} target="_blank" rel="noreferrer">{s.submitted_url}<ArrowUpRight size={12}/></a>{s.last_error_code&&<small className="error-text">{s.last_error_code}</small>}</div></div><div className="source-type"><Link2 size={14}/>{s.scope==="same_domain"?"Same host":"Single URL"}</div><div><Status status={s.status}/></div><div className="row-actions"><button className="icon-button" title="Crawl now" onClick={()=>void recrawlSource(s.id)} disabled={busy}><RefreshCw size={15}/></button>{isAdmin&&<button className="icon-button" title="Remove source" onClick={()=>void removeSource(s.id)}><Trash2 size={15}/></button>}</div></div>)}</div>
-      </section>}
-      {view === "AI memory" && <section className="content"><PageHeading eyebrow="CURATED LEARNING" title="AI memory" description="Persistent business memory is curated and approved by your team; the model does not retrain itself."/>
-        {<form className="panel form-panel" onSubmit={suggestMemory}><h2>Learn from a resolved conversation</h2><p className="muted small">AI extracts reusable business knowledge for review. Customer-specific or sensitive details must not become memory, and suggestions are never auto-approved.</p><div className="form-actions"><select value={memoryConversationId} onChange={(e)=>setMemoryConversationId(e.target.value)} required><option value="">Select resolved conversation…</option>{conversations.filter(c=>c.status==="resolved").map(c=><option key={c.id} value={c.id}>{c.contacts?.display_name||c.contacts?.phone_e164||c.id}</option>)}</select><button className="secondary-button" disabled={busy||!conversations.some(c=>c.status==="resolved")}><Sparkles size={15}/> Suggest memory</button></div></form>}
-        {isAdmin&&<form className="panel form-panel" onSubmit={suggestSourceMemory}><h2>Learn from an indexed website</h2><p className="muted small">Create reviewable memory candidates from the pages already crawled. Only distinct, readable content is accepted; nothing is approved automatically.</p><div className="form-actions"><select value={memorySourceId} onChange={(e)=>setMemorySourceId(e.target.value)} required><option value="">Select indexed source…</option>{sources.filter(source=>source.status==="indexed").map(source=><option key={source.id} value={source.id}>{source.display_name} — {source.submitted_url}</option>)}</select><button className="secondary-button" disabled={busy||!sources.some(source=>source.status==="indexed")}><Sparkles size={15}/> Suggest from website</button></div></form>}
-        {isAdmin&&<form className="panel form-panel" onSubmit={addMemory}><h2>Add business memory</h2><div className="field"><label>Title *</label><input value={memoryTitle} onChange={(e)=>setMemoryTitle(e.target.value)} required maxLength={200} placeholder="e.g. Standard delivery window"/></div><div className="field"><label>Memory / rule *</label><textarea value={memoryText} onChange={(e)=>setMemoryText(e.target.value)} required maxLength={6000} rows={3} placeholder="Write a verified fact or policy that the assistant should remember."/></div><div className="form-actions"><select value={memoryType} onChange={(e)=>setMemoryType(e.target.value)}><option value="business_rule">Business rule</option><option value="business_preference">Business preference</option><option value="confirmed_correction">Confirmed correction</option><option value="resolved_issue">Resolved issue</option></select><button className="primary-button" disabled={busy}><Plus size={16}/> Add to review</button></div></form>}
-        <div className="section-header"><div><h2>Memory items</h2><p>Only approved items are included in AI retrieval.</p></div><span className="queue-count">{memories.filter(m=>m.status==="needs_review"||m.status==="suggested").length} awaiting review</span></div><div className="memory-list">{memories.length===0?<Empty icon={<Sparkles size={24}/>} title="No memory items" text="Add verified business knowledge to get started."/>:memories.map(m=><div className="memory-row" key={m.id}><div className="memory-symbol"><Sparkles size={18}/></div><div className="memory-copy"><strong>{m.title}</strong><p>{m.memory_text}</p><div className="inline-status"><Status status={m.status}/><span>{m.memory_type.replaceAll("_"," ")}</span></div></div><div className="memory-actions">{isAdmin&&(m.status!=="approved"?<button className="secondary-button" onClick={()=>void reviewMemory(m,true)}><Check size={15}/> Approve</button>:<button className="secondary-button" onClick={()=>void reviewMemory(m,false)}>Archive / reject</button>)}{isAdmin&&<button className="icon-button" onClick={()=>void deleteMemory(m.id)} aria-label="Delete memory"><Trash2 size={15}/></button>}</div></div>)}</div>
-      </section>}
-      {view === "Chatbot settings" && <section className="content"><PageHeading eyebrow="AUTOMATION" title="Chatbot settings" description="AI is optional and must answer only from approved workspace knowledge."/>
-        <form className="panel settings-panel" onSubmit={saveSettings}><div className="setting-row"><div className="setting-icon"><Bot size={19}/></div><div className="setting-copy"><strong>AI replies</strong><p>When off, inbound messages remain available in the shared inbox.</p></div><button type="button" role="switch" aria-checked={settings.ai_enabled} className={settings.ai_enabled?"toggle on":"toggle"} onClick={()=>setSettings(s=>({...s,ai_enabled:!s.ai_enabled}))}><span/></button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Approved knowledge only</strong><p>Hard-coded system guardrail. No general internet search fallback.</p></div><span className="fixed-setting">Required</span></div><div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Human handoff</strong><p>Pause the bot when evidence is missing or a handoff is required.</p></div><button type="button" role="switch" aria-checked={settings.human_handoff_enabled} className={settings.human_handoff_enabled?"toggle on":"toggle"} onClick={()=>setSettings(s=>({...s,human_handoff_enabled:!s.human_handoff_enabled}))}><span/></button></div><div className="field"><label>Business instructions</label><textarea value={settings.system_instructions??""} onChange={(e)=>setSettings(s=>({...s,system_instructions:e.target.value}))} rows={4} maxLength={6000} placeholder="Tone, escalation rules and business-specific response preferences."/></div><div className="form-grid"><div className="field"><label>Conversation context retention (days)</label><input type="number" min={0} max={365} value={settings.context_retention_days} onChange={(e)=>setSettings(s=>({...s,context_retention_days:Number(e.target.value)}))}/></div><div className="field"><label>Maximum reply tokens</label><input type="number" min={50} max={2000} value={settings.max_ai_reply_tokens} onChange={(e)=>setSettings(s=>({...s,max_ai_reply_tokens:Number(e.target.value)}))}/></div></div><div className="form-actions"><button className="primary-button" disabled={busy}>Save settings</button></div></form>
-        <form className="panel form-panel" onSubmit={testAi}><h2>Test grounded answer</h2><p className="muted small">Uses only indexed pages and approved memories. If evidence is missing, the assistant should hand off.</p><div className="field"><label>Question</label><input value={aiQuestion} onChange={(e)=>setAiQuestion(e.target.value)} required placeholder="Ask about a policy in your knowledge base"/></div><div className="form-actions"><button className="secondary-button" disabled={busy}><Sparkles size={15}/> Test answer</button></div>{aiAnswer&&<div className="ai-test-result"><strong>{aiAnswer.error?"Test failed":aiAnswer.handoff?"Human handoff":"Assistant response"}</strong><p>{aiAnswer.error??aiAnswer.answer}</p>{aiAnswer.evidence?.length>0&&<small>Evidence references: {aiAnswer.evidence.join(", ")}</small>}</div>}</form>
+        <PageHeading eyebrow="WORKSPACE" title="Overview" description="Manage official WhatsApp messaging, contacts, campaigns and integrations." />
+        <div className="metric-grid"><Metric icon={<MessageCircle size={18}/>} label="Conversations" value={conversations.length} note="Inbox conversations"/><Metric icon={<Users size={18}/>} label="Contacts" value={contacts.length} note="Consent-aware contacts"/><Metric icon={<BookOpen size={18}/>} label="Approved templates" value={templates.filter(t=>t.meta_status==="APPROVED").length} note="Synced from Meta"/><Metric icon={<Zap size={18}/>} label="Campaigns" value={campaigns.length} note="Campaign history"/></div>
+        <div className="section-header"><div><h2>Go-live checklist</h2><p>Complete these checks before sending messages to real customers.</p></div></div>
+        <div className="checklist"><SetupRow done={Boolean(activeTenant)} label="Workspace access" detail="Your workspace and role are loaded."/><SetupRow done={Boolean(metaStatus?.verified && metaStatus?.enabled)} label="Connect official Meta Cloud API" detail="Save credentials securely, verify access and sync approved templates."/><SetupRow done={templates.some(t=>t.meta_status==="APPROVED")} label="Sync an approved template" detail="Only Meta-approved templates can be used for outbound campaigns."/><SetupRow done={contacts.some(c=>c.consent_status==="opted_in")} label="Record customer consent" detail="Marketing campaigns must exclude contacts without valid opt-in or with opt-out status."/><SetupRow done={campaigns.some(c=>c.status==="sent"||c.status==="completed")} label="Run a controlled test" detail="Send a single approved template to an authorized test recipient before a wider campaign."/></div>
       </section>}
       {view === "Contacts" && <section className="content"><PageHeading eyebrow="CUSTOMER DATA" title="Contacts" description="Store consent and suppression status before using contacts for campaigns."/>
         {isAdmin&&<form className="panel form-panel" onSubmit={addContact}><h2>Add contact</h2><div className="form-grid"><div className="field"><label>Phone number (E.164) *</label><input value={contactPhone} onChange={(e)=>setContactPhone(e.target.value)} required pattern="\+[1-9][0-9]{7,14}" placeholder="+2547XXXXXXXX"/></div><div className="field"><label>Display name</label><input value={contactName} onChange={(e)=>setContactName(e.target.value)} placeholder="Customer name"/></div></div><label className="checkbox-line"><input type="checkbox" checked={contactOptIn} onChange={(e)=>setContactOptIn(e.target.checked)}/> I have verifiable permission to send WhatsApp messages to this contact.</label>{contactOptIn&&<div className="field"><label>Consent source / record *</label><input value={contactConsentSource} onChange={(e)=>setContactConsentSource(e.target.value)} required placeholder="e.g. website signup form, 2026-10-16"/></div>}<div className="form-actions"><span className="muted small">Unconfirmed contacts are not eligible for campaigns.</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add contact</button></div></form>}
@@ -660,7 +450,6 @@ export default function App() {
 apikey: YOUR_SUPABASE_PUBLISHABLE_KEY
 X-API-Key: YOUR_MOBIWAVE_API_KEY
 Content-Type: application/json
-
 {"to":"+2547XXXXXXXX","template_name":"approved_template","language_code":"en","components":[]}`}</pre></div>
         </div>
         <details className="panel form-panel">
@@ -675,14 +464,13 @@ Content-Type: application/json
         </details>
       </section>}
       {view === "Profile" && <section className="content"><PageHeading eyebrow="ACCOUNT" title="Your profile" description="Manage the name shown in your workspace and update your sign-in password."/><form className="panel form-panel profile-form" onSubmit={saveProfile}><h2>Personal details</h2><div className="profile-summary"><div className="profile-avatar large">{(profileName.trim() || user.email || "U").slice(0,1).toUpperCase()}</div><div><strong>{profileName.trim() || "Workspace member"}</strong><span>{activeTenant?.role ?? "Member"} · {activeTenant?.name ?? "No workspace"}</span></div></div><div className="field"><label>Full name</label><input value={profileName} onChange={(e)=>setProfileName(e.target.value)} maxLength={120} placeholder="Your name"/></div><div className="field"><label>Email address</label><input value={user.email ?? ""} readOnly aria-readonly="true"/><small className="muted small">Your sign-in email is managed by your authentication account.</small></div><div className="field"><label>New password <span className="muted small">(optional)</span></label><input type="password" value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} minLength={8} autoComplete="new-password" placeholder="At least 8 characters"/></div><div className="form-actions"><span className="muted small">Leave the password blank to keep it unchanged.</span><button className="primary-button" disabled={busy}>{busy?"Saving…":"Save profile"}</button></div></form><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Account security</strong><p>Use a unique password. Your profile is stored with your authenticated account and does not change workspace permissions.</p></div></div></section>}
-      {view === "Settings" && <section className="content"><PageHeading eyebrow="PREFERENCES" title="Settings" description="Review your workspace, account access and the configuration areas available to you."/><div className="panel settings-panel"><div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Active workspace</strong><p>{activeTenant?.name ?? "No workspace selected"} · workspace ID and role are managed by workspace membership.</p></div><span className="fixed-setting">{activeTenant?.role ?? "Member"}</span></div><div className="setting-row"><div className="setting-icon"><MessageCircle size={19}/></div><div className="setting-copy"><strong>WhatsApp connection</strong><p>{metaStatus?.enabled ? "Meta Cloud API is enabled for this workspace." : "Meta Cloud API is not enabled yet. Open Integrations to configure and verify it."}</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Integrations")}>Open integrations</button></div><div className="setting-row"><div className="setting-icon"><Bot size={19}/></div><div className="setting-copy"><strong>AI behaviour</strong><p>{settings.ai_enabled ? "AI replies are enabled." : "AI replies are currently disabled."} Configure reply rules, retention and handoff.</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Chatbot settings")}>Chatbot settings</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Workspace access</strong><p>Your current role is {activeTenant?.role ?? "Member"}. Administrative actions are restricted to workspace owners and admins.</p></div><span className="fixed-setting">{isAdmin?"Admin access":"Member access"}</span></div><div className="setting-row"><div className="setting-icon"><LogOut size={19}/></div><div className="setting-copy"><strong>Sign out</strong><p>End this session on the current browser.</p></div><button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button></div></div><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Privacy and data separation</strong><p>Workspace records are tenant-scoped. Use Profile to update your account details; workspace-level AI controls remain under Chatbot settings.</p></div></div></section>}
+      {view === "Settings" && <section className="content"><PageHeading eyebrow="PREFERENCES" title="Settings" description="Review your workspace and account access."/><div className="panel settings-panel"><div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Active workspace</strong><p>{activeTenant?.name ?? "No workspace selected"} · workspace ID and role are managed by workspace membership.</p></div><span className="fixed-setting">{activeTenant?.role ?? "Member"}</span></div><div className="setting-row"><div className="setting-icon"><MessageCircle size={19}/></div><div className="setting-copy"><strong>WhatsApp connection</strong><p>{metaStatus?.enabled ? "Meta Cloud API is enabled for this workspace." : "Meta Cloud API is not enabled yet. Open Integrations to configure and verify it."}</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Integrations")}>Open integrations</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Workspace access</strong><p>Your current role is {activeTenant?.role ?? "Member"}. Administrative actions are restricted to workspace owners and admins.</p></div><span className="fixed-setting">{isAdmin?"Admin access":"Member access"}</span></div><div className="setting-row"><div className="setting-icon"><LogOut size={19}/></div><div className="setting-copy"><strong>Sign out</strong><p>End this session on the current browser.</p></div><button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button></div></div><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Privacy and data separation</strong><p>Workspace records are tenant-scoped. Use Profile to update your account details; administrative actions are restricted by role.</p></div></div></section>}
       {loading&&<div className="loading-bar"><LoaderCircle className="spin" size={14}/> Loading workspace data…</div>}
       {notice&&<div className="toast" role="status"><div className="toast-icon"><Check size={15}/></div><span>{notice}</span><button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
       <footer className="footer"><span>© 2026 MobiWave Innovations Ltd</span><span><span className="footer-dot"/> {metaStatus?.enabled?"Meta API connected":"Meta not connected"}</span></footer>
     </main>
   </div>;
 }
-
 function Brand() { return <div className="brand"><div className="brand-mark"><MessageCircle size={21} strokeWidth={2.5}/></div><div><strong>MobiWave</strong><span>WHATSAPP PLATFORM</span></div></div>; }
 function PageHeading({eyebrow,title,description}:{eyebrow:string;title:string;description:string}) { return <div className="page-heading"><div><div className="eyebrow"><Activity size={14}/>{eyebrow}</div><h1>{title}</h1><p className="page-description">{description}</p></div></div>; }
 function Metric({icon,label,value,note}:{icon:ReactNode;label:string;value:number|string;note:string}) { return <div className="metric-card"><div className="metric-top"><span className="metric-icon">{icon}</span><span className="metric-label">{label}</span></div><div className="metric-value">{value}</div><div className="metric-note">{note}</div></div>; }

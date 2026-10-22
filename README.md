@@ -1,6 +1,6 @@
 # MobiWave WhatsApp
 
-MobiWave WhatsApp is a multi-tenant WhatsApp messaging and automation platform for Kenyan businesses. WhatsApp connectivity uses the official Meta Cloud API only; AI is optional.
+MobiWave WhatsApp is a multi-tenant WhatsApp messaging and automation platform for Kenyan businesses. WhatsApp connectivity uses the official Meta Cloud API only. AI, chatbot, website crawling and AI-memory features are out of scope; messaging must not depend on AI providers.
 
 ## Production resources
 
@@ -15,9 +15,7 @@ The frontend has been deployed to the existing Vercel project and the Supabase d
 ## Current capabilities
 
 - Supabase Auth sign-in/sign-up and workspace creation.
-- Tenant-scoped knowledge sources, bounded website ingestion, HTML/text extraction, content versioning, chunks and full-text retrieval.
-- Curated AI memory, manual approval/rejection and review-only suggestions from resolved conversations.
-- Grounded AI answer testing and optional inbound chatbot replies with human handoff.
+- Human-operated shared inbox, contact consent and opt-out management, approved-template campaigns, message status tracking and delivery retries.
 - Official Meta Cloud API credential encryption, verification, template sync, signed webhooks, inbound message ingestion and delivery status updates.
 - Contacts and consent state, shared inbox, human replies, approved-template campaign drafts and bounded sending batches.
 - Row-level security policies, explicit authenticated Data API grants, tenant API keys, usage metering and signed customer webhooks with retryable deliveries.
@@ -26,8 +24,7 @@ The frontend has been deployed to the existing Vercel project and the Supabase d
 ## Fixed product decisions
 
 - **WhatsApp connectivity:** official Meta WhatsApp Cloud API only. No unofficial WhatsApp Web engines, QR pairing, WPPConnect, WAHA or Evolution API.
-- **AI:** optional chatbot; campaigns and the shared inbox continue to function with AI disabled or unavailable.
-- **Knowledge building:** only tenant-submitted URLs and the same host when explicitly selected are eligible for crawling. No general internet search fallback.
+- **AI:** intentionally excluded from the product so production operation does not depend on AI keys, models, crawling or generated memory.
 - **AI memory:** persistent tenant-scoped business memories are reviewed before use. The model is not retrained automatically.
 - **Consent:** marketing campaigns require recorded opt-in and approved Meta templates. Opt-outs suppress campaign delivery. Human service replies are separately constrained to the 24-hour customer-service window.
 - **Tenant isolation:** database policies and server-side membership checks are required for every customer operation.

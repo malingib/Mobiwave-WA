@@ -7,7 +7,7 @@ The dashboard and backend foundation are merged into `main`. The existing Vercel
 ## Implemented
 
 - React/Vite dashboard with Supabase Auth UI and workspace selector.
-- Tenant-scoped knowledge sources and bounded website ingestion; full-text retrieval and curated AI memory review.
+- Messaging-first dashboard with no AI-provider dependency.
 - Contacts, consent and opt-out state, shared inbox, agent replies, and conversation handoff.
 - Official Meta WhatsApp Cloud API integration, encrypted stored credentials, template sync, signed inbound webhook handling, and message status ingestion.
 - Campaign drafts and consent-checked, approved-template sending batches.
@@ -32,7 +32,7 @@ The dashboard and backend foundation are merged into `main`. The existing Vercel
 
 - Official Meta Cloud API only; no unofficial WhatsApp Web engines or QR pairing.
 - Only tenant-submitted URLs are eligible for knowledge crawling; no general internet search fallback.
-- AI remains optional and starts disabled; suggested memories require human approval.
+- AI, chatbot replies, website crawling and AI memory are excluded from the active product scope.
 - Campaigns require recorded opt-in and approved templates; opted-out contacts are suppressed.
 - Never put service-role keys, Meta tokens, encryption keys, AI provider keys, or internal tokens in browser variables or source control.
 
