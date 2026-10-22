@@ -372,3 +372,8 @@ details.panel[open]>summary{margin-bottom:16px}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 @media(max-width:375px){.content{padding-left:14px;padding-right:14px}.topbar{gap:8px}.breadcrumbs{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-actions{gap:8px}.form-actions{flex-wrap:wrap}.section-header{align-items:flex-start;gap:12px;flex-wrap:wrap}.search-field{max-width:100%;min-width:0}.source-list{max-width:100%}}
 .source-list,.api-key-list,.inbox-layout,.chat-messages{min-width:0}
+
+
+/* Small-screen and keyboard accessibility follow-up */
+:where(button,a,input,select,textarea,summary,[tabindex]):focus-visible{outline:3px solid #176bce;outline-offset:3px}
+@media(max-width:375px){.page-heading{flex-wrap:wrap}.page-heading>.primary-button,.page-heading>.secondary-button{white-space:normal}.api-key-row{align-items:flex-start}.setting-row{flex-wrap:wrap}.setting-copy{min-width:0}.chat-header{align-items:flex-start;flex-wrap:wrap}.chat-reply{flex-wrap:wrap}.chat-reply input{flex-basis:100%;width:100%}.chat-reply .primary-button{margin-left:auto}}
