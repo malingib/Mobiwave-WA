@@ -352,7 +352,7 @@ export default function App() {
             <div className="auth-story-list">
               <div><span><Check size={15}/></span><section><strong>A shared inbox for your team</strong><small>Keep customer conversations moving with human handoff.</small></section></div>
               <div><span><Check size={15}/></span><section><strong>Messaging with safeguards</strong><small>Use official Meta Cloud API and recorded consent.</small></section></div>
-              <div><span><Check size={15}/></span><section><strong>Your business knowledge stays yours</strong><small>Workspace data is isolated and AI is always optional.</small></section></div>
+              <div><span><Check size={15}/></span><section><strong>Your workspace stays yours</strong><small>Your team's contacts, settings and messaging data stay in its own workspace.</small></section></div>
             </div>
           </div>
           <div className="auth-story-footer"><ShieldCheck size={15}/> Official Meta Cloud API connectivity <span>·</span> Built by MobiWave Innovations Ltd</div>
