@@ -115,7 +115,6 @@ export default function App() {
   const [webhookUrl, setWebhookUrl] = useState("");
   const [webhookEvents, setWebhookEvents] = useState<string[]>(["message.inbound","message.status"]);
   const [newWebhookSecret, setNewWebhookSecret] = useState("");
-  const [usageStats, setUsageStats] = useState<UsageStats>({ messages: 0, aiRequests: 0, messageLimit: 1000, aiLimit: 500 });
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiAnswer, setAiAnswer] = useState<any>(null);
   useEffect(() => {
@@ -153,8 +152,6 @@ export default function App() {
       supabase.from("conversations").select("id,status,bot_paused,last_message_at,contacts(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
       supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at").eq("tenant_id", tenantId).maybeSingle(),
       supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
-      supabase.from("tenant_usage_limits").select("monthly_message_limit").eq("tenant_id", tenantId).maybeSingle(),
-      supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString()),
       supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
     ]).catch((cause: unknown) => {
       console.error("MobiWave WA workspace load failed:", cause);
@@ -163,7 +160,7 @@ export default function App() {
       return null;
     });
     if (!results) return;
-    const [c, t, ca, co, mi, ak, ul, um, wh] = results;
+    const [c, t, ca, co, mi, ak, wh] = results;
     if (c.error || t.error || ca.error || co.error || mi.error) setNotice("Could not load workspace data. Please refresh and try again.");
     setContacts((c.data ?? []) as Contact[]);
     setTemplates((t.data ?? []) as Template[]);
@@ -177,7 +174,6 @@ export default function App() {
     const { data: deliveryRows, error: deliveryError } = await Promise.resolve(supabase.from("webhook_deliveries").select("id,webhook_id,event_type,status,attempt_count,response_status,last_error,created_at,delivered_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(50)).catch((cause: unknown) => { console.error("MobiWave WA webhook history load failed:", cause); return { data: null, error: { message: "Could not load webhook history. Refresh and try again." } }; });
     if (deliveryError) setNotice("Could not load webhook delivery history: " + deliveryError.message);
     setWebhookDeliveries((deliveryRows ?? []) as WebhookDelivery[]);
-    setUsageStats({ messages: um.count ?? 0, aiRequests: 0, messageLimit: ul.data?.monthly_message_limit ?? 1000, aiLimit: 0 });
     setLoading(false);
   }, [tenantId]);
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
