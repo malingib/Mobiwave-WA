@@ -342,3 +342,33 @@ details.panel[open]>summary{margin-bottom:16px}
 .mw-network-banner>svg{flex:0 0 auto}
 .mw-network-banner span{flex:1}
 .mw-network-banner button{border:1px solid #ddc58e;border-radius:6px;background:#fff;color:#604714;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer}
+
+
+/* Keyboard accessibility and reduced-motion support */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid #247b61;
+  outline-offset: 3px;
+}
+:where(button, a, input, select, textarea, summary) {
+  touch-action: manipulation;
+}
+.nav-item { min-height: 42px; }
+.icon-button { min-width: 38px; min-height: 38px; }
+.marketing-nav a, .marketing-feature a, .marketing-faq summary { text-underline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* Accessibility and responsive safety refinements */
+:where(a,button,input,select,textarea,summary,[tabindex]):focus-visible{outline:3px solid #176bce;outline-offset:3px}
+:where(input,select,textarea){max-width:100%}
+:where(button,a){touch-action:manipulation}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+@media(max-width:375px){.content{padding-left:14px;padding-right:14px}.topbar{gap:8px}.breadcrumbs{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-actions{gap:8px}.form-actions{flex-wrap:wrap}.section-header{align-items:flex-start;gap:12px;flex-wrap:wrap}.search-field{max-width:100%;min-width:0}.source-list{max-width:100%}}
+.source-list,.api-key-list,.inbox-layout,.chat-messages{min-width:0}
