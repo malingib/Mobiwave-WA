@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import {
-  Activity, ArrowLeft, ArrowUpRight, BookOpen, Bot, Check, ChevronDown, CircleHelp,
-  Globe2, LayoutDashboard, Link2, LogOut, MessageCircle, Plus, RefreshCw, Search,
-  Send, Settings2, ShieldCheck, Sparkles, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail,
+  Activity, ArrowLeft, ArrowUpRight, BookOpen, Check, ChevronDown, CircleHelp,
+  LayoutDashboard, LogOut, MessageCircle, Plus, RefreshCw, Search,
+  Send, Settings2, ShieldCheck, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail,
 } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import LandingPage from "./LandingPage";
