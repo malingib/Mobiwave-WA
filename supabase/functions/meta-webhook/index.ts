@@ -79,7 +79,7 @@ Deno.serve(async (request) => {
           message: { type: message.type, text: text.slice(0, 3000), timestamp: message.timestamp },
         }, false);
         await admin.from("conversations").update({ last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", conversation.id);
-
+      }
       for (const status of value.statuses ?? []) {
         const statusName = String(status.status ?? "");
         const metaId = String(status.id ?? "");
