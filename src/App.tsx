@@ -147,9 +147,6 @@ export default function App() {
     setLoading(true);
     const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
     const results = await Promise.all([
-      supabase.from("knowledge_sources").select("id,submitted_url,display_name,scope,status,last_successful_at,last_error_code,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
-      supabase.from("ai_memory_items").select("id,title,memory_text,memory_type,status,updated_at,source_reference").eq("tenant_id", tenantId).order("updated_at", { ascending: false }),
-      supabase.from("tenant_settings").select("ai_enabled,system_instructions,context_retention_days,max_ai_reply_tokens,human_handoff_enabled").eq("tenant_id", tenantId).maybeSingle(),
       supabase.from("contacts").select("id,phone_e164,display_name,consent_status,consent_source").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(500),
       supabase.from("wa_templates").select("id,meta_template_name,language_code,category,meta_status").eq("tenant_id", tenantId).order("meta_template_name"),
       supabase.from("campaigns").select("id,name,status,created_at,template_id").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
@@ -158,7 +155,6 @@ export default function App() {
       supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       supabase.from("tenant_usage_limits").select("monthly_message_limit,monthly_ai_request_limit").eq("tenant_id", tenantId).maybeSingle(),
       supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString()),
-      supabase.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "ai_request").gte("occurred_at", monthStart.toISOString()),
       supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
     ]).catch((cause: unknown) => {
       console.error("MobiWave WA workspace load failed:", cause);
@@ -167,11 +163,8 @@ export default function App() {
       return null;
     });
     if (!results) return;
-    const [s, m, st, c, t, ca, co, mi, ak, ul, um, ua, wh] = results;
-    if (s.error) setNotice("Could not load workspace data. Please refresh and try again.");
-    setSources((s.data ?? []) as Source[]);
-    setMemories((m.data ?? []) as Memory[]);
-    if (st.data) setSettings(st.data as Settings);
+    const [c, t, ca, co, mi, ak, ul, um, wh] = results;
+    if (c.error || t.error || ca.error || co.error || mi.error) setNotice("Could not load workspace data. Please refresh and try again.");
     setContacts((c.data ?? []) as Contact[]);
     setTemplates((t.data ?? []) as Template[]);
     setCampaigns((ca.data ?? []) as Campaign[]);
@@ -184,7 +177,7 @@ export default function App() {
     const { data: deliveryRows, error: deliveryError } = await Promise.resolve(supabase.from("webhook_deliveries").select("id,webhook_id,event_type,status,attempt_count,response_status,last_error,created_at,delivered_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(50)).catch((cause: unknown) => { console.error("MobiWave WA webhook history load failed:", cause); return { data: null, error: { message: "Could not load webhook history. Refresh and try again." } }; });
     if (deliveryError) setNotice("Could not load webhook delivery history: " + deliveryError.message);
     setWebhookDeliveries((deliveryRows ?? []) as WebhookDelivery[]);
-    setUsageStats({ messages: um.count ?? 0, aiRequests: ua.count ?? 0, messageLimit: ul.data?.monthly_message_limit ?? 1000, aiLimit: ul.data?.monthly_ai_request_limit ?? 500 });
+    setUsageStats({ messages: um.count ?? 0, aiRequests: 0, messageLimit: ul.data?.monthly_message_limit ?? 1000, aiLimit: 0 });
     setLoading(false);
   }, [tenantId]);
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
