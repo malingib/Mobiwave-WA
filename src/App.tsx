@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import {
-  Activity, ArrowLeft, ArrowUpRight, BookOpen, Check, ChevronDown, CircleHelp,
-  LayoutDashboard, LogOut, MessageCircle, Plus, RefreshCw, Search,
+  Activity, ArrowLeft, ArrowUpRight, Check, ChevronDown, CircleHelp,
+  LogOut, MessageCircle, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail,
 } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import LandingPage from "./LandingPage";
 import PricingPage from "./PricingPage";
 import { ErrorPage } from "./ErrorPages";
-type View = "Overview" | "Shared inbox" | "Contacts" | "Campaigns" | "Integrations" | "Profile" | "Settings";
+type View = "Shared inbox" | "Contacts" | "Campaigns" | "Integrations" | "Profile" | "Settings";
 type Tenant = { id: string; name: string; slug: string; role: string };
 type Contact = { id: string; phone_e164: string; display_name?: string; consent_status: string; consent_source?: string };
 type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string };
@@ -19,8 +19,7 @@ type ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: str
 type TenantWebhook = { id: string; name: string; endpoint_url: string; events: string[]; enabled: boolean; last_delivery_at?: string; last_status?: string; last_error?: string; created_at: string };
 type WebhookDelivery = { id: string; webhook_id: string; event_type: string; status: string; attempt_count: number; response_status?: number; last_error?: string; created_at: string; delivered_at?: string };
 type ChatMessage = { id: string; direction: string; actor_type: string; body?: string; status: string; created_at: string };
-const views: { label: View; icon: typeof LayoutDashboard; section?: string }[] = [
-  { label: "Overview", icon: LayoutDashboard, section: "WORKSPACE" },
+const views: { label: View; icon: typeof MessageCircle; section?: string }[] = [
   { label: "Shared inbox", icon: MessageCircle, section: "MESSAGING" },
   { label: "Contacts", icon: Users },
   { label: "Campaigns", icon: Zap },
@@ -41,7 +40,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantId, setTenantId] = useState("");
-  const [view, setView] = useState<View>("Overview");
+  const [view, setView] = useState<View>("Shared inbox");
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -87,7 +86,7 @@ export default function App() {
   const loadTenants = useCallback(async () => {
     if (!supabase || !user) return;
     const { data, error } = await supabase.from("tenant_members").select("tenant_id,role,tenants(id,name,slug)").eq("user_id", user.id);
-    if (error) { setNotice("Could not load workspaces: " + error.message); return; }
+    if (error) { setNotice("Could not load business accounts: " + error.message); return; }
     const mapped = (data ?? []).map((row: any) => ({ id: row.tenants.id, name: row.tenants.name, slug: row.tenants.slug, role: row.role })) as Tenant[];
     setTenants(mapped);
     setTenantId((current) => mapped.some((t) => t.id === current) ? current : mapped[0]?.id ?? "");
@@ -172,8 +171,8 @@ export default function App() {
     setBusy(true);
     const { data, error } = await supabase.functions.invoke("create-workspace", { body: { name, slug } });
     setBusy(false);
-    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Workspace creation failed."); return; }
-    setWorkspaceName(""); setNotice("Workspace created."); await loadTenants();
+    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Business setup failed."); return; }
+    setWorkspaceName(""); setNotice("Business account created."); await loadTenants();
   }
   async function addContact(event: FormEvent) {
     event.preventDefault(); if (!supabase) return;
@@ -379,7 +378,7 @@ export default function App() {
       </div>
     </div>;
   }
-  if (!tenants.length) return <div className="auth-screen"><form className="auth-card" onSubmit={createWorkspace}><Brand /><div className="auth-eyebrow">FIRST-TIME SETUP</div><h1>Create a workspace</h1><p>Your business data, knowledge base, approved memory and contacts will be isolated in this workspace.</p><label>Business / workspace name</label><input value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} required minLength={2} maxLength={160} placeholder="e.g. MobiWave Demo" /><button className="primary-button full" disabled={busy}>{busy ? "Creating…" : "Create workspace"}</button>{notice && <div className="inline-notice" role="status">{notice}</div>}<button type="button" className="auth-switch" onClick={signOut}>Sign out</button></form></div>;
+  if (!tenants.length) return <div className="auth-screen"><form className="auth-card" onSubmit={createWorkspace}><Brand /><div className="auth-eyebrow">FIRST-TIME SETUP</div><h1>Set up your business</h1><p>Create your business account to keep its contacts, WhatsApp connection, campaigns and team access separate.</p><label>Business name</label><input value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} required minLength={2} maxLength={160} placeholder="e.g. MobiWave Demo" /><button className="primary-button full" disabled={busy}>{busy ? "Setting up…" : "Set up business"}</button>{notice && <div className="inline-notice" role="status">{notice}</div>}<button type="button" className="auth-switch" onClick={signOut}>Sign out</button></form></div>;
   return <div className="app-shell">
     <aside className="sidebar">
       <Brand />
@@ -389,12 +388,6 @@ export default function App() {
     </aside>
     <main className="main">
       <header className="topbar"><div className="breadcrumbs"><span>{activeTenant?.name ?? "Workspace"}</span><span className="crumb-sep">/</span><strong>{view}</strong></div><div className="top-actions"><span className="environment"><span className="status-dot" /> {metaStatus?.enabled ? "Meta connected" : "Meta not connected"}</span><button className="icon-button" aria-label="Refresh" onClick={() => void loadWorkspace()}><RefreshCw size={17} /></button><div className="mini-avatar">{user.email?.slice(0,1).toUpperCase()}</div></div></header>
-      {view === "Overview" && <section className="content">
-        <PageHeading eyebrow="WORKSPACE" title="Overview" description="Manage official WhatsApp messaging, contacts, campaigns and integrations." />
-        <div className="metric-grid"><Metric icon={<MessageCircle size={18}/>} label="Conversations" value={conversations.length} note="Inbox conversations"/><Metric icon={<Users size={18}/>} label="Contacts" value={contacts.length} note="Consent-aware contacts"/><Metric icon={<BookOpen size={18}/>} label="Approved templates" value={templates.filter(t=>t.meta_status==="APPROVED").length} note="Synced from Meta"/><Metric icon={<Zap size={18}/>} label="Campaigns" value={campaigns.length} note="Campaign history"/></div>
-        <div className="section-header"><div><h2>Go-live checklist</h2><p>Complete these checks before sending messages to real customers.</p></div></div>
-        <div className="checklist"><SetupRow done={Boolean(activeTenant)} label="Workspace access" detail="Your workspace and role are loaded."/><SetupRow done={Boolean(metaStatus?.verified && metaStatus?.enabled)} label="Connect official Meta Cloud API" detail="Save credentials securely, verify access and sync approved templates."/><SetupRow done={templates.some(t=>t.meta_status==="APPROVED")} label="Sync an approved template" detail="Only Meta-approved templates can be used for outbound campaigns."/><SetupRow done={contacts.some(c=>c.consent_status==="opted_in")} label="Record customer consent" detail="Marketing campaigns must exclude contacts without valid opt-in or with opt-out status."/><SetupRow done={campaigns.some(c=>c.status==="sent"||c.status==="completed")} label="Run a controlled test" detail="Send a single approved template to an authorized test recipient before a wider campaign."/></div>
-      </section>}
       {view === "Contacts" && <section className="content"><PageHeading eyebrow="CUSTOMER DATA" title="Contacts" description="Store consent and suppression status before using contacts for campaigns."/>
         {isAdmin&&<form className="panel form-panel" onSubmit={addContact}><h2>Add contact</h2><div className="form-grid"><div className="field"><label>Phone number (E.164) *</label><input value={contactPhone} onChange={(e)=>setContactPhone(e.target.value)} required pattern="\+[1-9][0-9]{7,14}" placeholder="+2547XXXXXXXX"/></div><div className="field"><label>Display name</label><input value={contactName} onChange={(e)=>setContactName(e.target.value)} placeholder="Customer name"/></div></div><label className="checkbox-line"><input type="checkbox" checked={contactOptIn} onChange={(e)=>setContactOptIn(e.target.checked)}/> I have verifiable permission to send WhatsApp messages to this contact.</label>{contactOptIn&&<div className="field"><label>Consent source / record *</label><input value={contactConsentSource} onChange={(e)=>setContactConsentSource(e.target.value)} required placeholder="e.g. website signup form, 2026-10-16"/></div>}<div className="form-actions"><span className="muted small">Unconfirmed contacts are not eligible for campaigns.</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add contact</button></div></form>}
         <div className="section-header"><div><h2>Contact list</h2><p>{contacts.length} contact(s)</p></div><div className="search-field"><Search size={16}/><input aria-label="Search contacts" value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search contacts…"/></div></div><div className="source-list"><div className="source-table-head contact-head"><span>CONTACT</span><span>CONSENT</span><span>SOURCE</span><span/></div>{filteredContacts.length===0?<Empty icon={<Users size={24}/>} title="No contacts" text="Add a contact above."/>:filteredContacts.map(c=><div className="source-row contact-row" key={c.id}><div className="source-main"><div className="source-icon"><Users size={17}/></div><div className="source-text"><strong>{c.display_name||"Unnamed contact"}</strong><a>{c.phone_e164}</a></div></div><div><Status status={c.consent_status}/></div><div className="source-added">{c.consent_source||"No consent record"}</div><div className="row-actions">{c.consent_status!=="opted_out"&&<button className="icon-button" title="Opt out / suppress" aria-label={`Opt out ${c.display_name || c.phone_e164}`} onClick={()=>void optOut(c)}><ShieldCheck size={16}/></button>}</div></div>)}</div>
