@@ -40,6 +40,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantId, setTenantId] = useState("");
+  const [tenantLoading, setTenantLoading] = useState(true);
   const [view, setView] = useState<View>("Shared inbox");
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -84,12 +85,18 @@ export default function App() {
     return () => listener.subscription.unsubscribe();
   }, []);
   const loadTenants = useCallback(async () => {
-    if (!supabase || !user) return;
+    if (!supabase || !user) { setTenantLoading(false); return; }
+    setTenantLoading(true);
     const { data, error } = await supabase.from("tenant_members").select("tenant_id,role,tenants(id,name,slug)").eq("user_id", user.id);
-    if (error) { setNotice("Could not load business accounts: " + error.message); return; }
-    const mapped = (data ?? []).map((row: any) => ({ id: row.tenants.id, name: row.tenants.name, slug: row.tenants.slug, role: row.role })) as Tenant[];
+    if (error) {
+      setNotice("Could not load business accounts: " + error.message);
+      setTenantLoading(false);
+      return;
+    }
+    const mapped = (data ?? []).filter((row: any) => row.tenants).map((row: any) => ({ id: row.tenants.id, name: row.tenants.name, slug: row.tenants.slug, role: row.role })) as Tenant[];
     setTenants(mapped);
     setTenantId((current) => mapped.some((t) => t.id === current) ? current : mapped[0]?.id ?? "");
+    setTenantLoading(false);
   }, [user]);
   useEffect(() => { void loadTenants(); }, [loadTenants]);
   useEffect(() => { setProfileName(String(user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "")); }, [user]);
@@ -326,7 +333,7 @@ export default function App() {
     setNewPassword(""); setNotice("Profile updated successfully.");
     const { data } = await supabase.auth.getUser(); if (data.user) setUser(data.user);
   }
-  async function signOut() { if (supabase) await supabase.auth.signOut(); setTenants([]); setTenantId(""); }
+  async function signOut() { if (supabase) await supabase.auth.signOut(); setTenants([]); setTenantId(""); setTenantLoading(false); }
   const filteredContacts = useMemo(() => contacts.filter((c) => (c.phone_e164 + " " + (c.display_name ?? "")).toLowerCase().includes(search.toLowerCase())), [contacts, search]);
   const approvedTemplates = templates.filter((t) => t.meta_status === "approved");
   // Public routes are available without authentication; account access starts at /login.
@@ -378,11 +385,12 @@ export default function App() {
       </div>
     </div>;
   }
+  if (tenantLoading) return <div className="auth-screen" role="status"><LoaderCircle className="spin" /><span>Loading your inbox…</span></div>;
   if (!tenants.length) return <div className="auth-screen"><form className="auth-card" onSubmit={createWorkspace}><Brand /><div className="auth-eyebrow">FIRST-TIME SETUP</div><h1>Set up your business</h1><p>Create your business account to keep its contacts, WhatsApp connection, campaigns and team access separate.</p><label>Business name</label><input value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} required minLength={2} maxLength={160} placeholder="e.g. MobiWave Demo" /><button className="primary-button full" disabled={busy}>{busy ? "Setting up…" : "Set up business"}</button>{notice && <div className="inline-notice" role="status">{notice}</div>}<button type="button" className="auth-switch" onClick={signOut}>Sign out</button></form></div>;
   return <div className="app-shell">
     <aside className="sidebar">
       <Brand />
-      <div className="workspace-picker"><div className="workspace-avatar">{activeTenant?.name.slice(0,2).toUpperCase() ?? "MW"}</div><select value={tenantId} onChange={(e) => { setTenantId(e.target.value); setSelectedConversation(""); }} aria-label="Select workspace">{tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select><ChevronDown size={15} /></div>
+      {tenants.length > 1 ? <div className="workspace-picker"><div className="workspace-avatar">{activeTenant?.name.slice(0,2).toUpperCase() ?? "MW"}</div><select value={tenantId} onChange={(e) => { setTenantId(e.target.value); setSelectedConversation(""); }} aria-label="Switch business account">{tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select><ChevronDown size={15} /></div> : <div className="workspace-identity"><div className="workspace-avatar">{activeTenant?.name.slice(0,2).toUpperCase() ?? "MW"}</div><span>{activeTenant?.name ?? "MobiWave WA"}</span></div>
       {views.map((item) => <div key={item.label}>{item.section && <div className="nav-label">{item.section}</div>}<button className={view === item.label ? "nav-item active" : "nav-item"} aria-label={item.label} aria-current={view === item.label ? "page" : undefined} onClick={() => setView(item.label)}><item.icon size={18} /><span>{item.label}</span></button></div>)}
       <div className="sidebar-bottom"><div className="help-card"><CircleHelp size={18} /><div><strong>Need a hand?</strong><span>Read the setup guide</span></div><a href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md" aria-label="Open setup guide"><ArrowUpRight size={15} /></a></div><div className="profile"><div className="profile-avatar">{user.email?.slice(0,1).toUpperCase() ?? "U"}</div><div><strong>{user.email}</strong><span>{activeTenant?.role ?? "Member"}</span></div><button className="icon-button" onClick={signOut} aria-label="Sign out"><LogOut size={17} /></button></div></div>
     </aside>
