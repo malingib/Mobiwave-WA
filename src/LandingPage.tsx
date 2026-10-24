@@ -8,9 +8,9 @@ const features = [
   { icon: MessagesSquare, title: "One shared inbox", text: "Give your team a single place to manage customer conversations and handoffs." },
   { icon: Zap, title: "Campaigns with guardrails", text: "Use approved Meta templates and recorded opt-in consent for outbound messaging." },
   { icon: MessageCircle, title: "Clear delivery visibility", text: "Track message status and keep conversation history available to your team." },
-  { icon: ContactRound, title: "Contacts that stay organized", text: "Manage customer records, consent and opt-out status in each workspace." },
+  { icon: ContactRound, title: "Contacts that stay organized", text: "Manage customer records, consent and opt-out status in each business account." },
   { icon: Workflow, title: "Connect your workflows", text: "Use tenant-scoped API keys and signed webhooks to connect your business systems." },
-  { icon: ShieldCheck, title: "Built for business use", text: "Each customer workspace keeps its own settings, integration and messaging data." },
+  { icon: ShieldCheck, title: "Built for business use", text: "Each business account keeps its own settings, integration and messaging data." },
 ];
 
 export default function LandingPage() {
@@ -44,17 +44,17 @@ export default function LandingPage() {
               <a className="marketing-primary" href="/login?mode=signup">Get started <ArrowRight size={16}/></a>
               <a className="marketing-secondary" href="#features">Explore the platform <ChevronRight size={16}/></a>
             </div>
-            <div className="marketing-proof"><span><CircleCheck size={15}/> Official Meta Cloud API</span><span><CircleCheck size={15}/> Your business, your workspace</span></div>
+            <div className="marketing-proof"><span><CircleCheck size={15}/> Official Meta Cloud API</span><span><CircleCheck size={15}/> Your business, your account</span></div>
           </div>
-          <div className="marketing-preview-wrap" aria-label="Illustration of the MobiWave WA workspace">
+          <div className="marketing-preview-wrap" aria-label="Illustration of the MobiWave WA inbox">
             <div className="marketing-preview">
-              <div className="preview-topbar"><div className="preview-brand"><span><MessageCircle size={14}/></span><strong>MobiWave WA</strong></div><div className="preview-top-status"><i/> Workspace overview</div><div className="preview-user">MW</div></div>
+              <div className="preview-topbar"><div className="preview-brand"><span><MessageCircle size={14}/></span><strong>MobiWave WA</strong></div><div className="preview-top-status"><i/> Shared inbox</div><div className="preview-user">MW</div></div>
               <div className="preview-body">
                 <aside className="preview-sidebar"><div className="preview-side-active"><MessagesSquare size={15}/> Inbox <b>4</b></div><div><ContactRound size={15}/> Contacts</div><div><Zap size={15}/> Campaigns</div><div><ShieldCheck size={15}/> Team access</div><div><Workflow size={15}/> Integrations</div><div className="preview-side-bottom"><ShieldCheck size={14}/> Workspace secure</div></aside>
                 <div className="preview-main">
-                  <div className="preview-heading"><div><small>YOUR WORKSPACE</small><h3>Good morning.</h3><p>Here's what's happening with your customers.</p></div><span className="preview-date">This month⌄</span></div>
+                  <div className="preview-heading"><div><small>MESSAGING</small><h3>Your shared inbox</h3><p>Customer conversations, ready for your team.</p></div><span className="preview-date">All conversations⌄</span></div>
                   <div className="preview-stats"><div><span>Conversations</span><strong>128</strong><small className="preview-positive">Active customer threads</small></div><div><span>Response time</span><strong>4m <small>12s</small></strong><small>Team performance</small></div><div><span>Contacts</span><strong>846</strong><small>Managed in one place</small></div></div>
-                  <div className="preview-lower"><div className="preview-inbox"><div className="preview-section-title"><strong>Recent conversations</strong><span>View inbox <ArrowUpRight size={12}/></span></div><div className="preview-chat-row"><span className="preview-avatar avatar-one">AK</span><div><strong>Angela K.</strong><p>Thank you, that helps!</p></div><time>2m</time></div><div className="preview-chat-row"><span className="preview-avatar avatar-two">JM</span><div><strong>James M.</strong><p>Can you share the details?</p></div><time>8m</time></div><div className="preview-chat-row"><span className="preview-avatar avatar-three">NW</span><div><strong>Naomi W.</strong><p>I'd like to know more.</p></div><time>21m</time></div></div><div className="preview-assistant"><strong>Campaign controls</strong><p>Keep outbound messaging clear and accountable.</p><div><Check size={12}/> Approved templates only</div><div><Check size={12}/> Recorded opt-in required</div></div></div>
+                  <div className="preview-lower"><div className="preview-inbox"><div className="preview-section-title"><strong>Recent conversations</strong><span>Live inbox <ArrowUpRight size={12}/></span></div><div className="preview-chat-row"><span className="preview-avatar avatar-one">AK</span><div><strong>Angela K.</strong><p>Thank you, that helps!</p></div><time>2m</time></div><div className="preview-chat-row"><span className="preview-avatar avatar-two">JM</span><div><strong>James M.</strong><p>Can you share the details?</p></div><time>8m</time></div><div className="preview-chat-row"><span className="preview-avatar avatar-three">NW</span><div><strong>Naomi W.</strong><p>I'd like to know more.</p></div><time>21m</time></div></div><div className="preview-assistant"><strong>Campaign controls</strong><p>Keep outbound messaging clear and accountable.</p><div><Check size={12}/> Approved templates only</div><div><Check size={12}/> Recorded opt-in required</div></div></div>
                 </div>
               </div>
             </div>
