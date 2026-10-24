@@ -22,7 +22,7 @@ Deno.serve(async (request) => {
     if (memberError) throw memberError;
     const { error: settingsError } = await admin.from("tenant_settings").insert({ tenant_id: tenant.id, ai_enabled: false });
     if (settingsError) throw settingsError;
-    const { error: limitError } = await admin.from("tenant_usage_limits").insert({ tenant_id: tenant.id, monthly_message_limit: 1000, monthly_ai_request_limit: 500 });
+    const { error: limitError } = await admin.from("tenant_usage_limits").insert({ tenant_id: tenant.id, monthly_message_limit: 0, monthly_ai_request_limit: 500 });
     if (limitError) throw limitError;
     return json({ ok: true, tenant });
   } catch (error) {

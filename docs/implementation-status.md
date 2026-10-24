@@ -11,6 +11,9 @@ The dashboard and backend foundation are merged into `main`. The existing Vercel
 - Contacts, consent and opt-out state, shared inbox, agent replies, and conversation handoff.
 - Official Meta WhatsApp Cloud API integration, encrypted stored credentials, template sync, signed inbound webhook handling, and message status ingestion.
 - Campaign drafts and consent-checked, approved-template sending batches.
+- Atomic campaign-recipient claims, unknown-send outcome protection, and no fixed monthly platform-message cap by default.
+- Realtime shared inbox with per-agent unread state, assignments, filters, internal notes, paginated contact search, consent history, and guarded Meta media previews.
+- Guided template-variable preview for text body/header and URL-button parameters.
 - Tenant API keys, usage events, customer webhooks, and retryable webhook delivery worker.
 - Supabase schema migrations, row-level security policies, CI type-check/build, and Vercel production environment variables for the frontend.
 
@@ -33,6 +36,7 @@ The dashboard and backend foundation are merged into `main`. The existing Vercel
 - Official Meta Cloud API only; no unofficial WhatsApp Web engines or QR pairing.
 - Only tenant-submitted URLs are eligible for knowledge crawling; no general internet search fallback.
 - AI, chatbot replies, website crawling and AI memory are excluded from the active product scope.
+- Historical knowledge, AI-memory and chatbot tables remain in older migrations but are not active product features.
 - Campaigns require recorded opt-in and approved templates; opted-out contacts are suppressed.
 - Never put service-role keys, Meta tokens, encryption keys, AI provider keys, or internal tokens in browser variables or source control.
 

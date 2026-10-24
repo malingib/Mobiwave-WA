@@ -53,7 +53,7 @@ This means Meta accepted the request; it is not a guarantee of delivery. Deliver
 - The recipient must already exist in that tenant's contact list and have recorded opt-in consent.
 - Opted-out contacts are not eligible for campaigns or this API.
 - The message must use an approved Meta template.
-- Monthly message usage limits are checked before sending.
+- Monthly message usage is metered. A limit of zero means no fixed cap; only a positive workspace override blocks sends.
 - API keys can be revoked from the dashboard.
 - Requests and message submissions are metered per tenant.
 - API keys are stored as SHA-256 hashes; the raw secret is returned only once.
@@ -65,7 +65,7 @@ This means Meta accepted the request; it is not a guarantee of delivery. Deliver
 - `401`: missing/invalid/revoked/expired API key.
 - `403`: consent or template restriction.
 - `409`: Meta integration not configured.
-- `429`: monthly message limit reached.
+- `429`: an explicitly configured positive monthly message limit was reached.
 - `502`: Meta rejected the message or returned an upstream error.
 
 ## Customer webhooks
@@ -75,7 +75,6 @@ Workspace administrators can configure customer webhook endpoints in **Integrati
 - `message.status`
 - `message.outbound`
 - `campaign.completed`
-- `knowledge.indexed`
 
 Each delivery includes `X-MobiWave-Event`, `X-MobiWave-Delivery`, and `X-MobiWave-Signature`. The signature is `sha256=<hex HMAC-SHA256>` over the exact raw JSON request body using the one-time signing secret shown when the webhook is created. Verify the signature before processing and deduplicate on delivery ID.
 

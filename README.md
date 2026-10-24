@@ -4,7 +4,7 @@ MobiWave WhatsApp is a multi-tenant WhatsApp messaging and automation platform f
 
 ## Production resources
 
-- Dashboard: https://mobiwavewa.vercel.app
+- Dashboard: https://wap.mobiwave.co.ke
 - Repository: https://github.com/malingib/Mobiwave-WA
 - Supabase project ref: `jyjgvsljcmvbhovzevaz`
 
@@ -16,6 +16,10 @@ The frontend has been deployed to the existing Vercel project and the Supabase d
 
 - Supabase Auth sign-in/sign-up and workspace creation.
 - Human-operated shared inbox, contact consent and opt-out management, approved-template campaigns, message status tracking and delivery retries.
+- Realtime inbox updates, assignment, status/unread/assignee filters, per-agent unread markers, internal notes, and guarded attachment previews.
+- Paginated server-side contact search and a consent-change audit history, including inbound opt-out signals.
+- Guided Meta template-variable preview for campaign body/header fields and URL buttons; media-header templates are clearly blocked until upload support exists.
+- Campaign recipients are claimed atomically; unknown provider outcomes are held for review instead of retried, with no fixed monthly message cap by default.
 - Official Meta Cloud API credential encryption, verification, template sync, signed webhooks, inbound message ingestion and delivery status updates.
 - Contacts and consent state, shared inbox, human replies, approved-template campaign drafts and bounded sending batches.
 - Row-level security policies, explicit authenticated Data API grants, tenant API keys, usage metering and signed customer webhooks with retryable deliveries.
@@ -24,8 +28,7 @@ The frontend has been deployed to the existing Vercel project and the Supabase d
 ## Fixed product decisions
 
 - **WhatsApp connectivity:** official Meta WhatsApp Cloud API only. No unofficial WhatsApp Web engines, QR pairing, WPPConnect, WAHA or Evolution API.
-- **AI:** intentionally excluded from the product so production operation does not depend on AI keys, models, crawling or generated memory.
-- **AI memory:** persistent tenant-scoped business memories are reviewed before use. The model is not retrained automatically.
+- **AI and crawling:** intentionally excluded from the active product. Earlier migrations retain unused knowledge and memory tables for compatibility; do not expose or expand them as product features.
 - **Consent:** marketing campaigns require recorded opt-in and approved Meta templates. Opt-outs suppress campaign delivery. Human service replies are separately constrained to the 24-hour customer-service window.
 - **Tenant isolation:** database policies and server-side membership checks are required for every customer operation.
 
@@ -41,4 +44,4 @@ No Docker dependency is required for frontend development.
 
 ## Security notes
 
-Never commit service-role credentials, AI API keys, Meta tokens, app secrets, webhook tokens or real contact lists. The Meta access token is encrypted server-side with AES-GCM. The crawler limits size and page count, validates DNS/redirect targets, and does not crawl other hosts. DNS preflight alone cannot fully eliminate DNS-rebinding races; use an egress proxy enforcing destination IP policy for high-assurance production. Page content is untrusted data and cannot override system instructions.
+Never commit service-role credentials, Meta tokens, app secrets, webhook tokens or real contact lists. The Meta access token is encrypted server-side with AES-GCM. Supabase service-role credentials must remain server-side.

@@ -58,10 +58,12 @@ Deno.serve(async (request) => {
           if (error) throw error;
           contact = data;
         }
-        const text = message.type === "text" ? String(message.text?.body ?? "") : "[" + String(message.type ?? "unknown") + " message]";
-        const normalized = text.trim().toLowerCase();
-        if (/^(stop|unsubscribe|opt out|opt-out|cancel|end)$/.test(normalized)) {
-          await admin.from("contacts").update({ consent_status: "opted_out", opted_out_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", contact.id).eq("tenant_id", tenantId);
+        const messageType = ["text", "image", "audio", "video", "document", "interactive"].includes(String(message.type)) ? String(message.type) : "unknown";
+        const media = ["image", "audio", "video", "document"].includes(messageType) ? message[messageType] ?? {} : {};
+        const text = messageType === "text" ? String(message.text?.body ?? "") : String(media.caption ?? "") || "[" + String(message.type ?? "unknown") + " message]";
+        const normalized = text.trim().toLowerCase().replace(/[.!?,]+$/g, "").replace(/\s+/g, " ");
+        if (/^(stop|stop all|unsubscribe( me)?|opt ?out|cancel|end|quit|remove me|do not (message|text) me|don't (message|text) me)$/.test(normalized)) {
+          await admin.from("contacts").update({ consent_status: "opted_out", consent_source: "WhatsApp opt-out keyword: " + text.trim().slice(0, 80), opted_out_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", contact.id).eq("tenant_id", tenantId);
           contact.consent_status = "opted_out";
         }
         const { data: conversation, error: convError } = await admin.from("conversations").upsert({
@@ -70,8 +72,8 @@ Deno.serve(async (request) => {
         if (convError) throw convError;
         const { error: messageError } = await admin.from("messages").insert({
           tenant_id: tenantId, conversation_id: conversation.id, direction: "inbound", actor_type: "contact",
-          message_type: message.type === "text" ? "text" : "unknown", body: text, status: "received", meta_message_id: metaId,
-          metadata: { timestamp: message.timestamp, type: message.type },
+          message_type: messageType, body: text, status: "received", meta_message_id: metaId,
+          metadata: { timestamp: message.timestamp, type: message.type, media_id: media.id ?? null, mime_type: media.mime_type ?? null, filename: media.filename ?? null },
         });
         if (messageError) throw messageError;
         await emitWebhook(admin, tenantId, "message.inbound", {

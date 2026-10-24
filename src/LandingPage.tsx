@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 
 const features = [
-  { icon: MessagesSquare, title: "One shared inbox", text: "Give your team a single place to manage customer conversations and handoffs." },
+  { icon: MessagesSquare, title: "One WhatsApp number", text: "Keep every customer conversation for your business number together." },
   { icon: Zap, title: "Campaigns with guardrails", text: "Use approved Meta templates and recorded opt-in consent for outbound messaging." },
   { icon: MessageCircle, title: "Clear delivery visibility", text: "Track message status and keep conversation history available to your team." },
   { icon: ContactRound, title: "Contacts that stay organized", text: "Manage customer records, consent and opt-out status in each business account." },
@@ -39,7 +39,7 @@ export default function LandingPage() {
           <div className="marketing-hero-copy">
             <div className="marketing-kicker"><span/> A BETTER WAY TO WORK WITH WHATSAPP</div>
             <h1>WhatsApp conversations, <em>without the chaos.</em></h1>
-            <p className="marketing-hero-description">Give your team one place to answer customers, coordinate handoffs and run consent-led campaigns—with your own official WhatsApp Business connection.</p>
+            <p className="marketing-hero-description">Connect one official WhatsApp Business number, manage every customer conversation and send consent-led campaigns from one workspace.</p>
             <div className="marketing-hero-actions">
               <a className="marketing-primary" href="/login?mode=signup">Get started <ArrowRight size={16}/></a>
               <a className="marketing-secondary" href="#features">Explore the platform <ChevronRight size={16}/></a>
@@ -48,11 +48,11 @@ export default function LandingPage() {
           </div>
           <div className="marketing-preview-wrap" aria-label="Illustration of the MobiWave WA inbox">
             <div className="marketing-preview">
-              <div className="preview-topbar"><div className="preview-brand"><span><MessageCircle size={14}/></span><strong>MobiWave WA</strong></div><div className="preview-top-status"><i/> Shared inbox</div><div className="preview-user">MW</div></div>
+              <div className="preview-topbar"><div className="preview-brand"><span><MessageCircle size={14}/></span><strong>MobiWave WA</strong></div><div className="preview-top-status"><i/> Number connected</div><div className="preview-user">MW</div></div>
               <div className="preview-body">
                 <aside className="preview-sidebar"><div className="preview-side-active"><MessagesSquare size={15}/> Inbox <b>4</b></div><div><ContactRound size={15}/> Contacts</div><div><Zap size={15}/> Campaigns</div><div><ShieldCheck size={15}/> Team access</div><div><Workflow size={15}/> Integrations</div><div className="preview-side-bottom"><ShieldCheck size={14}/> Workspace secure</div></aside>
                 <div className="preview-main">
-                  <div className="preview-heading"><div><small>MESSAGING</small><h3>Your shared inbox</h3><p>Customer conversations, ready for your team.</p></div><span className="preview-date">All conversations⌄</span></div>
+                  <div className="preview-heading"><div><small>WHATSAPP</small><h3>Customer conversations</h3><p>One business number, every customer thread.</p></div><span className="preview-date">All contacts⌄</span></div>
                   <div className="preview-stats"><div><span>Conversations</span><strong>128</strong><small className="preview-positive">Active customer threads</small></div><div><span>Response time</span><strong>4m <small>12s</small></strong><small>Team performance</small></div><div><span>Contacts</span><strong>846</strong><small>Managed in one place</small></div></div>
                   <div className="preview-lower"><div className="preview-inbox"><div className="preview-section-title"><strong>Recent conversations</strong><span>Live inbox <ArrowUpRight size={12}/></span></div><div className="preview-chat-row"><span className="preview-avatar avatar-one">AK</span><div><strong>Angela K.</strong><p>Thank you, that helps!</p></div><time>2m</time></div><div className="preview-chat-row"><span className="preview-avatar avatar-two">JM</span><div><strong>James M.</strong><p>Can you share the details?</p></div><time>8m</time></div><div className="preview-chat-row"><span className="preview-avatar avatar-three">NW</span><div><strong>Naomi W.</strong><p>I'd like to know more.</p></div><time>21m</time></div></div><div className="preview-assistant"><strong>Campaign controls</strong><p>Keep outbound messaging clear and accountable.</p><div><Check size={12}/> Approved templates only</div><div><Check size={12}/> Recorded opt-in required</div></div></div>
                 </div>
@@ -64,12 +64,12 @@ export default function LandingPage() {
 
         <section className="marketing-value-strip" id="security">
           <div><ShieldCheck size={19}/><span><strong>Official WhatsApp Cloud API</strong><small>Connect through Meta's official platform</small></span></div>
-          <div><MessagesSquare size={19}/><span><strong>Team-ready workspace</strong><small>Shared conversations and handoffs</small></span></div>
+          <div><MessagesSquare size={19}/><span><strong>One business number</strong><small>Every customer conversation in one place</small></span></div>
           <div><ShieldCheck size={19}/><span><strong>Consent-led campaigns</strong><small>Opt-in and approved-template safeguards</small></span></div>
         </section>
 
         <section className="marketing-features" id="features">
-          <div className="marketing-section-heading"><div className="marketing-kicker">ONE WORKSPACE, LESS FRICTION</div><h2>Everything your team needs. <em>Nothing in the way.</em></h2><p>A shared inbox, organized contacts and accountable campaigns—designed around real customer work.</p></div>
+          <div className="marketing-section-heading"><div className="marketing-kicker">ONE NUMBER, ONE WORKSPACE</div><h2>Everything your team needs. <em>Nothing in the way.</em></h2><p>Customer conversations, organized contacts and accountable campaigns—all connected to your WhatsApp number.</p></div>
           <div className="marketing-feature-grid">{features.map(({ icon: Icon, title, text }) => <article className="marketing-feature" key={title}><span className="marketing-feature-icon"><Icon size={19}/></span><h3>{title}</h3><p>{text}</p><a href="/login">Explore workspace <ArrowUpRight size={14}/></a></article>)}</div>
         </section>
 
@@ -82,8 +82,7 @@ export default function LandingPage() {
           <div className="marketing-section-heading"><div className="marketing-kicker">COMMON QUESTIONS</div><h2>Good to know <em>before you start.</em></h2><p>Clear answers about connecting WhatsApp and working with your team.</p></div>
           <div className="marketing-faq-list">
             <details><summary>Does MobiWave WA use the official WhatsApp API?</summary><p>Yes. MobiWave WA is designed to connect through Meta's official WhatsApp Cloud API, not unofficial WhatsApp automation engines.</p></details>
-            <details><summary>Can my business connect its own WhatsApp account?</summary><p>Yes. Each client workspace is designed for its own business integration and settings. Your business needs an eligible WhatsApp Business account and the required Meta permissions.</p></details>
-            <details><summary>Can my team manage conversations together?</summary><p>The platform brings customer conversations into a shared workspace to support team visibility and handoffs.</p></details>
+            <details><summary>Can I use one number for all my customer conversations?</summary><p>Yes. Each workspace connects one WhatsApp Business number, and conversations with your customers appear together in Inbox.</p></details>
             <details><summary>Can I send WhatsApp campaigns?</summary><p>Campaign messaging must follow Meta's policies, including required approved message templates and appropriate customer opt-in. Availability depends on your connected account and permissions.</p></details>
             <details><summary>How are outbound campaigns controlled?</summary><p>Campaigns use approved Meta templates and recorded customer opt-in. Teams remain responsible for selecting recipients and initiating sends.</p></details>
           </div>

@@ -25,7 +25,8 @@ Deno.serve(async (request) => {
       auth.admin.from("tenant_usage_limits").select("monthly_message_limit").eq("tenant_id", tenantId).maybeSingle(),
       auth.admin.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString()),
     ]);
-    if ((used ?? 0) >= (limits?.monthly_message_limit ?? 1000)) return json({ error: "This workspace has reached its monthly message limit." }, 429);
+    const monthlyLimit = limits?.monthly_message_limit ?? 0;
+    if (monthlyLimit > 0 && (used ?? 0) >= monthlyLimit) return json({ error: "This workspace has reached its configured monthly message limit." }, 429);
     let payload: any;
     if (type === "template") {
       if (contact.consent_status !== "opted_in") return json({ error: "Template messages require recorded opt-in consent." }, 403);

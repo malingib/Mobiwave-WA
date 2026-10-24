@@ -25,7 +25,8 @@ Deno.serve(async (request) => {
     const { data: limits } = await admin.from("tenant_usage_limits").select("monthly_message_limit").eq("tenant_id", tenantId).maybeSingle();
     const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
     const { count: used } = await admin.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString());
-    if ((used ?? 0) >= (limits?.monthly_message_limit ?? 1000)) return json({ error: "This workspace has reached its monthly message limit." }, 429);
+    const monthlyLimit = limits?.monthly_message_limit ?? 0;
+    if (monthlyLimit > 0 && (used ?? 0) >= monthlyLimit) return json({ error: "This workspace has reached its configured monthly message limit." }, 429);
     const { data: contact } = await admin.from("contacts").select("id,consent_status").eq("tenant_id", tenantId).eq("phone_e164", to).maybeSingle();
     if (!contact || contact.consent_status !== "opted_in") return json({ error: "Recipient must exist in contacts with recorded opt-in consent." }, 403);
     const { data: template } = await admin.from("wa_templates").select("meta_status,components,language_code").eq("tenant_id", tenantId).eq("meta_template_name", templateName).eq("language_code", language).maybeSingle();

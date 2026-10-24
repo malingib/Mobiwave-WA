@@ -9,18 +9,64 @@ import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import LandingPage from "./LandingPage";
 import PricingPage from "./PricingPage";
 import { ErrorPage } from "./ErrorPages";
-type View = "Shared inbox" | "Contacts" | "Campaigns" | "Integrations" | "Profile" | "Settings";
+type View = "Inbox" | "Contacts" | "Campaigns" | "Integrations" | "Profile" | "Settings";
 type Tenant = { id: string; name: string; slug: string; role: string };
-type Contact = { id: string; phone_e164: string; display_name?: string; consent_status: string; consent_source?: string };
-type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string };
+type Contact = { id: string; phone_e164: string; display_name?: string; consent_status: string; consent_source?: string; consent_at?: string; opted_out_at?: string };
+type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string; components?: any[] };
 type Campaign = { id: string; name: string; status: string; created_at: string; template_id?: string };
-type Conversation = { id: string; status: string; last_message_at?: string; contacts?: { display_name?: string; phone_e164: string } };
+type Conversation = { id: string; status: string; assigned_to?: string | null; unread?: boolean; last_message_at?: string; contacts?: { display_name?: string; phone_e164: string } };
+type TeamMember = { user_id: string; role: string; name: string; email: string };
+type ConsentEvent = { id: string; previous_status?: string | null; consent_status: string; consent_source?: string | null; changed_at: string };
 type ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };
 type TenantWebhook = { id: string; name: string; endpoint_url: string; events: string[]; enabled: boolean; last_delivery_at?: string; last_status?: string; last_error?: string; created_at: string };
 type WebhookDelivery = { id: string; webhook_id: string; event_type: string; status: string; attempt_count: number; response_status?: number; last_error?: string; created_at: string; delivered_at?: string };
-type ChatMessage = { id: string; direction: string; actor_type: string; body?: string; status: string; created_at: string };
+type ChatMessage = { id: string; direction: string; actor_type: string; body?: string; status: string; created_at: string; is_note?: boolean; author_id?: string; message_type?: string; media_id?: string; filename?: string };
+type TemplatePart = { componentIndex: number; type: string; text: string; variables: string[]; buttonIndex?: number };
+function getTemplateParts(template?: Template): TemplatePart[] {
+  return (template?.components ?? []).flatMap((component, componentIndex) => {
+    const type = String(component?.type ?? "").toLowerCase();
+    if (["body", "header"].includes(type) && typeof component?.text === "string") {
+      const variables = [...component.text.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)].map((match) => match[1]);
+      return variables.length ? [{ componentIndex, type, text: component.text, variables }] : [];
+    }
+    if (type === "buttons") return (component.buttons ?? []).flatMap((button: any, buttonIndex: number) => {
+      if (String(button?.type).toUpperCase() !== "URL" || typeof button?.url !== "string") return [];
+      const variables = [...button.url.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)].map((match) => match[1]);
+      return variables.length ? [{ componentIndex, type: "button", text: button.url, variables, buttonIndex }] : [];
+    });
+    return [];
+  });
+}
+function getTemplateParameters(parts: TemplatePart[], values: Record<string, string>) {
+  return parts.map((part) => ({
+    type: part.type === "button" ? "button" : part.type,
+    ...(part.type === "button" ? { sub_type: "url", index: String(part.buttonIndex ?? 0) } : {}),
+    parameters: part.variables.map((_, index) => ({ type: "text", text: values[`${part.componentIndex}:${index}`] ?? "" })),
+  }));
+}
+function MessageMedia({ mediaId, type, filename, tenantId }: { mediaId: string; type: string; filename?: string; tenantId: string }) {
+  const [source, setSource] = useState("");
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setSource(""); setError(false);
+    if (!supabase || !mediaId) return;
+    supabase.functions.invoke("meta-media", { body: { tenant_id: tenantId, media_id: mediaId } }).then(({ data, error: invokeError }) => {
+      if (!active) return;
+      if (invokeError || !data?.base64 || !data?.content_type) { setError(true); return; }
+      setSource("data:" + data.content_type + ";base64," + data.base64);
+    }).catch(() => { if (active) setError(true); });
+    return () => { active = false; };
+  }, [mediaId, tenantId]);
+  if (error) return <small className="media-error">Media unavailable. Refresh or check the WhatsApp connection.</small>;
+  if (!source) return <small className="media-loading">Loading attachment…</small>;
+  if (type === "image") return <img className="message-media-image" src={source} alt={filename || "WhatsApp attachment"}/>;
+  if (type === "video") return <video className="message-media-video" controls src={source}/>;
+  if (type === "audio") return <audio controls src={source}/>;
+  return <a className="message-media-download" href={source} download={filename || "WhatsApp attachment"}>{filename || "Download attachment"}</a>;
+}
 const views: { label: View; icon: typeof MessageCircle; section?: string }[] = [
-  { label: "Shared inbox", icon: MessageCircle, section: "MESSAGING" },
+  { label: "Inbox", icon: MessageCircle, section: "MESSAGING" },
   { label: "Contacts", icon: Users },
   { label: "Campaigns", icon: Zap },
   { label: "Integrations", icon: Settings2, section: "ADMINISTRATION" },
@@ -42,15 +88,23 @@ export default function App() {
   const [tenantId, setTenantId] = useState("");
   const [tenantLoading, setTenantLoading] = useState(true);
   const [tenantError, setTenantError] = useState("");
-  const [view, setView] = useState<View>("Shared inbox");
+  const [view, setView] = useState<View>("Inbox");
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [totalContacts, setTotalContacts] = useState(0);
+  const [contactPage, setContactPage] = useState(0);
+  const [contactHasMore, setContactHasMore] = useState(false);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [conversationStatusFilter, setConversationStatusFilter] = useState("open");
+  const [conversationAssigneeFilter, setConversationAssigneeFilter] = useState("all");
+  const [conversationSearch, setConversationSearch] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedConversation, setSelectedConversation] = useState("");
   const [search, setSearch] = useState("");
@@ -60,9 +114,13 @@ export default function App() {
   const [contactConsentSource, setContactConsentSource] = useState("");
   const [campaignName, setCampaignName] = useState("");
   const [campaignTemplate, setCampaignTemplate] = useState("");
-  const [campaignParameters, setCampaignParameters] = useState("[]");
+  const [campaignVariableValues, setCampaignVariableValues] = useState<Record<string, string>>({});
   const [campaignContacts, setCampaignContacts] = useState<string[]>([]);
   const [replyText, setReplyText] = useState("");
+  const [composerMode, setComposerMode] = useState<"reply" | "note">("reply");
+  const [searchContactHistory, setSearchContactHistory] = useState<{ contact: Contact; events: ConsentEvent[] } | null>(null);
+  const [consentTarget, setConsentTarget] = useState("");
+  const [consentRecordSource, setConsentRecordSource] = useState("");
   const [metaPhoneId, setMetaPhoneId] = useState("");
   const [metaWabaId, setMetaWabaId] = useState("");
   const [metaToken, setMetaToken] = useState("");
@@ -103,21 +161,35 @@ export default function App() {
   }, [user]);
   useEffect(() => { void loadTenants(); }, [loadTenants]);
   useEffect(() => { setProfileName(String(user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "")); }, [user]);
-  useEffect(() => { setNewApiKey(""); setNewWebhookSecret(""); setMetaWebhookToken(""); }, [tenantId]);
+  useEffect(() => { setNewApiKey(""); setNewWebhookSecret(""); setMetaWebhookToken(""); setContactPage(0); setSearch(""); setConsentTarget(""); setSearchContactHistory(null); setSelectedConversation(""); }, [tenantId]);
   const activeTenant = tenants.find((t) => t.id === tenantId);
   const isAdmin = activeTenant ? ["owner", "admin"].includes(activeTenant.role) : false;
+  const canAgent = activeTenant ? ["owner", "admin", "agent"].includes(activeTenant.role) : false;
+  const loadContacts = useCallback(async () => {
+    if (!supabase || !tenantId) { setContacts([]); setContactHasMore(false); setTotalContacts(0); setContactsLoading(false); return; }
+    setContactsLoading(true);
+    const start = contactPage * 100;
+    let query = supabase.from("contacts").select("id,phone_e164,display_name,consent_status,consent_source,consent_at,opted_out_at", { count: "exact" }).eq("tenant_id", tenantId).order("created_at", { ascending: false }).range(start, start + 99);
+    const term = search.trim().replace(/[(),.*%_\\]/g, " ").trim();
+    if (term) query = query.or(`display_name.ilike.%${term}%,phone_e164.ilike.%${term}%`);
+    const { data, error, count } = await query;
+    if (error) { setNotice("Could not load contacts: " + error.message); setContactsLoading(false); return; }
+    setContacts((data ?? []) as Contact[]);
+    setTotalContacts(count ?? 0);
+    setContactHasMore(start + (data?.length ?? 0) < (count ?? 0));
+    setContactsLoading(false);
+  }, [tenantId, contactPage, search]);
+  useEffect(() => { void loadContacts(); }, [loadContacts]);
   const loadWorkspace = useCallback(async () => {
     if (!supabase || !tenantId) {
-      setContacts([]); setTemplates([]); setCampaigns([]); setConversations([]);
+      setContacts([]); setTemplates([]); setCampaigns([]); setConversations([]); setTeamMembers([]);
       setMetaStatus(null); setMetaPhoneId(""); setMetaWabaId(""); setMetaWebhookToken(""); setApiKeys([]); setWebhooks([]); setWebhookDeliveries([]); return;
     }
     setLoading(true);
-    const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
     const results = await Promise.all([
-      supabase.from("contacts").select("id,phone_e164,display_name,consent_status,consent_source").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(500),
-      supabase.from("wa_templates").select("id,meta_template_name,language_code,category,meta_status").eq("tenant_id", tenantId).order("meta_template_name"),
+      supabase.from("wa_templates").select("id,meta_template_name,language_code,category,meta_status,components").eq("tenant_id", tenantId).order("meta_template_name"),
       supabase.from("campaigns").select("id,name,status,created_at,template_id").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
-      supabase.from("conversations").select("id,status,last_message_at,contacts(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
+      supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
       supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at").eq("tenant_id", tenantId).maybeSingle(),
       supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
@@ -128,12 +200,21 @@ export default function App() {
       return null;
     });
     if (!results) return;
-    const [c, t, ca, co, mi, ak, wh] = results;
-    if (c.error || t.error || ca.error || co.error || mi.error) setNotice("Could not load workspace data. Please refresh and try again.");
-    setContacts((c.data ?? []) as Contact[]);
+    const [t, ca, co, mi, ak, wh] = results;
+    if (t.error || ca.error || co.error || mi.error) setNotice("Could not load workspace data. Please refresh and try again.");
     setTemplates((t.data ?? []) as Template[]);
     setCampaigns((ca.data ?? []) as Campaign[]);
-    setConversations((co.data ?? []) as unknown as Conversation[]);
+    const [teamResponse, readResponse] = await Promise.all([
+      supabase.functions.invoke("team-members", { body: { tenant_id: tenantId } }),
+      user ? supabase.from("conversation_reads").select("conversation_id,last_read_at").eq("tenant_id", tenantId).eq("user_id", user.id) : Promise.resolve({ data: [], error: null }),
+    ]);
+    const readAt = new Map((readResponse.data ?? []).map((row: any) => [row.conversation_id, new Date(row.last_read_at).getTime()]));
+    setTeamMembers((teamResponse.data?.members ?? []) as TeamMember[]);
+    setConversations(((co.data ?? []) as any[]).map((conversation) => ({
+      ...conversation,
+      unread: Boolean(conversation.last_message_at && new Date(conversation.last_message_at).getTime() > (readAt.get(conversation.id) ?? 0)),
+    })) as Conversation[]);
+    if (teamResponse.error || readResponse.error) setNotice("Inbox collaboration details could not be loaded. Refresh and try again.");
     setMetaStatus(mi.data);
     setMetaPhoneId(mi.data?.phone_number_id ?? "");
     setMetaWabaId(mi.data?.waba_id ?? "");
@@ -142,16 +223,53 @@ export default function App() {
     const { data: deliveryRows, error: deliveryError } = await Promise.resolve(supabase.from("webhook_deliveries").select("id,webhook_id,event_type,status,attempt_count,response_status,last_error,created_at,delivered_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(50)).catch((cause: unknown) => { console.error("MobiWave WA webhook history load failed:", cause); return { data: null, error: { message: "Could not load webhook history. Refresh and try again." } }; });
     if (deliveryError) setNotice("Could not load webhook delivery history: " + deliveryError.message);
     setWebhookDeliveries((deliveryRows ?? []) as WebhookDelivery[]);
+    void loadContacts();
     setLoading(false);
-  }, [tenantId]);
+  }, [tenantId, user, loadContacts]);
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
+  const loadInbox = useCallback(async () => {
+    if (!supabase || !tenantId || !user) return;
+    const [conversationResult, readResult] = await Promise.all([
+      supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
+      supabase.from("conversation_reads").select("conversation_id,last_read_at").eq("tenant_id", tenantId).eq("user_id", user.id),
+    ]);
+    if (conversationResult.error || readResult.error) { setNotice("Could not refresh the inbox. Check your connection and retry."); return; }
+    const readAt = new Map((readResult.data ?? []).map((row: any) => [row.conversation_id, new Date(row.last_read_at).getTime()]));
+    setConversations(((conversationResult.data ?? []) as any[]).map((conversation) => ({
+      ...conversation,
+      unread: Boolean(conversation.last_message_at && new Date(conversation.last_message_at).getTime() > (readAt.get(conversation.id) ?? 0)),
+    })) as Conversation[]);
+  }, [tenantId, user?.id]);
   const loadMessages = useCallback(async () => {
     if (!supabase || !tenantId || !selectedConversation) { setMessages([]); return; }
-    const { data, error } = await Promise.resolve(supabase.from("messages").select("id,direction,actor_type,body,status,created_at").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).order("created_at", { ascending: true }).limit(200)).catch((cause: unknown) => { console.error("MobiWave WA message load failed:", cause); return { data: null, error: { message: "Could not load messages. Check your connection and retry." } }; });
-    if (error) setNotice(error.message);
-    setMessages((data ?? []) as ChatMessage[]);
+    const [messageResult, noteResult] = await Promise.all([
+      supabase.from("messages").select("id,direction,actor_type,body,status,created_at,message_type,metadata").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).order("created_at", { ascending: true }).limit(200),
+      supabase.from("conversation_notes").select("id,body,author_id,created_at").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).order("created_at", { ascending: true }).limit(200),
+    ]);
+    if (messageResult.error || noteResult.error) setNotice(messageResult.error?.message ?? noteResult.error?.message ?? "Could not load conversation history.");
+    const messageRows = (messageResult.data ?? []).map((message: any) => ({ ...message, is_note: false, media_id: message.metadata?.media_id, filename: message.metadata?.filename })) as ChatMessage[];
+    const noteRows = (noteResult.data ?? []).map((note: any) => ({ ...note, direction: "inbound", actor_type: "Internal note", status: "", is_note: true })) as ChatMessage[];
+    setMessages([...messageRows, ...noteRows].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
   }, [tenantId, selectedConversation]);
   useEffect(() => { void loadMessages(); }, [loadMessages]);
+  useEffect(() => {
+    if (!supabase || !tenantId) return;
+    const client = supabase;
+    const channel = client.channel(`inbox-${tenantId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversations", filter: `tenant_id=eq.${tenantId}` }, () => { void loadInbox(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: `tenant_id=eq.${tenantId}` }, (payload) => {
+        const row = payload.new as { conversation_id?: string };
+        void loadInbox();
+        if (row?.conversation_id === selectedConversation) { void loadMessages(); void markConversationRead(selectedConversation); }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversation_notes", filter: `tenant_id=eq.${tenantId}` }, (payload) => {
+        const row = payload.new as { conversation_id?: string };
+        if (row?.conversation_id === selectedConversation) void loadMessages();
+      })
+      .subscribe();
+    return () => { void client.removeChannel(channel); };
+  }, [tenantId, selectedConversation, loadInbox, loadMessages]);
+  useEffect(() => { if (selectedConversation) void markConversationRead(selectedConversation); }, [selectedConversation, tenantId, user?.id]);
   async function signIn(event: FormEvent) {
     event.preventDefault(); if (!supabase) return;
     setBusy(true); setNotice("");
@@ -198,36 +316,64 @@ export default function App() {
     await loadWorkspace();
   }
   async function optOut(contact: Contact) {
-    if (!supabase) return;
-    const { error } = await supabase.from("contacts").update({ consent_status: "opted_out", opted_out_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", contact.id).eq("tenant_id", tenantId);
+    if (!supabase || !confirm("Suppress " + (contact.display_name || contact.phone_e164) + " from campaigns?")) return;
+    const { error } = await supabase.from("contacts").update({ consent_status: "opted_out", consent_source: "Suppressed by workspace user", opted_out_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", contact.id).eq("tenant_id", tenantId);
     setNotice(error ? error.message : "Contact opted out and suppressed from campaigns."); await loadWorkspace();
+  }
+  async function recordOptIn(contact: Contact, event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !tenantId || !consentRecordSource.trim()) return;
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("contacts").update({ consent_status: "opted_in", consent_source: consentRecordSource.trim(), consent_at: now, opted_out_at: null, updated_at: now }).eq("id", contact.id).eq("tenant_id", tenantId);
+    setNotice(error ? "Could not record consent: " + error.message : "Opt-in recorded and added to the consent history.");
+    setConsentTarget(""); setConsentRecordSource(""); await loadWorkspace();
+  }
+  async function showConsentHistory(contact: Contact) {
+    if (!supabase || !tenantId) return;
+    const { data, error } = await supabase.from("contact_consent_events").select("id,previous_status,consent_status,consent_source,changed_at").eq("tenant_id", tenantId).eq("contact_id", contact.id).order("changed_at", { ascending: false }).limit(50);
+    if (error) { setNotice("Could not load consent history: " + error.message); return; }
+    setSearchContactHistory({ contact, events: (data ?? []) as ConsentEvent[] });
   }
   async function createCampaign(event: FormEvent) {
     event.preventDefault(); if (!supabase || !user) return;
-    const chosen = contacts.filter((c) => campaignContacts.includes(c.id) && c.consent_status === "opted_in");
+    const chosen = campaignContacts;
     if (!chosen.length) { setNotice("Select at least one contact with recorded opt-in consent."); return; }
     if (!campaignTemplate) { setNotice("Select an approved Meta template."); return; }
-    let parameters: unknown;
-    try { parameters = JSON.parse(campaignParameters); if (!Array.isArray(parameters)) throw new Error(); }
-    catch { setNotice("Template parameters must be a valid JSON array, for example []."); return; }
+    const selected = templates.find((template) => template.id === campaignTemplate);
+    if (selected?.components?.some((component) => String(component?.type).toLowerCase() === "header" && component?.format && String(component.format).toUpperCase() !== "TEXT")) {
+      setNotice("This template uses a media header. Uploading template header media is not available in this campaign composer yet."); return;
+    }
+    const parts = getTemplateParts(selected);
+    if (parts.some((part) => part.variables.some((_, index) => !campaignVariableValues[`${part.componentIndex}:${index}`]?.trim()))) {
+      setNotice("Fill in every template variable before saving this campaign."); return;
+    }
+    const parameters = getTemplateParameters(parts, campaignVariableValues);
     setBusy(true);
     const { data: campaign, error } = await supabase.from("campaigns").insert({ tenant_id: tenantId, name: campaignName.trim(), template_id: campaignTemplate, template_parameters: parameters, created_by: user.id, status: "draft" }).select("id").single();
     if (error) { setBusy(false); setNotice(error.message); return; }
-    const { error: recipientError } = await supabase.from("campaign_recipients").insert(chosen.map((c) => ({ tenant_id: tenantId, campaign_id: campaign.id, contact_id: c.id, status: "queued" })));
+    const { error: recipientError } = await supabase.from("campaign_recipients").insert(chosen.map((contactId) => ({ tenant_id: tenantId, campaign_id: campaign.id, contact_id: contactId, status: "queued" })));
     setBusy(false);
     if (recipientError) setNotice("Campaign created, but recipients could not be added: " + recipientError.message);
-    else { setCampaignName(""); setCampaignContacts([]); setCampaignParameters("[]"); setNotice("Campaign draft created with " + chosen.length + " opted-in recipients."); }
+    else { setCampaignName(""); setCampaignContacts([]); setCampaignVariableValues({}); setNotice("Campaign draft created with " + chosen.length + " selected contacts. Consent is checked again immediately before sending."); }
     await loadWorkspace();
   }
   async function launchCampaign(campaignId: string) {
     if (!supabase || !confirm("Send this campaign now using the selected approved Meta template?")) return;
     setBusy(true);
     const { data, error } = await supabase.functions.invoke("campaign-launch", { body: { tenant_id: tenantId, campaign_id: campaignId } });
-    setBusy(false); setNotice(error ? error.message : data?.error ?? ("Campaign batch: " + data.sent + " sent, " + data.skipped + " skipped, " + data.failed + " failed. " + data.remaining + " remain queued."));
+    setBusy(false); setNotice(error ? error.message : data?.error ?? ("Campaign batch: " + (data?.sent ?? 0) + " sent, " + (data?.skipped ?? 0) + " skipped, " + (data?.failed ?? 0) + " failed. " + (data?.remaining ?? 0) + " remain queued."));
     await loadWorkspace();
   }
   async function sendReply(event: FormEvent) {
     event.preventDefault(); if (!supabase || !selectedConversation || !replyText.trim()) return;
+    if (composerMode === "note") {
+      setBusy(true);
+      const { error } = await supabase.from("conversation_notes").insert({ tenant_id: tenantId, conversation_id: selectedConversation, author_id: user?.id, body: replyText.trim() });
+      setBusy(false);
+      if (error) setNotice("Could not add internal note: " + error.message);
+      else { setReplyText(""); setNotice("Internal note added for workspace agents."); }
+      await loadMessages(); return;
+    }
     const conversation = conversations.find((c) => c.id === selectedConversation);
     if (!conversation?.contacts?.phone_e164) { setNotice("Contact phone number not found."); return; }
     setBusy(true);
@@ -241,6 +387,19 @@ export default function App() {
     if (!supabase) return;
     const { data, error } = await supabase.functions.invoke("conversation-control", { body: { tenant_id: tenantId, conversation_id: conversation.id, action: "resolve" } });
     setNotice(error ? error.message : data?.error ?? "Conversation resolved."); await loadWorkspace();
+  }
+  async function assignConversation(conversation: Conversation, assignedTo: string) {
+    if (!supabase) return;
+    const { data, error } = await supabase.functions.invoke("conversation-control", { body: { tenant_id: tenantId, conversation_id: conversation.id, action: "assign", assigned_to: assignedTo || null } });
+    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not assign conversation."); return; }
+    setConversations((rows) => rows.map((row) => row.id === conversation.id ? { ...row, assigned_to: assignedTo || null } : row));
+  }
+  async function markConversationRead(conversationId: string) {
+    if (!supabase || !user || !tenantId || !conversationId) return;
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("conversation_reads").upsert({ tenant_id: tenantId, conversation_id: conversationId, user_id: user.id, last_read_at: now }, { onConflict: "tenant_id,conversation_id,user_id" });
+    if (error) { setNotice("Could not update unread status: " + error.message); return; }
+    setConversations((rows) => rows.map((row) => row.id === conversationId ? { ...row, unread: false } : row));
   }
   async function copyIntegrationValue(value: string, label: string) {
     try { await navigator.clipboard.writeText(value); setNotice(label + " copied."); }
@@ -337,8 +496,18 @@ export default function App() {
     const { data } = await supabase.auth.getUser(); if (data.user) setUser(data.user);
   }
   async function signOut() { if (supabase) await supabase.auth.signOut(); setTenants([]); setTenantId(""); setTenantLoading(false); }
-  const filteredContacts = useMemo(() => contacts.filter((c) => (c.phone_e164 + " " + (c.display_name ?? "")).toLowerCase().includes(search.toLowerCase())), [contacts, search]);
+  const filteredContacts = contacts;
+  const visibleCampaignContacts = contacts.filter((contact) => contact.consent_status === "opted_in");
+  const filteredConversations = useMemo(() => conversations.filter((conversation) => {
+    const matchesStatus = conversationStatusFilter === "all" || (conversationStatusFilter === "unread" ? Boolean(conversation.unread) : conversation.status === conversationStatusFilter);
+    const matchesAssignee = conversationAssigneeFilter === "all" || (conversationAssigneeFilter === "mine" ? conversation.assigned_to === user?.id : conversationAssigneeFilter === "unassigned" ? !conversation.assigned_to : conversation.assigned_to === conversationAssigneeFilter);
+    const haystack = `${conversation.contacts?.display_name ?? ""} ${conversation.contacts?.phone_e164 ?? ""}`.toLowerCase();
+    return matchesStatus && matchesAssignee && haystack.includes(conversationSearch.toLowerCase());
+  }), [conversations, conversationStatusFilter, conversationAssigneeFilter, conversationSearch, user?.id]);
   const approvedTemplates = templates.filter((t) => t.meta_status === "approved");
+  const selectedTemplate = templates.find((template) => template.id === campaignTemplate);
+  const selectedTemplateParts = getTemplateParts(selectedTemplate);
+  const unsupportedMediaHeader = Boolean(selectedTemplate?.components?.some((component) => String(component?.type).toLowerCase() === "header" && component?.format && String(component.format).toUpperCase() !== "TEXT"));
   // Public routes are available without authentication; account access starts at /login.
   const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
   if (pathname === "/pricing") return <PricingPage />;
@@ -357,9 +526,9 @@ export default function App() {
           <div className="auth-story-content">
             <div className="auth-story-kicker"><span/> WHATSAPP BUSINESS, IN ONE PLACE</div>
             <h1>Better conversations.<br/><em>Stronger relationships.</em></h1>
-            <p>Bring your customer conversations, team inbox, approved campaigns and helpful automation into one clear workspace.</p>
+            <p>Manage customer conversations from one official WhatsApp number, organize contacts and send approved-template campaigns.</p>
             <div className="auth-story-list">
-              <div><span><Check size={15}/></span><section><strong>A shared inbox for your team</strong><small>Keep customer conversations moving with human handoff.</small></section></div>
+              <div><span><Check size={15}/></span><section><strong>One number for your customers</strong><small>Keep every WhatsApp conversation easy to find.</small></section></div>
               <div><span><Check size={15}/></span><section><strong>Messaging with safeguards</strong><small>Use official Meta Cloud API and recorded consent.</small></section></div>
               <div><span><Check size={15}/></span><section><strong>Your workspace stays yours</strong><small>Your team's contacts, settings and messaging data stay in its own workspace.</small></section></div>
             </div>
@@ -399,18 +568,73 @@ export default function App() {
       <div className="sidebar-bottom"><div className="help-card"><CircleHelp size={18} /><div><strong>Need a hand?</strong><span>Read the setup guide</span></div><a href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md" aria-label="Open setup guide"><ArrowUpRight size={15} /></a></div><div className="profile"><div className="profile-avatar">{user.email?.slice(0,1).toUpperCase() ?? "U"}</div><div><strong>{user.email}</strong><span>{activeTenant?.role ?? "Member"}</span></div><button className="icon-button" onClick={signOut} aria-label="Sign out"><LogOut size={17} /></button></div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div className="breadcrumbs"><span>{activeTenant?.name ?? "Workspace"}</span><span className="crumb-sep">/</span><strong>{view}</strong></div><div className="top-actions"><span className="environment"><span className="status-dot" /> {metaStatus?.enabled ? "Meta connected" : "Meta not connected"}</span><button className="icon-button" aria-label="Refresh" onClick={() => void loadWorkspace()}><RefreshCw size={17} /></button><div className="mini-avatar">{user.email?.slice(0,1).toUpperCase()}</div></div></header>
+      <header className="topbar"><div className="breadcrumbs"><span>{activeTenant?.name ?? "Workspace"}</span><span className="crumb-sep">/</span><strong>{view}</strong></div><div className="top-actions"><span className={metaStatus?.enabled ? "environment is-connected" : "environment is-disconnected"}><span className="status-dot" /> {metaStatus?.enabled ? "WhatsApp connected" : "WhatsApp not connected"}</span><button className="icon-button" aria-label="Refresh" onClick={() => void loadWorkspace()}><RefreshCw size={17} /></button><div className="mini-avatar">{user.email?.slice(0,1).toUpperCase()}</div></div></header>
       {view === "Contacts" && <section className="content"><PageHeading eyebrow="CUSTOMER DATA" title="Contacts" description="Store consent and suppression status before using contacts for campaigns."/>
         {isAdmin&&<form className="panel form-panel" onSubmit={addContact}><h2>Add contact</h2><div className="form-grid"><div className="field"><label>Phone number (E.164) *</label><input value={contactPhone} onChange={(e)=>setContactPhone(e.target.value)} required pattern="\+[1-9][0-9]{7,14}" placeholder="+2547XXXXXXXX"/></div><div className="field"><label>Display name</label><input value={contactName} onChange={(e)=>setContactName(e.target.value)} placeholder="Customer name"/></div></div><label className="checkbox-line"><input type="checkbox" checked={contactOptIn} onChange={(e)=>setContactOptIn(e.target.checked)}/> I have verifiable permission to send WhatsApp messages to this contact.</label>{contactOptIn&&<div className="field"><label>Consent source / record *</label><input value={contactConsentSource} onChange={(e)=>setContactConsentSource(e.target.value)} required placeholder="e.g. website signup form, 2026-10-16"/></div>}<div className="form-actions"><span className="muted small">Unconfirmed contacts are not eligible for campaigns.</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add contact</button></div></form>}
-        <div className="section-header"><div><h2>Contact list</h2><p>{contacts.length} contact(s)</p></div><div className="search-field"><Search size={16}/><input aria-label="Search contacts" value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search contacts…"/></div></div><div className="source-list"><div className="source-table-head contact-head"><span>CONTACT</span><span>CONSENT</span><span>SOURCE</span><span/></div>{filteredContacts.length===0?<Empty icon={<Users size={24}/>} title="No contacts" text="Add a contact above."/>:filteredContacts.map(c=><div className="source-row contact-row" key={c.id}><div className="source-main"><div className="source-icon"><Users size={17}/></div><div className="source-text"><strong>{c.display_name||"Unnamed contact"}</strong><a>{c.phone_e164}</a></div></div><div><Status status={c.consent_status}/></div><div className="source-added">{c.consent_source||"No consent record"}</div><div className="row-actions">{c.consent_status!=="opted_out"&&<button className="icon-button" title="Opt out / suppress" aria-label={`Opt out ${c.display_name || c.phone_e164}`} onClick={()=>void optOut(c)}><ShieldCheck size={16}/></button>}</div></div>)}</div>
+        <div className="section-header">
+          <div><h2>Contact list</h2><p>{contacts.length ? `Showing ${contactPage * 100 + 1}–${contactPage * 100 + contacts.length} of ${totalContacts} contact(s)` : `${totalContacts} contact(s)`}</p></div>
+          <div className="search-field"><Search size={16}/><input aria-label="Search contacts" value={search} onChange={(e)=>{setSearch(e.target.value);setContactPage(0);}} placeholder="Search all contacts…"/></div>
+        </div>
+        <div className="source-list">
+          <div className="source-table-head contact-head"><span>CONTACT</span><span>CONSENT</span><span>SOURCE</span><span>HISTORY / ACTION</span></div>
+          {contactsLoading?<Empty icon={<LoaderCircle size={22} className="spin"/>} title={search.trim()?"Searching contacts":"Loading contacts"} text="Contact results will appear here."/>:filteredContacts.length===0?<Empty icon={<Users size={24}/>} title={search.trim()?"No matching contacts":"No contacts yet"} text={search.trim()?"Try a different name or phone number.":"Add a contact to start building your consent based audience."}/>:filteredContacts.map(c=><div className="source-row contact-row" key={c.id}>
+            <div className="source-main"><div className="source-icon"><Users size={17}/></div><div className="source-text"><strong>{c.display_name||"Unnamed contact"}</strong><a>{c.phone_e164}</a></div></div>
+            <div><Status status={c.consent_status}/></div><div className="source-added">{c.consent_source||"No consent record"}</div>
+            <div className="row-actions contact-actions">
+              <button type="button" className="secondary-button compact" onClick={()=>void showConsentHistory(c)}>History</button>
+              {isAdmin&&c.consent_status!=="opted_in"&&<button type="button" className="secondary-button compact" onClick={()=>{setConsentTarget(consentTarget===c.id?"":c.id);setConsentRecordSource("");}}>Record opt-in</button>}
+              {isAdmin&&c.consent_status!=="opted_out"&&<button type="button" className="secondary-button compact" onClick={()=>void optOut(c)}>Suppress</button>}
+              {consentTarget===c.id&&<form className="consent-inline" onSubmit={(event)=>void recordOptIn(c,event)}><label>Evidence or source *</label><input required value={consentRecordSource} onChange={(event)=>setConsentRecordSource(event.target.value)} placeholder="Form, date, or recorded request"/><button className="primary-button compact">Save opt-in</button></form>}
+            </div>
+          </div>)}
+        </div>
+        <div className="pagination-controls"><button className="secondary-button compact" disabled={contactPage===0} onClick={()=>setContactPage((page)=>Math.max(0,page-1))}>Previous</button><span>Page {contactPage+1}</span><button className="secondary-button compact" disabled={!contactHasMore} onClick={()=>setContactPage((page)=>page+1)}>Next</button></div>
+        {searchContactHistory&&<div className="panel form-panel consent-history"><div className="section-header"><div><h2>Consent history · {searchContactHistory.contact.display_name||searchContactHistory.contact.phone_e164}</h2><p>Latest 50 opt-in and opt-out changes</p></div><button className="secondary-button compact" onClick={()=>setSearchContactHistory(null)}>Close</button></div>{searchContactHistory.events.length?searchContactHistory.events.map(event=><div className="consent-event" key={event.id}><Status status={event.consent_status}/><span>{event.previous_status?event.previous_status+" → ":""}{event.consent_status}</span><span>{event.consent_source||"No source recorded"}</span><time>{new Date(event.changed_at).toLocaleString()}</time></div>):<p className="muted small">No consent changes have been recorded.</p>}</div>}
       </section>}
       {view === "Campaigns" && <section className="content"><PageHeading eyebrow="OUTBOUND MESSAGING" title="Campaigns" description="Campaigns use only Meta-approved templates and contacts with recorded opt-in consent."/>
-        {isAdmin&&<form className="panel form-panel" onSubmit={createCampaign}><h2>Create campaign</h2><div className="field"><label>Campaign name *</label><input value={campaignName} onChange={(e)=>setCampaignName(e.target.value)} required maxLength={180} placeholder="October customer update"/></div><div className="field"><label>Approved template *</label><select value={campaignTemplate} onChange={(e)=>setCampaignTemplate(e.target.value)} required><option value="">Choose template…</option>{approvedTemplates.map(t=><option value={t.id} key={t.id}>{t.meta_template_name} · {t.language_code}</option>)}</select>{approvedTemplates.length===0&&<small className="muted">No approved templates found. Connect Meta and sync templates in Integrations.</small>}</div><div className="field"><label>Template parameters JSON (optional)</label><textarea value={campaignParameters} onChange={(e)=>setCampaignParameters(e.target.value)} rows={3} placeholder='[] or [{"type":"body","parameters":[{"type":"text","text":"Brighton"}]}]'/><small className="muted">Provide Meta message component parameters for templates with placeholders. Leave [] for templates without variables.</small></div><div className="field"><label>Recipients (opted-in contacts only)</label><div className="contact-select">{contacts.filter(c=>c.consent_status==="opted_in").map(c=><label key={c.id} className="checkbox-line"><input type="checkbox" checked={campaignContacts.includes(c.id)} onChange={(e)=>setCampaignContacts(list=>e.target.checked?[...list,c.id]:list.filter(id=>id!==c.id))}/>{c.display_name||c.phone_e164} <span className="muted">{c.phone_e164}</span></label>)}</div></div><div className="form-actions"><span className="muted small">{campaignContacts.length} recipient(s) selected</span><button className="primary-button" disabled={busy}><Plus size={15}/> Save draft</button></div></form>}
-        <div className="section-header"><div><h2>Campaign history</h2><p>Send batches of up to 50 recipients per run.</p></div></div><div className="source-list"><div className="source-table-head campaign-head"><span>CAMPAIGN</span><span>STATUS</span><span>CREATED</span><span/></div>{campaigns.length===0?<Empty icon={<Zap size={24}/>} title="No campaigns" text="Create a campaign draft above."/>:campaigns.map(c=><div className="source-row campaign-row" key={c.id}><div className="source-main"><div className="source-icon"><Zap size={17}/></div><div className="source-text"><strong>{c.name}</strong><small>{templates.find(t=>t.id===c.template_id)?.meta_template_name||"Template unavailable"}</small></div></div><div><Status status={c.status}/></div><div className="source-added">{new Date(c.created_at).toLocaleDateString()}</div><div className="row-actions">{isAdmin&&["draft","paused","failed","running"].includes(c.status)&&<button className="secondary-button compact" aria-label={`${c.status==="running"?"Continue":"Send"} campaign batch: ${c.name}`} onClick={()=>void launchCampaign(c.id)} disabled={busy}>{c.status==="running"?"Continue batch":"Send batch"} <ArrowUpRight size={13}/></button>}</div></div>)}</div>
+        {isAdmin&&<form className="panel form-panel" onSubmit={createCampaign}>
+          <h2>Create campaign</h2>
+          <div className="field"><label>Campaign name *</label><input value={campaignName} onChange={(e)=>setCampaignName(e.target.value)} required maxLength={180} placeholder="October customer update"/></div>
+          <div className="field"><label>Approved template *</label><select value={campaignTemplate} onChange={(e)=>{setCampaignTemplate(e.target.value);setCampaignVariableValues({});}} required><option value="">Choose template…</option>{approvedTemplates.map(t=><option value={t.id} key={t.id}>{t.meta_template_name} · {t.language_code}</option>)}</select>{approvedTemplates.length===0&&<small className="muted">No approved templates found. Connect Meta and sync templates in Integrations.</small>}</div>
+          {unsupportedMediaHeader&&<div className="inline-notice" role="status">This template has a media header. The campaign composer currently supports text headers, body variables, and URL button variables.</div>}
+          {selectedTemplateParts.length>0&&<div className="template-variable-panel"><strong>Personalize this template</strong><p>These values will be the same for every selected recipient.</p>{selectedTemplateParts.map(part=><div className="template-variable-part" key={part.componentIndex}><small>{part.type.toUpperCase()} preview</small><p>{(()=>{let placeholderIndex=0;return part.text.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,(match)=>campaignVariableValues[part.componentIndex+":"+(placeholderIndex++)]?.trim()||match);})()}</p>{part.variables.map((variable,index)=><div className="field" key={part.componentIndex+":"+index}><label>{part.type==="body"?"Body":part.type==="header"?"Header":"Button URL"} · {'{{'+variable+'}}'}</label><input required value={campaignVariableValues[part.componentIndex+":"+index]??""} onChange={(e)=>setCampaignVariableValues((values)=>({...values,[part.componentIndex+":"+index]:e.target.value}))} placeholder={'Value for '+variable}/></div>)}</div>)}</div>}
+          <div className="field campaign-recipient-field"><label>Find opted-in recipients</label><p className="field-hint">Only contacts with recorded opt-in can be selected. Selected contacts stay selected as you move between pages.</p><div className="search-field"><Search size={16}/><input aria-label="Search opted-in recipients" value={search} onChange={(e)=>{setSearch(e.target.value);setContactPage(0);}} placeholder="Search name or phone"/></div><div className="contact-select">{contactsLoading?<div className="contact-search-state"><LoaderCircle size={15} className="spin"/> Loading recipients…</div>:visibleCampaignContacts.map(c=><label key={c.id} className="checkbox-line"><input type="checkbox" checked={campaignContacts.includes(c.id)} onChange={(e)=>setCampaignContacts(list=>e.target.checked?[...list,c.id]:list.filter(id=>id!==c.id))}/><span className="campaign-contact-name">{c.display_name||"Unnamed contact"}<small>{c.phone_e164}</small></span></label>)}{!contactsLoading&&visibleCampaignContacts.length===0&&<div className="contact-search-state">{search.trim()?"No opted-in contacts match this search.":"No opted-in contacts on this page."}</div>}</div><div className="pagination-controls compact-pagination"><button type="button" className="secondary-button compact" disabled={contactPage===0} onClick={()=>setContactPage(page=>Math.max(0,page-1))}>Previous</button><span>Page {contactPage+1}</span><button type="button" className="secondary-button compact" disabled={!contactHasMore} onClick={()=>setContactPage(page=>page+1)}>Next</button></div></div>
+          <div className="form-actions"><span className="muted small">{campaignContacts.length} recipient(s) selected</span><button className="primary-button" disabled={busy}><Plus size={15}/> Save draft</button></div>
+        </form>}
+        <div className="section-header"><div><h2>Campaign history</h2><p>Each send batch processes up to 10 recipients.</p></div></div><div className="source-list"><div className="source-table-head campaign-head"><span>CAMPAIGN</span><span>STATUS</span><span>CREATED</span><span/></div>{campaigns.length===0?<Empty icon={<Zap size={24}/>} title="No campaigns" text="Create a campaign draft above."/>:campaigns.map(c=><div className="source-row campaign-row" key={c.id}><div className="source-main"><div className="source-icon"><Zap size={17}/></div><div className="source-text"><strong>{c.name}</strong><small>{templates.find(t=>t.id===c.template_id)?.meta_template_name||"Template unavailable"}</small></div></div><div><Status status={c.status}/></div><div className="source-added">{new Date(c.created_at).toLocaleDateString()}</div><div className="row-actions">{isAdmin&&["draft","paused","running"].includes(c.status)&&<button className="secondary-button compact" aria-label={`${c.status==="running"?"Continue":"Send"} campaign batch: ${c.name}`} onClick={()=>void launchCampaign(c.id)} disabled={busy}>{c.status==="running"?"Continue batch":"Send batch"} <ArrowUpRight size={13}/></button>}</div></div>)}</div>
       </section>}
-      {view === "Shared inbox" && <section className="content inbox-content"><PageHeading eyebrow="CUSTOMER SUPPORT" title="Shared inbox" description="Inbound WhatsApp messages and human-agent handoff."/><div className="inbox-layout"><div className="conversation-list"><div className="inbox-list-title">Conversations <span>{conversations.length}</span></div>{conversations.length===0?<Empty icon={<MessageCircle size={22}/>} title="Inbox is empty" text="Inbound messages arrive after the Meta webhook is configured."/>:conversations.map(c=><button className={selectedConversation===c.id?"conversation-item selected":"conversation-item"} key={c.id} onClick={()=>setSelectedConversation(c.id)}><div className="conversation-avatar">{(c.contacts?.display_name||c.contacts?.phone_e164||"?").slice(0,1).toUpperCase()}</div><div className="conversation-summary"><strong>{c.contacts?.display_name||c.contacts?.phone_e164||"Unknown contact"}</strong><span>{c.status}</span><small>{c.last_message_at?new Date(c.last_message_at).toLocaleString():"No messages"}</small></div></button>)}</div><div className="chat-panel">{!selectedConversation?<div className="empty-chat"><MessageCircle size={28}/><strong>Select a conversation</strong><span>Choose a contact to view messages and reply.</span></div>:<><div className="chat-header"><div><strong>{conversations.find(c=>c.id===selectedConversation)?.contacts?.display_name||conversations.find(c=>c.id===selectedConversation)?.contacts?.phone_e164}</strong><span>{conversations.find(c=>c.id===selectedConversation)?.contacts?.phone_e164}</span></div>{(()=>{const c=conversations.find(x=>x.id===selectedConversation);return c&&c.status!=="resolved"?<div className="chat-head-actions"><button className="secondary-button compact" onClick={()=>void resolveConversation(c)}>Resolve</button></div>:null})()}</div><div className="chat-messages">{messages.map(m=><div key={m.id} className={m.direction==="outbound"?"message-bubble outbound":"message-bubble inbound"}><p>{m.body||"Unsupported media message"}</p><small>{m.actor_type} · {new Date(m.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})} · {m.status}</small></div>)}</div><form className="chat-reply" onSubmit={sendReply}><input aria-label="Message reply" value={replyText} onChange={(e)=>setReplyText(e.target.value)} placeholder="Reply within the 24-hour service window…" required/><button className="primary-button" disabled={busy}><Send size={15}/> Send</button></form></>}</div></div></section>}
+      {view === "Inbox" && <section className="content inbox-content">
+        <div className="inbox-page-header"><div><h1>Inbox</h1><p>{metaStatus?.display_phone_number ? `WhatsApp conversations for ${metaStatus.display_phone_number}` : "Conversations with your WhatsApp contacts"}</p></div>{metaStatus?.enabled && <span className="inbox-number-pill"><span className="status-dot"/>{metaStatus.display_phone_number || "WhatsApp number connected"}</span>}</div>
+        <div className={selectedConversation ? "inbox-layout has-selection" : "inbox-layout"}>
+          <div className="conversation-list">
+            <div className="inbox-list-title"><strong>Conversations</strong><span>{filteredConversations.length} shown · {conversations.filter(c=>c.unread).length} unread</span></div>
+            <div className="inbox-filters">
+              <div className="search-field"><Search size={14}/><input aria-label="Search conversations" value={conversationSearch} onChange={e=>setConversationSearch(e.target.value)} placeholder="Search name or phone"/></div>
+              <select aria-label="Filter by status" value={conversationStatusFilter} onChange={e=>setConversationStatusFilter(e.target.value)}><option value="open">Open</option><option value="pending">Pending</option><option value="resolved">Resolved</option><option value="unread">Unread</option><option value="all">All statuses</option></select>
+              <select aria-label="Filter by assignee" value={conversationAssigneeFilter} onChange={e=>setConversationAssigneeFilter(e.target.value)}><option value="all">All assignments</option><option value="mine">Assigned to me</option><option value="unassigned">Unassigned</option>{teamMembers.map(member=><option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select>
+            </div>
+            {filteredConversations.length===0?<Empty icon={<MessageCircle size={22}/>} title={conversations.length?"No matching conversations":"No conversations yet"} text={conversations.length?"Try changing your search or filters.":metaStatus?.enabled?"New messages from your contacts will appear here.":"Connect your WhatsApp number to see messages here."}/>:filteredConversations.map(c=>{
+              const assignee=teamMembers.find(member=>member.user_id===c.assigned_to);
+              return <div className="conversation-row" key={c.id}>
+                <button className={selectedConversation===c.id?"conversation-item selected":"conversation-item"} onClick={()=>setSelectedConversation(c.id)}>
+                  <div className="conversation-avatar">{(c.contacts?.display_name||c.contacts?.phone_e164||"?").slice(0,1).toUpperCase()}</div>
+                  <div className="conversation-summary"><strong>{c.contacts?.display_name||c.contacts?.phone_e164||"Unknown contact"}</strong><span>{c.status}{c.unread?" · UNREAD":""}</span><small>{c.last_message_at?new Date(c.last_message_at).toLocaleString():"No messages"}</small><small>{assignee?"With "+assignee.name:"Unassigned"}</small></div>
+                  {c.unread&&<i className="unread-indicator" aria-label="Unread"/>}
+                </button>
+              </div>;
+            })}
+          </div>
+          <div className="chat-panel">
+            {!selectedConversation?<div className="empty-chat"><MessageCircle size={28}/><strong>Choose a conversation</strong><span>Select a contact to read and reply to their messages.</span></div>:<>
+              <div className="chat-header"><button type="button" className="inbox-back-button" onClick={()=>setSelectedConversation("")}><ArrowLeft size={16}/> Conversations</button><div className="chat-contact-heading"><strong>{conversations.find(c=>c.id===selectedConversation)?.contacts?.display_name||conversations.find(c=>c.id===selectedConversation)?.contacts?.phone_e164}</strong><span>{conversations.find(c=>c.id===selectedConversation)?.contacts?.phone_e164}</span></div>{(()=>{const c=conversations.find(x=>x.id===selectedConversation);return c?<div className="chat-head-actions">{(isAdmin||activeTenant?.role==="agent")&&<label className="assignment-control"><span>Assigned to</span><select aria-label="Assign conversation" value={c.assigned_to||""} onChange={e=>void assignConversation(c,e.target.value)}><option value="">Unassigned</option>{teamMembers.map(member=><option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>}{canAgent&&c.status!=="resolved"&&<button className="secondary-button compact" onClick={()=>void resolveConversation(c)}>Resolve</button>}</div>:null})()}</div>
+              <div className="chat-messages">{messages.map(m=><div key={m.id} className={m.is_note?"message-bubble internal-note":m.direction==="outbound"?"message-bubble outbound":"message-bubble inbound"}>{m.body&&<p>{m.body}</p>}{m.media_id&&m.message_type&&<MessageMedia mediaId={m.media_id} type={m.message_type} filename={m.filename} tenantId={tenantId}/>}<small>{m.is_note?"Internal note · "+(m.author_id===user?.id?"You":"Teammate"):m.actor_type}{m.status?" · "+m.status:""} · {new Date(m.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div>)}</div>
+              {canAgent?<><div className="composer-tabs"><button type="button" className={composerMode==="reply"?"active":""} onClick={()=>setComposerMode("reply")}>Reply</button><button type="button" className={composerMode==="note"?"active":""} onClick={()=>setComposerMode("note")}>Internal note</button></div><form className="chat-reply" onSubmit={sendReply}><textarea aria-label={composerMode==="note"?"Internal note":"Message reply"} value={replyText} onChange={e=>setReplyText(e.target.value)} placeholder={composerMode==="note"?"Write a note for your team…":"Reply within the 24-hour service window…"} required/><button className="primary-button" disabled={busy}>{composerMode==="note"?"Add note":"Send"} <Send size={15}/></button></form></>:<p className="read-only-inbox">Your workspace role has read-only inbox access.</p>}
+            </>}
+          </div>
+        </div>
+      </section>}
       {view === "Integrations" && <section className="content">
-        <PageHeading eyebrow="CHANNELS & DEVELOPER TOOLS" title="Integrations" description="Connect your official WhatsApp Business Platform, then configure developer access only if needed."/>
+        <PageHeading eyebrow="WHATSAPP & DEVELOPER TOOLS" title="Integrations" description="Connect one WhatsApp Business number for this workspace, then configure developer access only if needed."/>
         <div className="integration-card">
           <div className="integration-head"><div className="integration-logo"><MessageCircle size={24}/></div><div><strong>WhatsApp Business Platform</strong><p>Official Meta Cloud API</p></div><Status status={metaStatus?.enabled&&metaStatus?.verified?"connected":metaStatus?.verified?"verified":"not connected"}/></div>
           <div className="checklist">
@@ -437,7 +661,7 @@ export default function App() {
             <li>Open your app in Meta for Developers and select <strong>Webhooks</strong>.</li>
             <li>Choose the WhatsApp Business Account object, then paste the callback URL and verification token above.</li>
             <li>Verify and save the callback, then subscribe to the <code>messages</code> field and <code>message_template_status_update</code> where available.</li>
-            <li>Subscribe the app to your WhatsApp Business Account and send a test message to confirm it appears in Shared inbox.</li>
+            <li>Subscribe the app to your WhatsApp Business Account and send a test message to confirm it appears in Inbox.</li>
           </ol>
           <p className="muted small">Webhook verification is separate from access-token verification. The platform's Meta App Secret must be configured in the server environment as <code>META_APP_SECRET</code> to validate POST signatures.</p>
         </div>
