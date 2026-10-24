@@ -41,6 +41,7 @@ export default function App() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantId, setTenantId] = useState("");
   const [tenantLoading, setTenantLoading] = useState(true);
+  const [tenantError, setTenantError] = useState("");
   const [view, setView] = useState<View>("Shared inbox");
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -87,8 +88,10 @@ export default function App() {
   const loadTenants = useCallback(async () => {
     if (!supabase || !user) { setTenantLoading(false); return; }
     setTenantLoading(true);
+    setTenantError("");
     const { data, error } = await supabase.from("tenant_members").select("tenant_id,role,tenants(id,name,slug)").eq("user_id", user.id);
     if (error) {
+      setTenantError(error.message);
       setNotice("Could not load business accounts: " + error.message);
       setTenantLoading(false);
       return;
@@ -386,6 +389,7 @@ export default function App() {
     </div>;
   }
   if (tenantLoading) return <div className="auth-screen" role="status"><LoaderCircle className="spin" /><span>Loading your inbox…</span></div>;
+  if (tenantError) return <div className="auth-screen"><div className="auth-card"><Brand /><h1>Could not load your account</h1><p>We couldn’t verify your business access. Your account setup has not been changed.</p><div className="inline-notice" role="alert">{tenantError}</div><button type="button" className="primary-button full" onClick={() => void loadTenants()}>Try again</button><button type="button" className="auth-switch" onClick={() => void signOut()}>Sign out</button></div></div>;
   if (!tenants.length) return <div className="auth-screen"><form className="auth-card" onSubmit={createWorkspace}><Brand /><div className="auth-eyebrow">FIRST-TIME SETUP</div><h1>Set up your business</h1><p>Create your business account to keep its contacts, WhatsApp connection, campaigns and team access separate.</p><label>Business name</label><input value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} required minLength={2} maxLength={160} placeholder="e.g. MobiWave Demo" /><button className="primary-button full" disabled={busy}>{busy ? "Setting up…" : "Set up business"}</button>{notice && <div className="inline-notice" role="status">{notice}</div>}<button type="button" className="auth-switch" onClick={signOut}>Sign out</button></form></div>;
   return <div className="app-shell">
     <aside className="sidebar">
