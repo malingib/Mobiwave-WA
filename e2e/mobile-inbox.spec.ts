@@ -137,7 +137,7 @@ test("public landing page loads and labels preview metrics as sample data", asyn
 test("sign-in opens the authenticated inbox with the selected business account", async ({ page }) => {
   await signIn(page);
   await expect(page.getByText("Amina Customer")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Inbox" })).toHaveAttribute("aria-current", "page");
+  await expect(page.locator('#primary-navigation [aria-current="page"]')).toHaveAttribute("aria-label", "Inbox");
 });
 
 test("mobile navigation opens, closes on Escape, and closes after navigation", async ({ page }, testInfo) => {
@@ -164,39 +164,35 @@ test("mobile inbox switches between conversation list and chat and submits an in
   const { createdNotes } = backendData.get(page)!;
   await signIn(page);
 
-  await page.getByRole("button", { name: /Amina Customer/ }).click();
-  await expect(page.locator(".chat-contact-heading").getByText("Amina Customer")).toBeVisible();
-
-  await page.getByRole("button", { name: "Internal note" }).click();
-  await page.getByRole("textbox", { name: "Internal note" }).fill("Follow up after confirming delivery.");
-  await page.getByRole("button", { name: "Add note" }).click();
-
-  await expect(page.getByText("Internal note added for your team.")).toBeVisible();
-  await expect.poll(() => createdNotes.length).toBe(1);
-  expect(createdNotes[0]).toMatchObject({
-    tenant_id: "e2e-tenant-1",
-    conversation_id: "e2e-conversation-1",
-    body: "Follow up after confirming delivery.",
+  await test.step("open the customer conversation", async () => {
+    await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
+    await expect(page.locator(".chat-contact-heading")).toContainText("Amina Customer");
   });
 
-  await page.getByRole("button", { name: /Conversations/ }).click();
-  await expect(page.getByRole("button", { name: /Amina Customer/ })).toBeVisible();
-  await expect(page.getByText("Choose a conversation")).toBeVisible();
+  await test.step("add an internal note", async () => {
+    await page.locator(".composer-tabs").getByRole("button", { name: "Internal note" }).click({ timeout: 7000 });
+    await page.locator('textarea[aria-label="Internal note"]').fill("Follow up after confirming delivery.");
+    await page.locator(".chat-reply").getByRole("button", { name: /Add note/ }).click({ timeout: 7000 });
+    await expect(page.getByText("Internal note added for your team.")).toBeVisible({ timeout: 7000 });
+    await expect.poll(() => createdNotes.length).toBe(1);
+    expect(createdNotes[0]).toMatchObject({ tenant_id: "e2e-tenant-1", conversation_id: "e2e-conversation-1", body: "Follow up after confirming delivery." });
+  });
+
+  await test.step("return to the conversation list", async () => {
+    await page.locator(".inbox-back-button").click({ timeout: 7000 });
+    await expect(page.locator(".conversation-list .conversation-item").filter({ hasText: "Amina Customer" })).toBeVisible();
+    await expect(page.getByText("Choose a conversation")).toBeVisible();
+  });
 });
 
 test("reply action calls the mocked Meta-send integration", async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.includes("mobile"), "Reply integration is covered in the mobile project.");
   const { sentMessages } = backendData.get(page)!;
   await signIn(page);
-  await page.getByRole("button", { name: /Amina Customer/ }).click();
-  await page.getByRole("textbox", { name: "Message reply" }).fill("Thanks, we will check this for you.");
-  await page.getByRole("button", { name: /^Send/ }).click();
-  await expect(page.getByText("Message submitted to Meta.")).toBeVisible();
+  await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
+  await page.locator('textarea[aria-label="Message reply"]').fill("Thanks, we will check this for you.");
+  await page.locator(".chat-reply").getByRole("button", { name: /^Send/ }).click({ timeout: 7000 });
+  await expect(page.getByText("Message submitted to Meta.")).toBeVisible({ timeout: 7000 });
   await expect.poll(() => sentMessages.length).toBe(1);
-  expect(sentMessages[0]).toMatchObject({
-    tenant_id: "e2e-tenant-1",
-    to: "+254700000001",
-    type: "text",
-    text: "Thanks, we will check this for you.",
-  });
+  expect(sentMessages[0]).toMatchObject({ tenant_id: "e2e-tenant-1", to: "+254700000001", type: "text", text: "Thanks, we will check this for you." });
 });
