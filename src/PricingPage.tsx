@@ -30,7 +30,7 @@ export default function PricingPage() {
       <section className="wa-pricing-hero">
         <div className="marketing-kicker"><span/> STRAIGHTFORWARD SUBSCRIPTIONS</div>
         <h1>Choose a plan that fits <em>your team.</em></h1>
-        <p>Manage WhatsApp conversations, contacts and campaigns in one workspace. Upgrade when you need more team access and developer integrations.</p>
+        <p>Manage WhatsApp conversations, contacts and campaigns in one business account. Upgrade when you need more team access and developer integrations.</p>
         <div className="wa-pricing-trust"><span><ShieldCheck size={15}/> Official Meta Cloud API</span><span><Check size={15}/> No fixed contact, campaign or platform-message caps</span></div>
       </section>
       <section className="wa-pricing-plans" aria-label="WhatsApp subscription plans">
@@ -92,7 +92,7 @@ export default function PricingPage() {
           <details><summary>Which plans include API access?</summary><p>Developer API access and customer webhooks are available on Basic, Pro and Enterprise. Starter does not include customer API or webhook access.</p></details>
         </div>
       </section>
-      <section className="marketing-final-cta"><div><div className="marketing-kicker">READY WHEN YOU ARE</div><h2>Start with the essentials.</h2><p>Create your workspace and connect your eligible WhatsApp Business account.</p></div><a className="marketing-primary" href="/login?mode=signup">Get started <ArrowRight size={16}/></a></section>
+      <section className="marketing-final-cta"><div><div className="marketing-kicker">READY WHEN YOU ARE</div><h2>Start with the essentials.</h2><p>Create your business account and connect your eligible WhatsApp Business account.</p></div><a className="marketing-primary" href="/login?mode=signup">Get started <ArrowRight size={16}/></a></section>
     </main>
     <footer className="marketing-footer"><a className="marketing-brand" href="/"><span className="marketing-brand-icon"><MessageCircle size={19}/></span><span><strong>MobiWave</strong><small>WA</small></span></a><p>WhatsApp customer messaging for business teams.</p><div><a href="/privacy-policy/">Privacy</a><a href="/terms-of-service/">Terms</a><a href="/data-deletion/">Data deletion</a><a href="mailto:info@mobiwave.co.ke">Contact</a></div><small>© {new Date().getFullYear()} MobiWave Innovations Ltd</small></footer>
   </div>;
