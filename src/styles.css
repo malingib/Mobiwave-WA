@@ -783,3 +783,6 @@ input:focus,select:focus,textarea:focus{outline:2px solid #9fcab1;outline-offset
 @media(prefers-reduced-motion:reduce){
   .sidebar{transition:none}
 }
+
+.preview-demo-label{display:inline-flex;align-items:center;min-height:26px;margin:0 0 10px;padding:5px 9px;border:1px solid #d4e4d9;border-radius:5px;background:#f8fbf8;color:#456456;font-size:10px;font-weight:650;letter-spacing:.1px}
+@media(max-width:720px){.preview-demo-label{font-size:9px;margin-left:3px}}
