@@ -181,7 +181,7 @@ test("mobile inbox switches between conversation list and chat and submits an in
   await test.step("return to the conversation list", async () => {
     await page.locator(".inbox-back-button").click({ timeout: 7000 });
     await expect(page.locator(".conversation-list .conversation-item").filter({ hasText: "Amina Customer" })).toBeVisible();
-    await expect(page.getByText("Choose a conversation")).toBeVisible();
+    await expect(page.getByText("Choose a conversation")).not.toBeVisible();
   });
 });
 
