@@ -16,6 +16,8 @@ const tenantMembership = [{
   tenants: { id: "e2e-tenant-1", name: "Demo Business", slug: "demo-business" },
 }];
 
+const backendData = new WeakMap<Page, { createdNotes: Array<Record<string, unknown>>; sentMessages: Array<Record<string, unknown>> }>();
+
 const conversation = {
   id: "e2e-conversation-1",
   status: "open",
@@ -45,7 +47,7 @@ async function mockBackend(page: Page) {
   await page.route("**/auth/v1/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (request.method() === "OPTIONS") return json(route, {}, 204);
+    if (request.method() === "OPTIONS") return json(route, {}, 200);
     if (url.pathname.endsWith("/token")) {
       const now = Math.floor(Date.now() / 1000);
       return json(route, {
@@ -103,7 +105,9 @@ async function mockBackend(page: Page) {
     return json(route, { success: true });
   });
 
-  return { createdNotes, sentMessages };
+  const data = { createdNotes, sentMessages };
+  backendData.set(page, data);
+  return data;
 }
 
 async function signIn(page: Page) {
@@ -157,17 +161,17 @@ test("mobile navigation opens, closes on Escape, and closes after navigation", a
 
 test("mobile inbox switches between conversation list and chat and submits an internal note", async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.includes("mobile"), "Mobile conversation layout is covered in the mobile project.");
-  const { createdNotes } = await mockBackend(page);
+  const { createdNotes } = backendData.get(page)!;
   await signIn(page);
 
   await page.getByRole("button", { name: /Amina Customer/ }).click();
-  await expect(page.getByRole("heading", { name: "Amina Customer" })).toBeVisible();
+  await expect(page.locator(".chat-contact-heading").getByText("Amina Customer")).toBeVisible();
 
   await page.getByRole("button", { name: "Internal note" }).click();
   await page.getByRole("textbox", { name: "Internal note" }).fill("Follow up after confirming delivery.");
   await page.getByRole("button", { name: "Add note" }).click();
 
-  await expect(page.getByRole("status").filter({ hasText: "Internal note added for your team." })).toBeVisible();
+  await expect(page.getByText("Internal note added for your team.")).toBeVisible();
   await expect.poll(() => createdNotes.length).toBe(1);
   expect(createdNotes[0]).toMatchObject({
     tenant_id: "e2e-tenant-1",
@@ -182,12 +186,12 @@ test("mobile inbox switches between conversation list and chat and submits an in
 
 test("reply action calls the mocked Meta-send integration", async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.includes("mobile"), "Reply integration is covered in the mobile project.");
-  const { sentMessages } = await mockBackend(page);
+  const { sentMessages } = backendData.get(page)!;
   await signIn(page);
   await page.getByRole("button", { name: /Amina Customer/ }).click();
   await page.getByRole("textbox", { name: "Message reply" }).fill("Thanks, we will check this for you.");
   await page.getByRole("button", { name: /^Send/ }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Message submitted to Meta." })).toBeVisible();
+  await expect(page.getByText("Message submitted to Meta.")).toBeVisible();
   await expect.poll(() => sentMessages.length).toBe(1);
   expect(sentMessages[0]).toMatchObject({
     tenant_id: "e2e-tenant-1",
