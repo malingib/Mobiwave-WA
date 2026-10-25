@@ -39,18 +39,18 @@ export default function LandingPage() {
           <div className="marketing-hero-copy">
             <div className="marketing-kicker"><span/> A BETTER WAY TO WORK WITH WHATSAPP</div>
             <h1>WhatsApp conversations, <em>without the chaos.</em></h1>
-            <p className="marketing-hero-description">Connect one official WhatsApp Business number, manage every customer conversation and send consent-led campaigns from one workspace.</p>
+            <p className="marketing-hero-description">Connect one official WhatsApp Business number, manage every customer conversation and send consent-led campaigns from one business account.</p>
             <div className="marketing-hero-actions">
               <a className="marketing-primary" href="/login?mode=signup">Get started <ArrowRight size={16}/></a>
               <a className="marketing-secondary" href="#features">Explore the platform <ChevronRight size={16}/></a>
             </div>
             <div className="marketing-proof"><span><CircleCheck size={15}/> Official Meta Cloud API</span><span><CircleCheck size={15}/> Your business, your account</span></div>
           </div>
-          <div className="marketing-preview-wrap" aria-label="Illustration of the MobiWave WA inbox">
+          <div className="marketing-preview-wrap" aria-label="Illustration of the MobiWave WA inbox"><p className="preview-demo-label">Illustrative preview · sample data</p>
             <div className="marketing-preview">
               <div className="preview-topbar"><div className="preview-brand"><span><MessageCircle size={14}/></span><strong>MobiWave WA</strong></div><div className="preview-top-status"><i/> Number connected</div><div className="preview-user">MW</div></div>
               <div className="preview-body">
-                <aside className="preview-sidebar"><div className="preview-side-active"><MessagesSquare size={15}/> Inbox <b>4</b></div><div><ContactRound size={15}/> Contacts</div><div><Zap size={15}/> Campaigns</div><div><ShieldCheck size={15}/> Team access</div><div><Workflow size={15}/> Integrations</div><div className="preview-side-bottom"><ShieldCheck size={14}/> Workspace secure</div></aside>
+                <aside className="preview-sidebar"><div className="preview-side-active"><MessagesSquare size={15}/> Inbox <b>4</b></div><div><ContactRound size={15}/> Contacts</div><div><Zap size={15}/> Campaigns</div><div><ShieldCheck size={15}/> Team access</div><div><Workflow size={15}/> Integrations</div><div className="preview-side-bottom"><ShieldCheck size={14}/> Account data protected</div></aside>
                 <div className="preview-main">
                   <div className="preview-heading"><div><small>WHATSAPP</small><h3>Customer conversations</h3><p>One business number, every customer thread.</p></div><span className="preview-date">All contacts⌄</span></div>
                   <div className="preview-stats"><div><span>Conversations</span><strong>128</strong><small className="preview-positive">Active customer threads</small></div><div><span>Response time</span><strong>4m <small>12s</small></strong><small>Team performance</small></div><div><span>Contacts</span><strong>846</strong><small>Managed in one place</small></div></div>
@@ -69,26 +69,26 @@ export default function LandingPage() {
         </section>
 
         <section className="marketing-features" id="features">
-          <div className="marketing-section-heading"><div className="marketing-kicker">ONE NUMBER, ONE WORKSPACE</div><h2>Everything your team needs. <em>Nothing in the way.</em></h2><p>Customer conversations, organized contacts and accountable campaigns—all connected to your WhatsApp number.</p></div>
-          <div className="marketing-feature-grid">{features.map(({ icon: Icon, title, text }) => <article className="marketing-feature" key={title}><span className="marketing-feature-icon"><Icon size={19}/></span><h3>{title}</h3><p>{text}</p><a href="/login">Explore workspace <ArrowUpRight size={14}/></a></article>)}</div>
+          <div className="marketing-section-heading"><div className="marketing-kicker">ONE NUMBER, ONE BUSINESS ACCOUNT</div><h2>Everything your team needs. <em>Nothing in the way.</em></h2><p>Customer conversations, organized contacts and accountable campaigns—all connected to your WhatsApp number.</p></div>
+          <div className="marketing-feature-grid">{features.map(({ icon: Icon, title, text }) => <article className="marketing-feature" key={title}><span className="marketing-feature-icon"><Icon size={19}/></span><h3>{title}</h3><p>{text}</p><a href="/login">Explore the platform <ArrowUpRight size={14}/></a></article>)}</div>
         </section>
 
         <section className="marketing-how" id="how-it-works">
-          <div className="marketing-how-copy"><div className="marketing-kicker">GET STARTED IN STEPS</div><h2>Set up for your business. <em>Not someone else's.</em></h2><p>Start with a workspace for your team, connect your own WhatsApp Business account, and configure the tools that fit your customer experience.</p><a className="marketing-primary" href="/login?mode=signup">Create your workspace <ArrowRight size={16}/></a></div>
-          <div className="marketing-steps"><div><span>01</span><section><strong>Create your workspace</strong><p>Set up your team and business space.</p></section><CircleCheck size={18}/></div><div><span>02</span><section><strong>Connect your WhatsApp account</strong><p>Use your own eligible Meta Business integration.</p></section><CircleCheck size={18}/></div><div><span>03</span><section><strong>Bring your customer workflow together</strong><p>Configure your inbox, contacts, campaigns and integrations.</p></section><CircleCheck size={18}/></div></div>
+          <div className="marketing-how-copy"><div className="marketing-kicker">GET STARTED IN STEPS</div><h2>Set up for your business. <em>Not someone else's.</em></h2><p>Start with a business account for your team, connect your own WhatsApp Business account, and configure the tools that fit your customer experience.</p><a className="marketing-primary" href="/login?mode=signup">Create your business account <ArrowRight size={16}/></a></div>
+          <div className="marketing-steps"><div><span>01</span><section><strong>Create your workspace</strong><p>Set up your business account and team.</p></section><CircleCheck size={18}/></div><div><span>02</span><section><strong>Connect your WhatsApp account</strong><p>Use your own eligible Meta Business integration.</p></section><CircleCheck size={18}/></div><div><span>03</span><section><strong>Bring your customer workflow together</strong><p>Configure your inbox, contacts, campaigns and integrations.</p></section><CircleCheck size={18}/></div></div>
         </section>
 
         <section className="marketing-faq" id="faq">
           <div className="marketing-section-heading"><div className="marketing-kicker">COMMON QUESTIONS</div><h2>Good to know <em>before you start.</em></h2><p>Clear answers about connecting WhatsApp and working with your team.</p></div>
           <div className="marketing-faq-list">
             <details><summary>Does MobiWave WA use the official WhatsApp API?</summary><p>Yes. MobiWave WA is designed to connect through Meta's official WhatsApp Cloud API, not unofficial WhatsApp automation engines.</p></details>
-            <details><summary>Can I use one number for all my customer conversations?</summary><p>Yes. Each workspace connects one WhatsApp Business number, and conversations with your customers appear together in Inbox.</p></details>
+            <details><summary>Can I use one number for all my customer conversations?</summary><p>Yes. Each business account connects one WhatsApp Business number, and conversations with your customers appear together in Inbox.</p></details>
             <details><summary>Can I send WhatsApp campaigns?</summary><p>Campaign messaging must follow Meta's policies, including required approved message templates and appropriate customer opt-in. Availability depends on your connected account and permissions.</p></details>
             <details><summary>How are outbound campaigns controlled?</summary><p>Campaigns use approved Meta templates and recorded customer opt-in. Teams remain responsible for selecting recipients and initiating sends.</p></details>
           </div>
         </section>
 
-        <section className="marketing-final-cta"><div><div className="marketing-kicker">READY WHEN YOU ARE</div><h2>Give every conversation a clear next step.</h2><p>Bring your customer messaging into one clear, connected workspace.</p></div><a className="marketing-primary" href="/login?mode=signup">Get started <ArrowRight size={16}/></a></section>
+        <section className="marketing-final-cta"><div><div className="marketing-kicker">READY WHEN YOU ARE</div><h2>Give every conversation a clear next step.</h2><p>Bring your customer messaging into one clear, connected business account.</p></div><a className="marketing-primary" href="/login?mode=signup">Get started <ArrowRight size={16}/></a></section>
       </main>
       <footer className="marketing-footer"><a className="marketing-brand" href="/"><span className="marketing-brand-icon"><MessageCircle size={19}/></span><span><strong>MobiWave</strong><small>WA</small></span></a><p>WhatsApp customer messaging for business teams.</p><div><a href="/privacy-policy/">Privacy</a><a href="/terms-of-service/">Terms</a><a href="/data-deletion/">Data deletion</a><a href="mailto:info@mobiwave.co.ke">Contact</a></div><small>© {new Date().getFullYear()} MobiWave Innovations Ltd</small></footer>
     </div>
