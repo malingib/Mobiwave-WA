@@ -785,3 +785,6 @@ input:focus,select:focus,textarea:focus{outline:2px solid #9fcab1;outline-offset
 
 /* One consistent, high-visibility keyboard focus treatment. */
 :where(a,button,input,select,textarea,summary,[tabindex]):focus-visible{outline:3px solid #176bce;outline-offset:3px}
+
+/* Toast notifications must not block controls underneath them. */
+.toast{pointer-events:none}.toast button{pointer-events:auto}
