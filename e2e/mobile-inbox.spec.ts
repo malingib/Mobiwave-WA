@@ -113,7 +113,7 @@ async function mockBackend(page: Page) {
 async function signIn(page: Page) {
   await page.goto("/login");
   await page.getByLabel("Work email").fill(user.email);
-  await page.getByLabel("Password").fill("e2e-password-123");
+  await page.getByRole("textbox", { name: "Password" }).fill("e2e-password-123");
   await page.getByRole("button", { name: /sign in securely/i }).click();
   await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
   await expect(page.getByText("Demo Business").first()).toBeVisible();
