@@ -75,7 +75,7 @@ export default function LandingPage() {
 
         <section className="marketing-how" id="how-it-works">
           <div className="marketing-how-copy"><div className="marketing-kicker">GET STARTED IN STEPS</div><h2>Set up for your business. <em>Not someone else's.</em></h2><p>Start with a business account for your team, connect your own WhatsApp Business account, and configure the tools that fit your customer experience.</p><a className="marketing-primary" href="/login?mode=signup">Create your business account <ArrowRight size={16}/></a></div>
-          <div className="marketing-steps"><div><span>01</span><section><strong>Create your workspace</strong><p>Set up your business account and team.</p></section><CircleCheck size={18}/></div><div><span>02</span><section><strong>Connect your WhatsApp account</strong><p>Use your own eligible Meta Business integration.</p></section><CircleCheck size={18}/></div><div><span>03</span><section><strong>Bring your customer workflow together</strong><p>Configure your inbox, contacts, campaigns and integrations.</p></section><CircleCheck size={18}/></div></div>
+          <div className="marketing-steps"><div><span>01</span><section><strong>Create your business account</strong><p>Set up your business account and team.</p></section><CircleCheck size={18}/></div><div><span>02</span><section><strong>Connect your WhatsApp account</strong><p>Use your own eligible Meta Business integration.</p></section><CircleCheck size={18}/></div><div><span>03</span><section><strong>Bring your customer workflow together</strong><p>Configure your inbox, contacts, campaigns and integrations.</p></section><CircleCheck size={18}/></div></div>
         </section>
 
         <section className="marketing-faq" id="faq">
