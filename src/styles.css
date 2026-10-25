@@ -740,3 +740,46 @@ input:focus,select:focus,textarea:focus{outline:2px solid #9fcab1;outline-offset
   .chat-head-actions{padding-left:0}
   .assignment-control{flex-wrap:wrap}
 }
+
+
+/* Mobile navigation: use a real drawer instead of a permanently narrow sidebar. */
+.mobile-menu-button{display:none;align-items:center;justify-content:center;width:38px;height:38px;flex:0 0 38px;border:1px solid #dce5df;border-radius:7px;background:#fff;color:#315747}
+.mobile-nav-backdrop{display:none}
+@media(max-width:720px){
+  .app-shell{min-width:320px}
+  .mobile-menu-button{display:inline-flex}
+  .topbar{justify-content:flex-start;gap:10px;padding:0 12px}
+  .breadcrumbs{flex:1;min-width:0}
+  .top-actions{gap:7px;flex:0 0 auto}
+  .top-actions .environment{max-width:28px;overflow:hidden;white-space:nowrap}
+  .top-actions .mini-avatar{display:none}
+  .sidebar{position:fixed!important;inset:0 auto 0 0;z-index:1001;width:min(290px,86vw)!important;height:100dvh!important;min-height:0;padding:20px 14px 14px!important;overflow-y:auto;transform:translateX(-105%);visibility:hidden;transition:transform .18s ease,visibility .18s;box-shadow:none;border-right:1px solid #2b6252}
+  .sidebar.is-open{transform:translateX(0);visibility:visible;box-shadow:12px 0 36px #10241f2b}
+  .sidebar .brand{padding:0 8px 24px}
+  .sidebar .brand>div:nth-child(2),.sidebar .workspace-picker,.sidebar .nav-label,.sidebar .nav-item span,.sidebar .sidebar-bottom .help-card,.sidebar .profile>div:nth-child(2),.sidebar .profile>svg{display:flex}
+  .sidebar .workspace-picker{justify-content:flex-start;padding:9px;margin-bottom:22px}
+  .sidebar .workspace-picker select{font-size:11px;width:auto}
+  .sidebar .workspace-picker>svg{display:block}
+  .sidebar .nav-label{display:block}
+  .sidebar .nav-item{justify-content:flex-start;padding:11px;gap:12px}
+  .sidebar .nav-item span{display:inline}
+  .sidebar .sidebar-bottom .help-card{display:flex}
+  .sidebar .profile{justify-content:flex-start}
+  .sidebar .profile>div:nth-child(2){display:block;min-width:0;overflow-wrap:anywhere}
+  .sidebar .profile>svg{display:block}
+  .mobile-nav-backdrop{display:block;position:fixed;inset:0;z-index:1000;border:0;padding:0;background:#0d211b75;touch-action:manipulation}
+  .inbox-page-header{gap:8px}
+  .inbox-page-header h1{font-size:23px}
+  .inbox-number-pill{max-width:48%;white-space:normal;line-height:1.35}
+  .chat-head-actions{padding-left:0}
+}
+@media(max-width:380px){
+  .topbar{padding:0 9px;gap:7px}
+  .mobile-menu-button{width:36px;height:36px;flex-basis:36px}
+  .top-actions .environment{display:none}
+  .breadcrumbs{font-size:11px;gap:6px}
+  .inbox-number-pill{max-width:46%}
+}
+@media(prefers-reduced-motion:reduce){
+  .sidebar{transition:none}
+}
