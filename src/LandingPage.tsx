@@ -47,7 +47,7 @@ export default function LandingPage() {
           <div className="marketing-hero-copy">
             <div className="marketing-kicker"><span/> WHATSAPP BUSINESS MESSAGING FOR KENYA</div>
             <h1>WhatsApp Business API in Kenya, <em>built for your team.</em></h1>
-            <p className="marketing-hero-description">Manage customer conversations, contacts and approved WhatsApp campaigns in one shared workspace. MobiWave WA connects through Meta's official WhatsApp Cloud API—with practical tools for Kenyan businesses.</p>
+            <p className="marketing-hero-description">Use the WhatsApp Business API in Kenya to manage customer conversations, contacts and approved campaigns in one shared workspace. MobiWave WA connects through Meta's official WhatsApp Cloud API, with tools designed for local business teams.</p>
             <div className="marketing-hero-actions">
               <a className="marketing-primary" href="/login?mode=signup">Create your account <ArrowRight size={16}/></a>
               <a className="marketing-secondary" href="/pricing">Explore pricing <ChevronRight size={16}/></a>
@@ -106,7 +106,7 @@ export default function LandingPage() {
 
         <section className="marketing-final-cta"><div><div className="marketing-kicker">WHATSAPP BUSINESS MESSAGING, MADE CLEARER</div><h2>Give every customer conversation a next step.</h2><p>Set up your MobiWave WA workspace and bring conversations, contacts and campaign controls together.</p></div><a className="marketing-primary" href="/login?mode=signup">Get started <ArrowRight size={16}/></a></section>
       </main>
-      <footer className="marketing-footer"><a className="marketing-brand" href="/"><span className="marketing-brand-icon"><MessageCircle size={19}/></span><span><strong>MobiWave</strong><small>WA</small></span></a><p>WhatsApp Business messaging for Kenyan teams.</p><div><a href="/privacy-policy/">Privacy</a><a href="/terms-of-service/">Terms</a><a href="/data-deletion/">Data deletion</a><a href="mailto:info@mobiwave.co.ke">Contact</a></div><small>© {new Date().getFullYear()} MobiWave Innovations Ltd</small></footer>
+      <footer className="marketing-footer"><a className="marketing-brand" href="/"><span className="marketing-brand-icon"><MessageCircle size={19}/></span><span><strong>MobiWave</strong><small>WA</small></span></a><p>WhatsApp Business messaging for Kenyan teams.</p><div><a href="https://mobiwave.co.ke/">MobiWave services</a><a href="/pricing">Pricing</a><a href="/privacy-policy/">Privacy</a><a href="/terms-of-service/">Terms</a><a href="/data-deletion/">Data deletion</a><a href="mailto:info@mobiwave.co.ke">Contact</a></div><small>© {new Date().getFullYear()} MobiWave Innovations Ltd</small></footer>
     </div>
   );
 }
