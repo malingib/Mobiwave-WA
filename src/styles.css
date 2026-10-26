@@ -788,3 +788,22 @@ input:focus,select:focus,textarea:focus{outline:2px solid #9fcab1;outline-offset
 
 /* Toast notifications must not block controls underneath them. */
 .toast{pointer-events:none}.toast button{pointer-events:auto}
+
+
+/* SEO landing-page use cases */
+.marketing-use-cases{max-width:1172px;margin:0 auto;padding:80px 30px 88px}
+.marketing-use-case-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--mk-line);border-left:1px solid var(--mk-line)}
+.marketing-use-case{min-width:0;min-height:170px;padding:23px 20px;border-right:1px solid var(--mk-line);border-bottom:1px solid var(--mk-line);background:#fff}
+.marketing-use-case>span{display:inline-block;color:var(--mk-green);font-size:10px;font-weight:800;letter-spacing:1px}
+.marketing-use-case h3{font:700 14px Manrope,sans-serif;letter-spacing:-.25px;margin:20px 0 8px}
+.marketing-use-case p{font-size:11px;line-height:1.75;color:var(--mk-muted);margin:0}
+.marketing-faq-list details p a{color:var(--mk-green);font-weight:700;text-decoration:underline;text-underline-offset:3px}
+@media(max-width:900px){.marketing-use-case-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){
+  .marketing-use-cases{padding:58px 18px 62px}
+  .marketing-use-case-grid{grid-template-columns:minmax(0,1fr)}
+  .marketing-use-case{min-height:0;padding:20px}
+  .marketing-use-case h3{margin:12px 0 6px}
+  .marketing-hero h1{letter-spacing:-1.8px}
+  .marketing-proof{gap:10px 15px}
+}
