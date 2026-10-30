@@ -124,8 +124,8 @@ async function signIn(page: Page) {
   await expect(page.locator(".breadcrumbs").getByText("Demo Business")).toBeVisible();
 }
 
-test.beforeEach(async ({ page }) => {
-  await mockBackend(page);
+test.beforeEach(async ({ page }, testInfo) => {
+  await mockBackend(page, testInfo.title.includes("agent role") ? "agent" : "admin");
 });
 
 test("public landing page loads and labels preview metrics as sample data", async ({ page }) => {
