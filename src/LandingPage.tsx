@@ -45,7 +45,7 @@ export default function LandingPage() {
       <main>
         <section className="marketing-hero">
           <div className="marketing-hero-copy">
-            <div className="marketing-kicker"><span/> WHATSAPP BUSINESS MESSAGING FOR KENYA</div>
+            <div className="marketing-kicker"><span/> ONE NUMBER, ONE BUSINESS ACCOUNT · WHATSAPP BUSINESS MESSAGING FOR KENYA</div>
             <h1>WhatsApp Business API in Kenya, <em>built for your team.</em></h1>
             <p className="marketing-hero-description">Use the WhatsApp Business API in Kenya to manage customer conversations, contacts and approved campaigns in one shared workspace. MobiWave WA connects through Meta's official WhatsApp Cloud API, with tools designed for local business teams.</p>
             <div className="marketing-hero-actions">
@@ -54,7 +54,7 @@ export default function LandingPage() {
             </div>
             <div className="marketing-proof"><span><CircleCheck size={15}/> Official Meta Cloud API</span><span><CircleCheck size={15}/> Shared team inbox</span><span><CircleCheck size={15}/> Consent-aware campaigns</span></div>
           </div>
-          <div className="marketing-preview-wrap" aria-label="Illustration of the MobiWave WA inbox"><p className="preview-demo-label">Product preview · illustrative sample data</p>
+          <div className="marketing-preview-wrap" aria-label="Illustration of the MobiWave WA inbox"><p className="preview-demo-label">Illustrative preview · sample data</p>
             <div className="marketing-preview">
               <div className="preview-topbar"><div className="preview-brand"><span><MessageCircle size={14}/></span><strong>MobiWave WA</strong></div><div className="preview-top-status"><i/> Workspace overview</div><div className="preview-user">MW</div></div>
               <div className="preview-body">
