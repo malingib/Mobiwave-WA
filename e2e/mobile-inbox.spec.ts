@@ -86,7 +86,11 @@ async function mockBackend(page: Page) {
       return json(route, [], 201);
     }
     if (table === "messages") return json(route, []);
-    if (table === "contacts" && request.method() === "POST") {\n      createdContacts.push(request.postDataJSON() as Record<string, unknown>);\n      return json(route, [], 201);\n    }\n    if (table === "contacts") return json(route, []);
+    if (table === "contacts" && request.method() === "POST") {
+      createdContacts.push(request.postDataJSON() as Record<string, unknown>);
+      return json(route, [], 201);
+    }
+    if (table === "contacts") return json(route, []);
     return json(route, []);
   });
 
