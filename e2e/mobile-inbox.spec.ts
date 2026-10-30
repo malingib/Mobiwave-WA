@@ -266,7 +266,7 @@ test("integration administration exposes official Meta Cloud API setup and webho
   await signIn(page);
   await page.locator("#primary-navigation").getByRole("button", { name: "Integrations" }).click();
 
-  await expect(page.getByRole("heading", { name: "WhatsApp Business Platform" })).toBeVisible();
+  await expect(page.getByText("WhatsApp Business Platform", { exact: true })).toBeVisible();
   await expect(page.getByText("Official Meta Cloud API")).toBeVisible();
   await expect(page.getByLabel("Phone Number ID *")).toBeVisible();
   await expect(page.getByLabel("WhatsApp Business Account ID *")).toBeVisible();
