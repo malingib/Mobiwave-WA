@@ -1,5 +1,5 @@
 import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
-import { AlertTriangle, ArrowLeft, Home, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Home, RefreshCw } from "lucide-react";
 
 type ErrorPageProps = {
   kind?: "not-found" | "error" | "unavailable";
@@ -27,26 +27,55 @@ export function ErrorPage({ kind = "error", title, description }: ErrorPageProps
   }[kind];
 
   return (
-    <main className="mw-error-screen">
-      <div className="mw-error-top">
-        <a className="mw-error-brand" href="/" aria-label="MobiWave WA home">
-          <span className="mw-error-mark"><span>MW</span></span>
-          <span><strong>MobiWave</strong><small>WA</small></span>
+    <main className="flex min-h-screen flex-col bg-canvas font-sans">
+      <div className="flex items-center justify-between gap-4 px-5 py-5 sm:px-8">
+        <a className="flex items-center gap-2.5" href="/" aria-label="MobiWave WA home">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-brand">
+            <span className="font-display text-[13px] font-extrabold">MW</span>
+          </span>
+          <span className="font-display text-[15.5px] font-extrabold tracking-tight text-ink-900">
+            MobiWave<span className="ml-1 font-sans text-[11px] font-bold text-brand-600">WA</span>
+          </span>
         </a>
-        <span className="mw-error-secure">MobiWave Innovations Ltd</span>
+        <span className="text-[12.5px] text-ink-400">MobiWave Innovations Ltd</span>
       </div>
-      <section className="mw-error-content" role="alert">
-        <div className="mw-error-symbol"><AlertTriangle size={25} strokeWidth={1.8} /></div>
-        <p className="mw-error-code">{content.code} <span>·</span> {kind === "not-found" ? "PAGE NOT FOUND" : kind === "unavailable" ? "SERVICE UNAVAILABLE" : "UNEXPECTED ERROR"}</p>
-        <h1>{title ?? content.title}</h1>
-        <p className="mw-error-description">{description ?? content.description}</p>
-        <div className="mw-error-actions">
-          <button className="mw-error-primary" onClick={() => window.location.reload()}><RefreshCw size={16} /> Try again</button>
-          <a className="mw-error-secondary" href="/"><Home size={16} /> Back to home</a>
+
+      <section className="flex flex-1 flex-col items-center justify-center px-5 py-12 text-center" role="alert">
+        <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-amber-600">
+          <AlertTriangle size={25} strokeWidth={1.8} />
         </div>
-        <p className="mw-error-help">Still having trouble? <a href="mailto:info@mobiwave.co.ke?subject=MobiWave%20WA%20support">Contact MobiWave support</a>.</p>
+        <p className="mt-6 flex items-center gap-2 text-[11.5px] font-extrabold uppercase tracking-[0.16em] text-brand-600">
+          {content.code}
+          <span className="text-ink-300">·</span>
+          <span className="text-ink-400">
+            {kind === "not-found" ? "Page not found" : kind === "unavailable" ? "Service unavailable" : "Unexpected error"}
+          </span>
+        </p>
+        <h1 className="mt-4 max-w-xl font-display text-[clamp(1.8rem,4vw,2.6rem)] font-extrabold leading-tight tracking-[-0.03em]">
+          {title ?? content.title}
+        </h1>
+        <p className="mt-4 max-w-lg text-[15.5px] leading-relaxed text-ink-500">{description ?? content.description}</p>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <button className="btn btn-primary h-11 px-5" onClick={() => window.location.reload()}>
+            <RefreshCw size={16} /> Try again
+          </button>
+          <a className="btn btn-secondary h-11 px-5" href="/"><Home size={16} /> Back to home</a>
+        </div>
+        <p className="mt-8 text-[13.5px] text-ink-400">
+          Still having trouble?{" "}
+          <a className="font-semibold text-brand-600 hover:text-brand-700" href="mailto:info@mobiwave.co.ke?subject=MobiWave%20WA%20support">
+            Contact MobiWave support
+          </a>
+          .
+        </p>
       </section>
-      <footer className="mw-error-footer"><span>© 2026 MobiWave Innovations Ltd</span><a href="https://mobiwave.co.ke/">Company website <ArrowLeft size={12} /></a></footer>
+
+      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-ink-200 px-5 py-5 text-[12.5px] text-ink-400 sm:px-8">
+        <span>© 2026 MobiWave Innovations Ltd</span>
+        <a className="inline-flex items-center gap-1.5 font-medium text-ink-500 hover:text-brand-700" href="https://mobiwave.co.ke/">
+          Company website <ArrowUpRight size={13} />
+        </a>
+      </footer>
     </main>
   );
 }
@@ -116,9 +145,17 @@ export function NetworkStatus() {
   }, []);
 
   if (!offline) return null;
-  return <div className="mw-network-banner" role="status">
-    <AlertTriangle size={16} />
-    <span>You appear to be offline. Some workspace actions may not work until your connection returns.</span>
-    <button type="button" onClick={() => window.location.reload()}>Retry</button>
-  </div>;
+  return (
+    <div className="fixed inset-x-0 top-0 z-[70] flex flex-wrap items-center justify-center gap-3 bg-amber-500 px-4 py-2.5 text-[13px] font-semibold text-amber-950" role="status">
+      <AlertTriangle size={16} />
+      <span>You appear to be offline. Some workspace actions may not work until your connection returns.</span>
+      <button
+        type="button"
+        className="rounded-md bg-amber-950/10 px-2.5 py-1 text-[12.5px] font-bold transition-colors hover:bg-amber-950/20"
+        onClick={() => window.location.reload()}
+      >
+        Retry
+      </button>
+    </div>
+  );
 }

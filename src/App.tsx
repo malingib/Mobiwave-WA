@@ -521,8 +521,9 @@ export default function App() {
   if (pathname === "/") return <LandingPage />;
   const knownRoute = pathname === "/login" || ["/dashboard", "/admin", "/workspace", "/settings"].some((prefix) => pathname === prefix || pathname.startsWith(prefix + "/"));
   if (!knownRoute) return <ErrorPage kind="not-found" />;
-  if (!isSupabaseConfigured) return <div className="auth-screen"><div className="auth-card"><Brand /><h1>Connect your account</h1><p>Configure the Supabase URL and publishable/anon key in <code>.env.local</code> before running the dashboard.</p><pre>VITE_SUPABASE_URL=https://your-project.supabase.co{"\n"}VITE_SUPABASE_ANON_KEY=your-publishable-key</pre><a href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md">Deployment guide <ArrowUpRight size={14} /></a></div></div>;
-  if (authLoading) return <div className="auth-screen"><LoaderCircle className="spin" /><span>Loading secure session…</span></div>;
+  if (!isSupabaseConfigured) return <div className="auth-screen"><div className="auth-card"><Brand/><h1 className="mt-6 text-[24px] font-extrabold text-text">Connect your account</h1><p className="mt-2 text-sm leading-relaxed text-text-muted">Configure the Supabase URL and publishable/anon key in <code className="rounded-md bg-raised px-1.5 py-0.5 text-[13px] text-text">.env.local</code> before running the dashboard.</p><pre className="mt-4 overflow-x-auto rounded-xl bg-midnight-950 p-4 text-[12.5px] leading-relaxed text-brand-200">{`VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary mt-5" href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md">Deployment guide <ArrowUpRight size={14} /></a></div></div>;
+  if (authLoading) return <div className="auth-screen" role="status"><LoaderCircle className="spin text-brand-400" size={26} /><span className="text-sm text-text-muted">Loading secure session…</span></div>;
   if (!session || !user) {
     if (window.location.pathname !== "/login") return <LandingPage />;
     return <div className="auth-page">
