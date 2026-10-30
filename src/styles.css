@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
 
 :root{font-family:'DM Sans',sans-serif;color:#172b27;background:#f7f9f8;font-synthesis:none;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;--green:#0b6b58;--green-dark:#084d40;--green-soft:#e8f4f0;--line:#e4eae7;--muted:#74817d;--text:#172b27;--panel:#fff}
@@ -810,7 +811,6 @@ input:focus,select:focus,textarea:focus{outline:2px solid #9fcab1;outline-offset
 
 
 /* MobiWave WA — NexLink-inspired light workspace refinement */
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap');
 :root{
   font-family:'Instrument Sans',sans-serif;
   color:#18231f;background:#f6f8f7;
