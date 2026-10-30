@@ -115,6 +115,12 @@ async function mockBackend(page: Page, role = "admin") {
   return data;
 }
 
+async function navigateTo(page: Page, label: string) {
+  const menu = page.getByRole("button", { name: "Open navigation" });
+  if (await menu.isVisible()) await menu.click();
+  await page.locator(`#primary-navigation .nav-item[aria-label="${label}"]`).click();
+}
+
 async function signIn(page: Page) {
   await page.goto("/login");
   await page.getByLabel("Work email").fill(user.email);
@@ -215,7 +221,7 @@ test("workspace navigation exposes all six sections without losing the active bu
   ] as const;
 
   for (const [navigationLabel, heading] of sections) {
-    await page.locator("#primary-navigation").getByRole("button", { name: navigationLabel }).click();
+    await navigateTo(page, navigationLabel);
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     await expect(page.locator(".breadcrumbs").getByText("Demo Business")).toBeVisible();
   }
@@ -224,10 +230,10 @@ test("workspace navigation exposes all six sections without losing the active bu
 test("adding a contact without claiming consent stores an unknown consent state", async ({ page }) => {
   const { createdContacts } = backendData.get(page)!;
   await signIn(page);
-  await page.locator("#primary-navigation").getByRole("button", { name: "Contacts" }).click();
+  await navigateTo(page, "Contacts");
 
-  await page.getByLabel("Phone number (E.164) *").fill("+254711223344");
-  await page.getByLabel("Display name").fill("Unconfirmed Customer");
+  await page.locator('.field').filter({ hasText: "Phone number (E.164)" }).locator("input").fill("+254711223344");
+  await page.locator('input[placeholder="Customer name"]').fill("Unconfirmed Customer");
   await page.getByRole("button", { name: /Add contact/ }).click();
 
   await expect(page.getByText("Contact added.")).toBeVisible();
@@ -268,13 +274,13 @@ test("claiming opt-in consent requires a consent source before a contact can be 
 
 test("integration administration exposes official Meta Cloud API setup and webhook guidance", async ({ page }) => {
   await signIn(page);
-  await page.locator("#primary-navigation").getByRole("button", { name: "Integrations" }).click();
+  await navigateTo(page, "Integrations");
 
   await expect(page.getByText("WhatsApp Business Platform", { exact: true })).toBeVisible();
   await expect(page.getByText("Official Meta Cloud API")).toBeVisible();
-  await expect(page.getByLabel("Phone Number ID *")).toBeVisible();
-  await expect(page.getByLabel("WhatsApp Business Account ID *")).toBeVisible();
-  await expect(page.getByLabel("Meta access token *")).toHaveAttribute("type", "password");
+  await expect(page.locator('input[placeholder="Numeric ID from Meta"]')).toBeVisible();
+  await expect(page.locator('input[placeholder="Numeric WABA ID"]')).toBeVisible();
+  await expect(page.locator('input[placeholder="Paste Meta access token"]')).toHaveAttribute("type", "password");
   await expect(page.getByText("Advanced: customer event webhooks")).toBeVisible();
 });
 
