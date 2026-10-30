@@ -40,7 +40,7 @@ async function json(route: Route, body: unknown, status = 200) {
   });
 }
 
-async function mockBackend(page: Page) {
+async function mockBackend(page: Page, role = "admin") {
   const createdNotes: Array<Record<string, unknown>> = [];
   const sentMessages: Array<Record<string, unknown>> = [];
   const createdContacts: Array<Record<string, unknown>> = [];
@@ -70,7 +70,7 @@ async function mockBackend(page: Page) {
     const table = url.pathname.split("/").pop() ?? "";
     if (request.method() === "OPTIONS") return json(route, {}, 200);
 
-    if (table === "tenant_members") return json(route, tenantMembership);
+    if (table === "tenant_members") return json(route, tenantMembership.map((membership) => ({ ...membership, role })));
     if (table === "conversations") return json(route, [conversation]);
     if (table === "meta_integrations") return json(route, {
       tenant_id: "e2e-tenant-1",
@@ -99,7 +99,7 @@ async function mockBackend(page: Page) {
     const path = new URL(request.url()).pathname;
     if (request.method() === "OPTIONS") return json(route, {}, 200);
     if (path.endsWith("/team-members")) {
-      return json(route, { members: [{ user_id: user.id, role: "admin", name: "E2E Agent", email: user.email }] });
+      return json(route, { members: [{ user_id: user.id, role, name: "E2E Agent", email: user.email }] });
     }
     if (path.endsWith("/meta-send")) {
       sentMessages.push((request.postDataJSON() ?? {}) as Record<string, unknown>);
@@ -276,4 +276,22 @@ test("integration administration exposes official Meta Cloud API setup and webho
   await expect(page.getByLabel("WhatsApp Business Account ID *")).toBeVisible();
   await expect(page.getByLabel("Meta access token *")).toHaveAttribute("type", "password");
   await expect(page.getByText("Advanced: customer event webhooks")).toBeVisible();
+});
+
+
+test("agent role can work in the inbox but cannot access administrative contact, campaign, or integration controls", async ({ page }) => {
+  await signIn(page);
+
+  await page.locator("#primary-navigation").getByRole("button", { name: "Contacts" }).click();
+  await expect(page.getByRole("heading", { name: "Contacts", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Add contact", exact: true })).toHaveCount(0);
+
+  await page.locator("#primary-navigation").getByRole("button", { name: "Campaigns" }).click();
+  await expect(page.getByRole("heading", { name: "Campaigns", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create campaign", exact: true })).toHaveCount(0);
+
+  await page.locator("#primary-navigation").getByRole("button", { name: "Integrations" }).click();
+  await expect(page.getByText("WhatsApp Business Platform", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Phone Number ID *")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Generate verification token/ })).toHaveCount(0);
 });
