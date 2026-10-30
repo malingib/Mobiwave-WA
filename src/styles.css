@@ -807,3 +807,88 @@ input:focus,select:focus,textarea:focus{outline:2px solid #9fcab1;outline-offset
   .marketing-hero h1{letter-spacing:-1.8px}
   .marketing-proof{gap:10px 15px}
 }
+
+
+/* MobiWave WA — NexLink-inspired light workspace refinement */
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap');
+:root{
+  font-family:'Instrument Sans',sans-serif;
+  color:#18231f;background:#f6f8f7;
+  --green:#087b5b;--green-dark:#075c46;--green-soft:#e8f4ef;
+  --line:#e5eae7;--muted:#748079;--text:#18231f;--panel:#fff;
+}
+body,button,input,select,textarea{font-family:'Instrument Sans',sans-serif}
+.app-shell{background:#f6f8f7;color:#18231f}
+.sidebar{background:#fff;border-right:1px solid #e5eae7;padding:22px 14px 14px}
+.sidebar .brand{padding-bottom:25px}
+.brand-mark{background:#087b5b;border-radius:10px}
+.brand strong{font-family:'Instrument Sans',sans-serif;font-size:17px;font-weight:700;letter-spacing:-.45px;color:#17251f}
+.brand span{font-size:9px;letter-spacing:1.05px;color:#87928c}
+.workspace-picker{border:1px solid #e5eae7;background:#fbfcfb;border-radius:8px;padding:9px;margin-bottom:22px}
+.workspace-avatar{background:#e7f3ed;color:#086348;border-radius:8px}
+.workspace-name{color:#26362e!important}
+.workspace-picker select{color:#26362e}
+.nav-label{font-size:9px;letter-spacing:1.05px;color:#929c96;padding-bottom:8px}
+.nav-item{color:#58675f;border-radius:7px;padding:10px 11px;font-size:12.5px;font-weight:500}
+.nav-item:hover{background:#f5f8f6;color:#1c382c}
+.nav-item.active{background:#e8f4ef;color:#075c46;font-weight:650}
+.sidebar .help-card{background:#fbfcfb;border:1px solid #e7ece9;border-radius:8px}
+.sidebar .profile{background:#fff;border-top:1px solid #e8ece9}
+.sidebar .profile strong{color:#26362e}
+.sidebar .profile span{color:#78847d}
+.main{background:#f6f8f7}
+.topbar{height:68px;padding:0 clamp(20px,3vw,42px);background:#fff;border-bottom:1px solid #e5eae7}
+.breadcrumbs{font-size:12px;color:#7d8982}
+.breadcrumbs strong{color:#26352e;font-weight:650}
+.top-actions{gap:14px}
+.environment{border:1px solid #e5eae7;background:#fbfcfb;color:#59675f}
+.environment.is-connected .status-dot{background:#15976b}
+.mini-avatar{background:#e8f2ed;color:#17634b}
+.content{padding:30px clamp(20px,3vw,42px) 24px;max-width:1600px;width:100%;margin:0 auto}
+.page-heading{margin-bottom:24px}
+.page-heading h1{font-family:'Instrument Sans',sans-serif;font-size:27px;line-height:1.2;letter-spacing:-.8px;font-weight:700;color:#1a2922}
+.page-heading .eyebrow{font-size:9px;letter-spacing:1px;color:#78867e}
+.page-description{font-size:12px;color:#738078;line-height:1.6}
+.panel,.form-panel,.integration-card,.source-list,.settings-panel,.inbox-layout{border:1px solid #e5eae7;border-radius:9px;background:#fff;box-shadow:0 1px 2px #18231f08}
+.form-panel{padding:21px}
+.form-panel h2,.panel h2{font-family:'Instrument Sans',sans-serif;font-size:15px;font-weight:650;letter-spacing:-.2px;color:#20332a}
+.field label{font-size:11px;font-weight:600;color:#526159}
+.field input,.field select,.field textarea,.search-field,input,select,textarea{border-color:#dfe6e2}
+input,select,textarea{border-radius:6px}
+.primary-button{background:#087b5b;border-color:#087b5b;border-radius:6px;font-weight:650}
+.primary-button:hover{background:#07694e}
+.secondary-button{border-color:#dfe6e2;border-radius:6px;background:#fff;color:#3e5147}
+.secondary-button:hover{background:#f6f9f7}
+.status-pill{border-radius:5px}
+.section-header{margin:25px 0 13px}
+.section-header h2{font-family:'Instrument Sans',sans-serif;font-size:15px;font-weight:650;color:#20332a}
+.section-header p,.muted{color:#78847d}
+.source-list{overflow:hidden}
+.source-table-head{background:#f8faf9;color:#77847d}
+.source-row{border-color:#edf0ee}
+.inbox-content{background:#f6f8f7}
+.inbox-page-header h1{font-family:'Instrument Sans',sans-serif;color:#1a2922;font-size:26px;letter-spacing:-.7px}
+.inbox-page-header p{color:#748078}
+.inbox-layout{border-radius:9px;overflow:hidden}
+.conversation-list,.inbox-list-title,.inbox-filters,.conversation-row{background:#fff}
+.inbox-list-title{border-bottom:1px solid #edf0ee}
+.inbox-list-title strong{color:#26372e;font-weight:650}
+.inbox-filters{border-bottom:1px solid #edf0ee}
+.conversation-item{border-bottom:1px solid #f0f2f1}
+.conversation-item.selected{background:#edf6f1;box-shadow:inset 3px 0 #087b5b}
+.conversation-avatar{background:#eaf2ed;color:#17654b}
+.chat-header{border-bottom:1px solid #edf0ee;background:#fff}
+.chat-messages{background:#f7f9f8}
+.message-bubble{border:1px solid #e8eeea;box-shadow:0 1px 1px #18231f05}
+.message-bubble.outbound{background:#eaf5ef;border-color:#dcece3}
+.chat-reply{background:#fff;border-top:1px solid #edf0ee}
+.composer-tabs{background:#fff}
+.footer{border-top:1px solid #e7ece9;color:#849088}
+.toast{box-shadow:0 10px 32px #17251f1a}
+@media(max-width:720px){
+ .sidebar{background:#fff;border-right:1px solid #e5eae7;box-shadow:12px 0 36px #10241f18}
+ .topbar{height:60px;padding:0 13px}
+ .content{padding:22px 15px 18px}
+ .form-panel{padding:16px}
+ .inbox-page-header h1{font-size:23px}
+}
