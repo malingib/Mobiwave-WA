@@ -255,7 +255,7 @@ test("claiming opt-in consent requires a consent source before a contact can be 
 
   await page.locator('.field').filter({ hasText: "Phone number (E.164)" }).locator("input").fill("+254722334455");
   await page.getByLabel("I have verifiable permission to send WhatsApp messages to this contact.").check();
-  const consentSource = page.getByLabel("Consent source / record *");
+  const consentSource = page.locator(".field").filter({ hasText: "Consent source / record *" }).locator("input");
   await expect(consentSource).toBeVisible();
   await expect(consentSource).toHaveAttribute("required", "");
   await expect.poll(() => createdContacts.length).toBe(0);
