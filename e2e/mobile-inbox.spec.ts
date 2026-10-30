@@ -251,9 +251,9 @@ test("adding a contact without claiming consent stores an unknown consent state"
 test("claiming opt-in consent requires a consent source before a contact can be submitted", async ({ page }) => {
   const { createdContacts } = backendData.get(page)!;
   await signIn(page);
-  await page.locator("#primary-navigation").getByRole("button", { name: "Contacts" }).click();
+  await navigateTo(page, "Contacts");
 
-  await page.getByLabel("Phone number (E.164) *").fill("+254722334455");
+  await page.locator('.field').filter({ hasText: "Phone number (E.164)" }).locator("input").fill("+254722334455");
   await page.getByLabel("I have verifiable permission to send WhatsApp messages to this contact.").check();
   const consentSource = page.getByLabel("Consent source / record *");
   await expect(consentSource).toBeVisible();
@@ -288,16 +288,16 @@ test("integration administration exposes official Meta Cloud API setup and webho
 test("agent role can work in the inbox but cannot access administrative contact, campaign, or integration controls", async ({ page }) => {
   await signIn(page);
 
-  await page.locator("#primary-navigation").getByRole("button", { name: "Contacts" }).click();
+  await navigateTo(page, "Contacts");
   await expect(page.getByRole("heading", { name: "Contacts", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Add contact", exact: true })).toHaveCount(0);
 
-  await page.locator("#primary-navigation").getByRole("button", { name: "Campaigns" }).click();
+  await navigateTo(page, "Campaigns");
   await expect(page.getByRole("heading", { name: "Campaigns", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Create campaign", exact: true })).toHaveCount(0);
 
-  await page.locator("#primary-navigation").getByRole("button", { name: "Integrations" }).click();
+  await navigateTo(page, "Integrations");
   await expect(page.getByText("WhatsApp Business Platform", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Phone Number ID *")).toHaveCount(0);
+  await expect(page.locator('input[placeholder="Numeric ID from Meta"]')).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Generate verification token/ })).toHaveCount(0);
 });
