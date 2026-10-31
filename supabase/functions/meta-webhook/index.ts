@@ -31,8 +31,8 @@ Deno.serve(async (request) => {
   let body: any;
   try { body = JSON.parse(rawBody); } catch { return json({ error: "Invalid JSON." }, 400); }
   if (body.object !== "whatsapp_business_account") return json({ received: true, ignored: true });
+  const requestEventIds: string[] = [];
   try {
-    const requestEventIds: string[] = [];
     for (const entry of body.entry ?? []) for (const change of entry.changes ?? []) {
       const value = change.value ?? {};
       const phoneNumberId = String(value.metadata?.phone_number_id ?? "");
@@ -143,6 +143,14 @@ Deno.serve(async (request) => {
     }
     return json({ received: true });
   } catch (error) {
+    if (requestEventIds.length) {
+      const detail = error instanceof Error ? error.message.slice(0, 1000) : "Unknown webhook processing error";
+      const { error: retryError } = await admin.from("meta_webhook_events").update({
+        status: "retry", attempts: 1, last_error: detail,
+        next_attempt_at: new Date(Date.now() + 60_000).toISOString(), updated_at: new Date().toISOString(),
+      }).in("id", requestEventIds);
+      if (retryError) console.error("Could not schedule webhook retry", retryError.message);
+    }
     console.error("Meta webhook processing failed:", error instanceof Error ? error.message : "unknown");
     // Return a non-2xx response so Meta may retry; writes are idempotent by Meta message ID.
     return json({ error: "Webhook processing failed. The event can be retried." }, 500);
