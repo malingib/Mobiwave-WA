@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import {
-  Activity, ArrowLeft, ArrowUpRight, Check, ChevronDown, CircleHelp,
+  Activity, ArrowLeft, ArrowUpRight, Check, ChevronDown, CircleHelp, Bell,
   LogOut, MessageCircle, Menu, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail,
 } from "lucide-react";
@@ -9,7 +9,7 @@ import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import LandingPage from "./LandingPage";
 import PricingPage from "./PricingPage";
 import { ErrorPage } from "./ErrorPages";
-type View = "Inbox" | "Contacts" | "Campaigns" | "Integrations" | "Profile" | "Settings";
+type View = "Inbox" | "Contacts" | "Campaigns" | "Alerts" | "Integrations" | "Profile" | "Settings";
 type Tenant = { id: string; name: string; slug: string; role: string };
 type Contact = { id: string; phone_e164: string; display_name?: string; consent_status: string; consent_source?: string; consent_at?: string; opted_out_at?: string };
 type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string; components?: any[] };
@@ -20,6 +20,7 @@ type ConsentEvent = { id: string; previous_status?: string | null; consent_statu
 type ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };
 type TenantWebhook = { id: string; name: string; endpoint_url: string; events: string[]; enabled: boolean; last_delivery_at?: string; last_status?: string; last_error?: string; created_at: string };
 type WebhookDelivery = { id: string; webhook_id: string; event_type: string; status: string; attempt_count: number; response_status?: number; last_error?: string; created_at: string; delivered_at?: string };
+type WorkspaceNotification = { id: string; category: string; severity: string; title: string; body: string; entity_type?: string | null; entity_id?: string | null; metadata?: Record<string, any>; created_at: string; read_at?: string | null };
 type ChatMessage = { id: string; direction: string; actor_type: string; body?: string; status: string; created_at: string; is_note?: boolean; author_id?: string; message_type?: string; media_id?: string; filename?: string };
 type TemplatePart = { componentIndex: number; type: string; text: string; variables: string[]; buttonIndex?: number };
 function getTemplateParts(template?: Template): TemplatePart[] {
@@ -69,6 +70,7 @@ const views: { label: View; icon: typeof MessageCircle; section?: string }[] = [
   { label: "Inbox", icon: MessageCircle, section: "MESSAGING" },
   { label: "Contacts", icon: Users },
   { label: "Campaigns", icon: Zap },
+  { label: "Alerts", icon: Bell, section: "MONITORING" },
   { label: "Integrations", icon: Settings2, section: "ADMINISTRATION" },
   { label: "Profile", icon: UserRound, section: "ACCOUNT" },
   { label: "Settings", icon: SettingsIcon },
@@ -124,6 +126,7 @@ export default function App() {
   const [campaignVariableValues, setCampaignVariableValues] = useState<Record<string, string>>({});
   const [campaignContacts, setCampaignContacts] = useState<string[]>([]);
   const [replyText, setReplyText] = useState("");
+  const [pendingSendKey, setPendingSendKey] = useState<{ fingerprint: string; key: string } | null>(null);
   const [composerMode, setComposerMode] = useState<"reply" | "note">("reply");
   const [searchContactHistory, setSearchContactHistory] = useState<{ contact: Contact; events: ConsentEvent[] } | null>(null);
   const [consentTarget, setConsentTarget] = useState("");
@@ -138,6 +141,8 @@ export default function App() {
   const [newApiKey, setNewApiKey] = useState("");
   const [webhooks, setWebhooks] = useState<TenantWebhook[]>([]);
   const [webhookDeliveries, setWebhookDeliveries] = useState<WebhookDelivery[]>([]);
+  const [notifications, setNotifications] = useState<WorkspaceNotification[]>([]);
+  const [notificationUnread, setNotificationUnread] = useState(0);
   const [webhookName, setWebhookName] = useState("Support event receiver");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [webhookEvents, setWebhookEvents] = useState<string[]>(["message.inbound","message.status"]);
@@ -234,6 +239,26 @@ export default function App() {
     setLoading(false);
   }, [tenantId, user, loadContacts]);
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
+  const loadNotifications = useCallback(async () => {
+    if (!supabase || !tenantId) { setNotifications([]); setNotificationUnread(0); return; }
+    const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "list", limit: 50 } });
+    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not load workspace alerts."); return; }
+    setNotifications((data?.notifications ?? []) as WorkspaceNotification[]);
+    setNotificationUnread(Number(data?.unread_count ?? 0));
+  }, [tenantId]);
+  useEffect(() => { void loadNotifications(); }, [loadNotifications]);
+  async function markNotificationRead(id: string) {
+    if (!supabase || !tenantId) return;
+    const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "mark_read", notification_id: id } });
+    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not acknowledge alert."); return; }
+    await loadNotifications();
+  }
+  async function markAllNotificationsRead() {
+    if (!supabase || !tenantId) return;
+    const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "mark_all_read" } });
+    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not acknowledge alerts."); return; }
+    await loadNotifications();
+  }
   const loadInbox = useCallback(async () => {
     if (!supabase || !tenantId || !user) return;
     const [conversationResult, readResult] = await Promise.all([
@@ -383,11 +408,24 @@ export default function App() {
     }
     const conversation = conversations.find((c) => c.id === selectedConversation);
     if (!conversation?.contacts?.phone_e164) { setNotice("Contact phone number not found."); return; }
+    const messageText = replyText.trim();
+    const fingerprint = JSON.stringify([tenantId, selectedConversation, conversation.contacts.phone_e164, messageText]);
+    const idempotencyKey = pendingSendKey?.fingerprint === fingerprint ? pendingSendKey.key : crypto.randomUUID();
+    setPendingSendKey({ fingerprint, key: idempotencyKey });
     setBusy(true);
-    const { data, error } = await supabase.functions.invoke("meta-send", { body: { tenant_id: tenantId, to: conversation.contacts.phone_e164, type: "text", text: replyText.trim() } });
+    const { data, error } = await supabase.functions.invoke("meta-send", {
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: { tenant_id: tenantId, to: conversation.contacts.phone_e164, type: "text", text: messageText, idempotency_key: idempotencyKey },
+    });
     setBusy(false);
-    if (error || data?.error) setNotice(data?.error ?? error?.message ?? "Send failed.");
-    else { setReplyText(""); setNotice("Message submitted to Meta."); }
+    if (error || data?.error) {
+      // Preserve the key after uncertain results so retrying cannot duplicate a provider submission.
+      setNotice(data?.error ?? error?.message ?? "Send outcome could not be confirmed. Retry this same message to check its recorded outcome.");
+    } else {
+      setPendingSendKey(null);
+      setReplyText("");
+      setNotice("Message accepted by Meta. Delivery confirmation will arrive separately.");
+    }
     await loadMessages(); await loadWorkspace();
   }
   async function resolveConversation(conversation: Conversation) {
@@ -572,7 +610,7 @@ export default function App() {
     <aside id="primary-navigation" className={mobileNavOpen ? "sidebar is-open" : "sidebar"}>
       <Brand />
       {tenants.length > 1 ? <div className="workspace-picker"><div className="workspace-avatar">{activeTenant?.name.slice(0,2).toUpperCase() ?? "MW"}</div><select value={tenantId} onChange={(e) => { setTenantId(e.target.value); setSelectedConversation(""); }} aria-label="Switch business account">{tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select><ChevronDown size={15} /></div> : <div className="workspace-picker workspace-identity"><div className="workspace-avatar">{activeTenant?.name.slice(0,2).toUpperCase() ?? "MW"}</div><span className="workspace-name">{activeTenant?.name ?? "MobiWave WA"}</span></div>}
-      {views.map((item) => <div key={item.label}>{item.section && <div className="nav-label">{item.section}</div>}<button className={view === item.label ? "nav-item active" : "nav-item"} aria-label={item.label} aria-current={view === item.label ? "page" : undefined} onClick={() => { setView(item.label); setMobileNavOpen(false); }}><item.icon size={18} /><span>{item.label}</span></button></div>)}
+      {views.map((item) => <div key={item.label}>{item.section && <div className="nav-label">{item.section}</div>}<button className={view === item.label ? "nav-item active" : "nav-item"} aria-label={item.label} aria-current={view === item.label ? "page" : undefined} onClick={() => { setView(item.label); setMobileNavOpen(false); }}><item.icon size={18} /><span>{item.label}{item.label === "Alerts" && notificationUnread > 0 ? " (" + notificationUnread + ")" : ""}</span></button></div>)}
       <div className="sidebar-bottom"><div className="help-card"><CircleHelp size={18} /><div><strong>Need a hand?</strong><span>Read the setup guide</span></div><a href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md" aria-label="Open setup guide"><ArrowUpRight size={15} /></a></div><div className="profile"><div className="profile-avatar">{user.email?.slice(0,1).toUpperCase() ?? "U"}</div><div><strong>{user.email}</strong><span>{activeTenant?.role ?? "Member"}</span></div><button className="icon-button" onClick={signOut} aria-label="Sign out"><LogOut size={17} /></button></div></div>
     </aside>
     <main className="main">
@@ -598,6 +636,13 @@ export default function App() {
         </div>
         <div className="pagination-controls"><button className="secondary-button compact" disabled={contactPage===0} onClick={()=>setContactPage((page)=>Math.max(0,page-1))}>Previous</button><span>Page {contactPage+1}</span><button className="secondary-button compact" disabled={!contactHasMore} onClick={()=>setContactPage((page)=>page+1)}>Next</button></div>
         {searchContactHistory&&<div className="panel form-panel consent-history"><div className="section-header"><div><h2>Consent history · {searchContactHistory.contact.display_name||searchContactHistory.contact.phone_e164}</h2><p>Latest 50 opt-in and opt-out changes</p></div><button className="secondary-button compact" onClick={()=>setSearchContactHistory(null)}>Close</button></div>{searchContactHistory.events.length?searchContactHistory.events.map(event=><div className="consent-event" key={event.id}><Status status={event.consent_status}/><span>{event.previous_status?event.previous_status+" → ":""}{event.consent_status}</span><span>{event.consent_source||"No source recorded"}</span><time>{new Date(event.changed_at).toLocaleString()}</time></div>):<p className="muted small">No consent changes have been recorded.</p>}</div>}
+      </section>}
+      {view === "Alerts" && <section className="content">
+        <PageHeading eyebrow="WORKSPACE MONITORING" title="Alerts" description="Delivery failures and operational issues reported by the official WhatsApp Cloud API."/>
+        <div className="panel">
+          <div className="section-toolbar"><div><strong>{notificationUnread} unread alerts</strong><p className="muted small">Alerts are scoped to this business account and your workspace membership.</p></div><div className="row-actions"><button className="secondary-button compact" onClick={()=>void loadNotifications()}><RefreshCw size={14}/> Refresh</button><button className="secondary-button compact" onClick={()=>void markAllNotificationsRead()} disabled={notificationUnread===0}>Mark all read</button></div></div>
+          {notifications.length===0 ? <Empty icon={<Bell size={22}/>} title="No alerts yet" text="Provider delivery failures and send errors will appear here."/> : <div className="notification-list">{notifications.map((item)=><article className={"notification-item "+(item.read_at?"is-read":"is-unread")} key={item.id}><div className={"notification-severity "+item.severity}>{item.severity}</div><div className="notification-copy"><div className="notification-heading"><strong>{item.title}</strong><time>{new Date(item.created_at).toLocaleString()}</time></div><p>{item.body}</p>{item.metadata?.error_code&&<small>Error code: {String(item.metadata.error_code)}</small>}{item.metadata?.error_title&&<small>{String(item.metadata.error_title)}</small>}{item.entity_id&&<small>Reference: {item.entity_id}</small>}</div>{!item.read_at&&<button className="secondary-button compact" onClick={()=>void markNotificationRead(item.id)}>Mark read</button>}</article>)}</div>}
+        </div>
       </section>}
       {view === "Campaigns" && <section className="content"><PageHeading eyebrow="OUTBOUND MESSAGING" title="Campaigns" description="Campaigns use only Meta-approved templates and contacts with recorded opt-in consent."/>
         {isAdmin&&<form className="panel form-panel" onSubmit={createCampaign}>
@@ -705,6 +750,6 @@ Content-Type: application/json
 }
 function Brand() { return <div className="brand"><div className="brand-mark"><MessageCircle size={21} strokeWidth={2.5}/></div><div><strong>MobiWave</strong><span>WHATSAPP PLATFORM</span></div></div>; }
 function PageHeading({eyebrow,title,description}:{eyebrow:string;title:string;description:string}) { return <div className="page-heading"><div><div className="eyebrow"><Activity size={14}/>{eyebrow}</div><h1>{title}</h1><p className="page-description">{description}</p></div></div>; }
-function Status({status}:{status:string}) { const s=status.toLowerCase(); const tone=["approved","indexed","completed","delivered","read","connected","opted_in","sent","verified"].includes(s)?"success":["failed","rejected","opted_out","paused"].includes(s)?"danger":["needs_review","suggested","pending","running","queued","unknown","not connected","draft"].includes(s)?"warning":"neutral"; return <span className={"status-pill "+tone}><span/>{status.replaceAll("_"," ")}</span>; }
+function Status({status}:{status:string}) { const s=status.toLowerCase(); const tone=["approved","indexed","completed","accepted","delivered","read","connected","opted_in","sent","verified"].includes(s)?"success":["failed","rejected","opted_out","paused"].includes(s)?"danger":["needs_review","suggested","pending","running","queued","processing","outcome_unknown","unknown","not connected","draft"].includes(s)?"warning":"neutral"; return <span className={"status-pill "+tone}><span/>{status.replaceAll("_"," ")}</span>; }
 function Empty({icon,title,text}:{icon:ReactNode;title:string;text:string}) { return <div className="empty-state">{icon}<strong>{title}</strong><span>{text}</span></div>; }
 function SetupRow({done=false,label,detail}:{done?:boolean;label:string;detail:string}) { return <div className="setup-row"><div className={done?"setup-check done":"setup-check"}>{done?<Check size={15}/>:<span/>}</div><div><strong>{label}</strong><p>{detail}</p></div><span className={done?"setup-status complete":"setup-status"}>{done?"Done":"Pending"}</span></div>; }

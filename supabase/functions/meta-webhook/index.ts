@@ -27,10 +27,13 @@ Deno.serve(async (request) => {
   }
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   const rawBody = await request.text();
-  if (!(await verifyMetaSignature(rawBody, request.headers.get("x-hub-signature-256")))) return json({ error: "Invalid Meta webhook signature." }, 401);
+  const replaySecret = Deno.env.get("INTERNAL_FUNCTION_TOKEN");
+  const isTrustedReplay = Boolean(replaySecret && request.headers.get("X-Internal-Replay-Token") === replaySecret);
+  if (!isTrustedReplay && !(await verifyMetaSignature(rawBody, request.headers.get("x-hub-signature-256")))) return json({ error: "Invalid Meta webhook signature." }, 401);
   let body: any;
   try { body = JSON.parse(rawBody); } catch { return json({ error: "Invalid JSON." }, 400); }
   if (body.object !== "whatsapp_business_account") return json({ received: true, ignored: true });
+  const requestEventIds: string[] = [];
   try {
     for (const entry of body.entry ?? []) for (const change of entry.changes ?? []) {
       const value = change.value ?? {};
@@ -39,6 +42,15 @@ Deno.serve(async (request) => {
       const { data: integration } = await admin.from("meta_integrations").select("*").eq("phone_number_id", phoneNumberId).eq("enabled", true).maybeSingle();
       if (!integration) continue;
       const tenantId = integration.tenant_id;
+      const eventKey = await sha256(JSON.stringify({ entry_id: entry.id ?? null, field: change.field ?? null, value }));
+      const { data: inboxEvent, error: inboxError } = await admin.from("meta_webhook_events").upsert({
+        tenant_id: tenantId, event_key: eventKey, phone_number_id: phoneNumberId,
+        payload: { entry_id: entry.id ?? null, field: change.field ?? null, value },
+        status: "processing", updated_at: new Date().toISOString(),
+      }, { onConflict: "event_key", ignoreDuplicates: true }).select("id").maybeSingle();
+      if (inboxError) throw inboxError;
+      if (inboxEvent?.id) requestEventIds.push(inboxEvent.id);
+      else if (!isTrustedReplay) continue; // A provider duplicate is acknowledged; replay is permitted only via the worker secret.
       for (const message of value.messages ?? []) {
         const from = String(message.from ?? "");
         if (!/^\d{8,15}$/.test(from)) continue;
@@ -88,14 +100,64 @@ Deno.serve(async (request) => {
         if (!metaId) continue;
         const mapped = ["sent", "delivered", "read", "failed"].includes(statusName) ? statusName : null;
         if (!mapped) continue;
-        await admin.from("messages").update({ status: mapped, metadata: { status_timestamp: status.timestamp, errors: status.errors ?? [] } }).eq("tenant_id", tenantId).eq("meta_message_id", metaId);
+        const providerTimestamp = status.timestamp ? new Date(Number(status.timestamp) * 1000).toISOString() : null;
+        const statusEventKey = await sha256(JSON.stringify({ tenantId, metaId, status: mapped, timestamp: status.timestamp ?? null, errors: status.errors ?? [] }));
+        const firstError = Array.isArray(status.errors) ? status.errors[0] : null;
+        const { error: historyError } = await admin.from("message_status_events").upsert({
+          tenant_id: tenantId, meta_message_id: metaId, status: mapped,
+          provider_timestamp: providerTimestamp, error_code: firstError?.code == null ? null : String(firstError.code),
+          error_title: firstError?.title == null ? null : String(firstError.title),
+          error_detail: firstError?.message == null ? null : String(firstError.message),
+          event_key: statusEventKey, payload: status,
+        }, { onConflict: "event_key", ignoreDuplicates: true });
+        if (historyError) throw historyError;
+        const statusRank: Record<string, number> = { accepted: 0, sent: 1, delivered: 2, read: 3, failed: 4 };
+        const { data: currentMessage } = await admin.from("messages").select("id,status").eq("tenant_id", tenantId).eq("meta_message_id", metaId).maybeSingle();
+        const shouldAdvance = !currentMessage || (statusRank[mapped] ?? 0) >= (statusRank[String(currentMessage.status)] ?? -1);
+        if (currentMessage && shouldAdvance) {
+          const { error: updateError } = await admin.from("messages").update({
+            status: mapped,
+            metadata: { status_timestamp: status.timestamp, errors: status.errors ?? [], provider_status: mapped },
+          }).eq("tenant_id", tenantId).eq("meta_message_id", metaId);
+          if (updateError) throw updateError;
+        }
+        if (mapped === "failed") {
+          const detail = String(firstError?.message ?? firstError?.title ?? "Meta reported that the WhatsApp message failed.");
+          const { error: notificationError } = await admin.from("workspace_notifications").insert({
+            tenant_id: tenantId, recipient_user_id: null, category: "send_error", severity: "error",
+            title: "WhatsApp message delivery failed", body: detail.slice(0, 1000),
+            entity_type: "message", entity_id: metaId, dedupe_key: "meta-status-failed:" + statusEventKey,
+            metadata: { error_code: firstError?.code == null ? "meta_delivery_failed" : String(firstError.code), error_title: firstError?.title ?? null, provider_timestamp: providerTimestamp, received_at: new Date().toISOString() },
+          });
+          if (notificationError && notificationError.code !== "23505") throw notificationError;
+        }
+        
         await emitWebhook(admin, tenantId, "message.status", { message_id: metaId, status: mapped, timestamp: status.timestamp, errors: status.errors ?? [] }, false);
-        const column = mapped === "delivered" ? "delivered_at" : mapped === "read" ? "read_at" : null;
-        if (column) await admin.from("campaign_recipients").update({ status: mapped, [column]: new Date().toISOString() }).eq("tenant_id", tenantId).eq("meta_message_id", metaId);
+        const campaignPatch: Record<string, unknown> = { status: mapped, updated_at: new Date().toISOString() };
+        if (mapped === "sent") campaignPatch.sent_at = providerTimestamp ?? new Date().toISOString();
+        if (mapped === "delivered") campaignPatch.delivered_at = providerTimestamp ?? new Date().toISOString();
+        if (mapped === "read") campaignPatch.read_at = providerTimestamp ?? new Date().toISOString();
+        const { error: campaignStatusError } = await admin.from("campaign_recipients").update(campaignPatch).eq("tenant_id", tenantId).eq("meta_message_id", metaId);
+        if (campaignStatusError) throw campaignStatusError;
       }
+    }
+    // Mark each durable change envelope complete only after its side effects succeeded.
+    if (requestEventIds.length) {
+      const { error: finishError } = await admin.from("meta_webhook_events").update({
+        status: "processed", processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }).in("id", requestEventIds);
+      if (finishError) throw finishError;
     }
     return json({ received: true });
   } catch (error) {
+    if (requestEventIds.length) {
+      const detail = error instanceof Error ? error.message.slice(0, 1000) : "Unknown webhook processing error";
+      const { error: retryError } = await admin.from("meta_webhook_events").update({
+        status: "retry", attempts: 1, last_error: detail,
+        next_attempt_at: new Date(Date.now() + 60_000).toISOString(), updated_at: new Date().toISOString(),
+      }).in("id", requestEventIds);
+      if (retryError) console.error("Could not schedule webhook retry", retryError.message);
+    }
     console.error("Meta webhook processing failed:", error instanceof Error ? error.message : "unknown");
     // Return a non-2xx response so Meta may retry; writes are idempotent by Meta message ID.
     return json({ error: "Webhook processing failed. The event can be retried." }, 500);
