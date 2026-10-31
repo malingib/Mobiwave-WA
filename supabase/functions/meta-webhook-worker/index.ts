@@ -9,7 +9,7 @@ Deno.serve(async (request) => {
   const url = Deno.env.get("SUPABASE_URL"), key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !key) return json({ error: "Server environment is not configured." }, 500);
   const admin = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-  const { data: events, error } = await admin.rpc("claim_meta_webhook_events", { p_limit: 20 });
+  const { data: events, error } = await admin.rpc("claim_meta_webhook_events", { p_limit: 5 });
   if (error) return json({ error: "Could not claim Meta webhook inbox events." }, 500);
   let processed = 0, retrying = 0, deadLettered = 0;
   for (const event of events ?? []) {
@@ -29,7 +29,7 @@ Deno.serve(async (request) => {
           "X-Internal-Replay-Token": expected,
         },
         body: JSON.stringify(replay),
-        signal: AbortSignal.timeout(25000),
+        signal: AbortSignal.timeout(12000),
       });
       if (!response.ok) {
         const detail = (await response.text()).slice(0, 1000);
