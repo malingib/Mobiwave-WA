@@ -108,7 +108,7 @@ Deno.serve(async (request) => {
       const { data: savedMessage, error: messageError } = await auth.admin.from("messages").insert({
         tenant_id: tenantId, conversation_id: conversationId, direction: "outbound",
         actor_type: "agent", message_type: type, body: type === "text" ? payload.text.body : "[Template: " + payload.template.name + "]",
-        status: "sent", meta_message_id: metaMessageId, metadata: { meta_status: "accepted", outbound_attempt_id: attempt.id },
+        status: "accepted", meta_message_id: metaMessageId, metadata: { meta_status: "accepted", outbound_attempt_id: attempt.id },
       }).select("id").single();
       if (messageError) {
         await auth.admin.from("outbound_send_attempts").update({ status: "outcome_unknown", meta_message_id: metaMessageId, error_code: "message_persistence_failed", error_detail: "Meta accepted the message but message history persistence failed; reconcile without resending.", updated_at: new Date().toISOString() }).eq("id", attempt.id);
