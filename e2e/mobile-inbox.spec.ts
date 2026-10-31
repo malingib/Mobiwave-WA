@@ -212,6 +212,7 @@ test("reply action calls the mocked Meta-send integration", async ({ page }, tes
   await expect(page.getByText("Message accepted by Meta. Delivery confirmation will arrive separately.")).toBeVisible({ timeout: 7000 });
   await expect.poll(() => sentMessages.length).toBe(1);
   expect(sentMessages[0]).toMatchObject({ tenant_id: "e2e-tenant-1", to: "+254700000001", type: "text", text: "Thanks, we will check this for you." });
+  expect(sentMessages[0].idempotency_key).toMatch(/^[0-9a-f-]{36}$/i);
 });
 
 
