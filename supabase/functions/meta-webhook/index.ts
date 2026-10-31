@@ -27,7 +27,9 @@ Deno.serve(async (request) => {
   }
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   const rawBody = await request.text();
-  if (!(await verifyMetaSignature(rawBody, request.headers.get("x-hub-signature-256")))) return json({ error: "Invalid Meta webhook signature." }, 401);
+  const replaySecret = Deno.env.get("INTERNAL_FUNCTION_TOKEN");
+  const isTrustedReplay = Boolean(replaySecret && request.headers.get("X-Internal-Replay-Token") === replaySecret);
+  if (!isTrustedReplay && !(await verifyMetaSignature(rawBody, request.headers.get("x-hub-signature-256")))) return json({ error: "Invalid Meta webhook signature." }, 401);
   let body: any;
   try { body = JSON.parse(rawBody); } catch { return json({ error: "Invalid JSON." }, 400); }
   if (body.object !== "whatsapp_business_account") return json({ received: true, ignored: true });
