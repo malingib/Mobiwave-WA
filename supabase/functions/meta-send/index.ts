@@ -90,12 +90,14 @@ Deno.serve(async (request) => {
       result = await response.json();
     } catch (error) {
       await auth.admin.from("outbound_send_attempts").update({ status: "outcome_unknown", error_code: "provider_transport_unknown", error_detail: "The provider request may have reached Meta; reconcile before any manual retry.", updated_at: new Date().toISOString() }).eq("id", attempt.id);
+      await auth.admin.from("workspace_notifications").insert({ tenant_id: tenantId, recipient_user_id: auth.userId, category: "send_error", severity: "critical", title: "WhatsApp send outcome unknown", body: "Meta may have accepted this message, but MobiWave could not confirm the response. Do not resend. Reconcile the provider message status first.", entity_type: "outbound_send_attempt", entity_id: attempt.id, dedupe_key: "send-outcome-unknown:" + attempt.id, metadata: { error_code: "provider_transport_unknown", idempotency_key: idempotencyKey, occurred_at: new Date().toISOString() } });
       return json({ error: "Meta's outcome could not be confirmed. This request was recorded and will not be automatically resent; reconcile the outcome before retrying.", status: "outcome_unknown" }, 502);
     }
     if (!response.ok || !result.messages?.[0]?.id) {
       const detail = String(result.error?.message ?? "Meta rejected the message. Check the integration and template status.").slice(0, 500);
       const { error: rejectError } = await auth.admin.from("outbound_send_attempts").update({ status: "rejected", error_code: String(result.error?.code ?? response.status), error_detail: detail, updated_at: new Date().toISOString() }).eq("id", attempt.id);
       if (rejectError) throw rejectError;
+      await auth.admin.from("workspace_notifications").insert({ tenant_id: tenantId, recipient_user_id: auth.userId, category: "send_error", severity: "error", title: "WhatsApp message rejected by Meta", body: detail, entity_type: "outbound_send_attempt", entity_id: attempt.id, dedupe_key: "send-rejected:" + attempt.id, metadata: { error_code: String(result.error?.code ?? response.status), http_status: response.status, occurred_at: new Date().toISOString() } });
       console.error("Meta send rejected", response.status, JSON.stringify(result).slice(0, 1000));
       return json({ error: "Meta rejected the message. Check the integration and template status." }, 502);
     }
@@ -110,6 +112,7 @@ Deno.serve(async (request) => {
       }).select("id").single();
       if (messageError) {
         await auth.admin.from("outbound_send_attempts").update({ status: "outcome_unknown", meta_message_id: metaMessageId, error_code: "message_persistence_failed", error_detail: "Meta accepted the message but message history persistence failed; reconcile without resending.", updated_at: new Date().toISOString() }).eq("id", attempt.id);
+        await auth.admin.from("workspace_notifications").insert({ tenant_id: tenantId, recipient_user_id: auth.userId, category: "send_error", severity: "critical", title: "Message accepted but history was not saved", body: "Meta accepted the message, but MobiWave could not persist its message history. Do not resend. Reconcile using the Meta message ID.", entity_type: "outbound_send_attempt", entity_id: attempt.id, dedupe_key: "message-persistence-failed:" + attempt.id, metadata: { error_code: "message_persistence_failed", meta_message_id: metaMessageId, occurred_at: new Date().toISOString() } });
         return json({ error: "Meta accepted the message, but history persistence failed. The send is recorded for reconciliation and must not be resent.", message_id: metaMessageId, status: "outcome_unknown" }, 500);
       }
       messageId = savedMessage.id;
@@ -120,6 +123,7 @@ Deno.serve(async (request) => {
     }).eq("id", attempt.id).eq("tenant_id", tenantId);
     if (acceptedError) {
       console.error("Meta accepted send but attempt finalization failed", attempt.id, acceptedError.message);
+      await auth.admin.from("workspace_notifications").insert({ tenant_id: tenantId, recipient_user_id: auth.userId, category: "send_error", severity: "critical", title: "Meta accepted message; reconciliation required", body: "Meta accepted this message, but MobiWave could not finalize its send record. Do not resend. Reconcile the recorded provider message ID.", entity_type: "outbound_send_attempt", entity_id: attempt.id, dedupe_key: "attempt-finalization-failed:" + attempt.id, metadata: { error_code: "attempt_finalization_failed", meta_message_id: metaMessageId, occurred_at: new Date().toISOString() } });
       return json({ error: "Meta accepted the message; the durable attempt needs reconciliation. Do not resend this request key.", message_id: metaMessageId, status: "outcome_unknown" }, 500);
     }
     const { error: usageError } = await auth.admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "message_submitted", quantity: 1, reference_id: metaMessageId, metadata: { channel: "agent", outbound_attempt_id: attempt.id } });
