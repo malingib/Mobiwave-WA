@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import {
-  Activity, ArrowLeft, ArrowUpRight, Check, ChevronDown, CircleHelp,
+  Activity, ArrowLeft, ArrowUpRight, Check, ChevronDown, CircleHelp, Bell,
   LogOut, MessageCircle, Menu, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail,
 } from "lucide-react";
@@ -9,7 +9,7 @@ import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import LandingPage from "./LandingPage";
 import PricingPage from "./PricingPage";
 import { ErrorPage } from "./ErrorPages";
-type View = "Inbox" | "Contacts" | "Campaigns" | "Integrations" | "Profile" | "Settings";
+type View = "Inbox" | "Contacts" | "Campaigns" | "Alerts" | "Integrations" | "Profile" | "Settings";
 type Tenant = { id: string; name: string; slug: string; role: string };
 type Contact = { id: string; phone_e164: string; display_name?: string; consent_status: string; consent_source?: string; consent_at?: string; opted_out_at?: string };
 type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string; components?: any[] };
@@ -20,6 +20,7 @@ type ConsentEvent = { id: string; previous_status?: string | null; consent_statu
 type ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };
 type TenantWebhook = { id: string; name: string; endpoint_url: string; events: string[]; enabled: boolean; last_delivery_at?: string; last_status?: string; last_error?: string; created_at: string };
 type WebhookDelivery = { id: string; webhook_id: string; event_type: string; status: string; attempt_count: number; response_status?: number; last_error?: string; created_at: string; delivered_at?: string };
+type WorkspaceNotification = { id: string; category: string; severity: string; title: string; body: string; entity_type?: string | null; entity_id?: string | null; metadata?: Record<string, any>; created_at: string; read_at?: string | null };
 type ChatMessage = { id: string; direction: string; actor_type: string; body?: string; status: string; created_at: string; is_note?: boolean; author_id?: string; message_type?: string; media_id?: string; filename?: string };
 type TemplatePart = { componentIndex: number; type: string; text: string; variables: string[]; buttonIndex?: number };
 function getTemplateParts(template?: Template): TemplatePart[] {
@@ -69,6 +70,7 @@ const views: { label: View; icon: typeof MessageCircle; section?: string }[] = [
   { label: "Inbox", icon: MessageCircle, section: "MESSAGING" },
   { label: "Contacts", icon: Users },
   { label: "Campaigns", icon: Zap },
+  { label: "Alerts", icon: Bell, section: "MONITORING" },
   { label: "Integrations", icon: Settings2, section: "ADMINISTRATION" },
   { label: "Profile", icon: UserRound, section: "ACCOUNT" },
   { label: "Settings", icon: SettingsIcon },
@@ -139,6 +141,8 @@ export default function App() {
   const [newApiKey, setNewApiKey] = useState("");
   const [webhooks, setWebhooks] = useState<TenantWebhook[]>([]);
   const [webhookDeliveries, setWebhookDeliveries] = useState<WebhookDelivery[]>([]);
+  const [notifications, setNotifications] = useState<WorkspaceNotification[]>([]);
+  const [notificationUnread, setNotificationUnread] = useState(0);
   const [webhookName, setWebhookName] = useState("Support event receiver");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [webhookEvents, setWebhookEvents] = useState<string[]>(["message.inbound","message.status"]);
