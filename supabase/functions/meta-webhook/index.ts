@@ -140,8 +140,15 @@ Deno.serve(async (request) => {
         const { error: campaignStatusError } = await admin.from("campaign_recipients").update(campaignPatch).eq("tenant_id", tenantId).eq("meta_message_id", metaId);
         if (campaignStatusError) throw campaignStatusError;
       }
+      // Finalize each change independently so a later failure does not replay completed side effects.
+      if (inboxEvent?.id) {
+        const { error: eventFinishError } = await admin.from("meta_webhook_events").update({ status: "processed", processed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", inboxEvent.id).eq("status", "processing");
+        if (eventFinishError) throw eventFinishError;
+        const completedIndex = requestEventIds.indexOf(inboxEvent.id);
+        if (completedIndex >= 0) requestEventIds.splice(completedIndex, 1);
+      }
     }
-    // Mark each durable change envelope complete only after its side effects succeeded.
+    // Any remaining newly inserted events are finalized after all their side effects succeed.
     if (requestEventIds.length) {
       const { error: finishError } = await admin.from("meta_webhook_events").update({
         status: "processed", processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
