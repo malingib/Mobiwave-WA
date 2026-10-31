@@ -1,9 +1,7 @@
 import { requireUser, requireTenantRole } from "../_shared/auth.ts";
-import { decryptToken } from "../_shared/meta.ts";
 import { corsHeaders, json, errorMessage } from "../_shared/cors.ts";
 import { emitWebhook } from "../_shared/customer-webhooks.ts";
 
-const GRAPH_VERSION = Deno.env.get("META_GRAPH_VERSION") || "v23.0";
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
@@ -59,7 +57,6 @@ Deno.serve(async (request) => {
     ]);
     if (recipientsError || contactsError) throw recipientsError ?? contactsError;
     const contactById = new Map((contactRows ?? []).map((contact) => [contact.id, contact]));
-    const token = await decryptToken(integration.encrypted_access_token);
     await auth.admin.from("campaigns").update({ status: "running", started_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", campaignId).eq("tenant_id", tenantId);
     let sent = 0, skipped = 0, failed = 0;
     for (const recipient of (recipients ?? []) as any[]) {
