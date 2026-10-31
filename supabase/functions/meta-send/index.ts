@@ -32,7 +32,6 @@ Deno.serve(async (request) => {
       auth.admin.from("usage_events").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString()),
     ]);
     const monthlyLimit = limits?.monthly_message_limit ?? 0;
-    if (monthlyLimit > 0 && (used ?? 0) >= monthlyLimit) return json({ error: "This workspace has reached its configured monthly message limit." }, 429);
 
     let payload: any;
     let conversationId: string | null = null;
@@ -66,6 +65,8 @@ Deno.serve(async (request) => {
       if (prior.status === "rejected") return json({ error: prior.error_detail || "Meta rejected this message.", idempotent_replay: true }, 502);
       return json({ error: "A send attempt with this key is already in progress or has an unknown provider outcome. It was not resent to prevent duplicate delivery.", status: prior.status, idempotent_replay: true }, 409);
     }
+    // Replays return their recorded outcome even if the original send consumed the final quota unit.
+    if (monthlyLimit > 0 && (used ?? 0) >= monthlyLimit) return json({ error: "This workspace has reached its configured monthly message limit." }, 429);
 
     const { data: attempt, error: attemptError } = await auth.admin.from("outbound_send_attempts").insert({
       tenant_id: tenantId, idempotency_key: idempotencyKey, request_hash: requestHash,
