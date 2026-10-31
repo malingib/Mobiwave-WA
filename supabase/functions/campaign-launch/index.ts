@@ -70,23 +70,38 @@ Deno.serve(async (request) => {
         continue;
       }
       try {
-        const response = await fetch("https://graph.facebook.com/" + GRAPH_VERSION + "/" + integration.phone_number_id + "/messages", {
-          method: "POST", headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
-          body: JSON.stringify({ messaging_product: "whatsapp", to: String(contact.phone_e164).replace("+",""), type: "template", template: { name: template.meta_template_name, language: { code: template.language_code }, components: Array.isArray(campaign.template_parameters) ? campaign.template_parameters : [] } }),
-          signal: AbortSignal.timeout(12000),
+        const idempotencyKey = "campaign:" + campaignId + ":" + recipient.id;
+        const sendResponse = await fetch(Deno.env.get("SUPABASE_URL")!.replace(/\/$/, "") + "/functions/v1/meta-send", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": request.headers.get("Authorization") ?? "",
+            "apikey": Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+            "Idempotency-Key": idempotencyKey,
+          },
+          body: JSON.stringify({
+            tenant_id: tenantId, to: contact.phone_e164, type: "template",
+            template_name: template.meta_template_name, language_code: template.language_code,
+            components: Array.isArray(campaign.template_parameters) ? campaign.template_parameters : [],
+            idempotency_key: idempotencyKey,
+          }),
+          signal: AbortSignal.timeout(20000),
         });
-        const result = await response.json();
-        if (!response.ok || !result.messages?.[0]?.id) {
+        const result = await sendResponse.json();
+        if (!sendResponse.ok || !result.message_id) {
           failed++;
-          await auth.admin.from("campaign_recipients").update({ status: "failed", error_code: String(result.error?.code ?? "meta_error"), error_detail: String(result.error?.message ?? "Meta rejected message").slice(0,300), updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", recipient.id).eq("status", "sending");
+          const unknown = ["outcome_unknown", "submitting", "prepared"].includes(String(result.status ?? ""));
+          await auth.admin.from("campaign_recipients").update({ status: "failed", error_code: unknown ? "send_outcome_unknown" : String(result.status ?? "meta_send_failed"), error_detail: String(result.error ?? "The durable send service did not confirm Meta acceptance. Do not manually requeue an unknown outcome.").slice(0, 500), updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", recipient.id).eq("status", "sending");
+          await auth.admin.from("workspace_notifications").insert({ tenant_id: tenantId, recipient_user_id: null, category: "campaign_error", severity: unknown ? "critical" : "error", title: unknown ? "Campaign recipient outcome unknown" : "Campaign recipient send failed", body: String(result.error ?? "The durable send service did not confirm Meta acceptance.").slice(0, 900), entity_type: "campaign_recipient", entity_id: recipient.id, dedupe_key: "campaign-send:" + recipient.id, metadata: { campaign_id: campaignId, error_code: unknown ? "send_outcome_unknown" : String(result.status ?? "meta_send_failed"), idempotency_key: idempotencyKey } });
         } else {
           sent++;
-          await auth.admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "message_submitted", quantity: 1, reference_id: result.messages[0].id, metadata: { channel: "campaign", campaign_id: campaignId } });
-          await auth.admin.from("campaign_recipients").update({ status: "sent", meta_message_id: result.messages[0].id, sent_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", recipient.id).eq("status", "sending");
+          const { error: recipientUpdateError } = await auth.admin.from("campaign_recipients").update({ status: "sent", meta_message_id: result.message_id, sent_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", recipient.id).eq("status", "sending");
+          if (recipientUpdateError) throw recipientUpdateError;
         }
-      } catch {
+      } catch (cause) {
         failed++;
-        await auth.admin.from("campaign_recipients").update({ status: "failed", error_code: "send_outcome_unknown", error_detail: "The request failed before MobiWave could confirm Meta's response. Check WhatsApp before manually re-queueing.", updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", recipient.id).eq("status", "sending");
+        await auth.admin.from("campaign_recipients").update({ status: "failed", error_code: "send_outcome_unknown", error_detail: "The durable send request did not return a confirmed outcome. The deterministic recipient key is retained; reconcile before any resend.", updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", recipient.id).eq("status", "sending");
+        console.error("Campaign recipient durable send failed", recipient.id, cause instanceof Error ? cause.message : "unknown");
       }
     }
     const [{ count: queued }, { count: sending }, { count: failedRecipients }] = await Promise.all([
