@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.meta-webhook-worker]
 verify_jwt = false
+
+[functions.notification-center]
+verify_jwt = true
