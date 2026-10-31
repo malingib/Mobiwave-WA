@@ -892,3 +892,17 @@ input,select,textarea{border-radius:6px}
  .form-panel{padding:16px}
  .inbox-page-header h1{font-size:23px}
 }
+
+.notification-list{display:flex;flex-direction:column;margin-top:14px}
+.notification-item{display:flex;align-items:flex-start;gap:14px;padding:16px 0;border-top:1px solid #edf0ee}
+.notification-item.is-read{opacity:.72}
+.notification-severity{flex:0 0 auto;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:5px 7px;border-radius:5px;background:#f2f4f3;color:#647168}
+.notification-severity.error,.notification-severity.critical{background:#fff0ee;color:#a43e32}
+.notification-severity.warning{background:#fff7e8;color:#8a641d}
+.notification-copy{min-width:0;flex:1}
+.notification-heading{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.notification-heading strong{font-size:13px;color:#24362d}
+.notification-heading time,.notification-copy small{font-size:11px;color:#7b8780}
+.notification-copy p{margin:6px 0;font-size:12px;line-height:1.55;color:#526159}
+.notification-copy small{display:block;margin-top:3px;overflow-wrap:anywhere}
+@media(max-width:720px){.notification-item{flex-wrap:wrap}.notification-heading{display:block}.notification-heading time{display:block;margin-top:4px}}
