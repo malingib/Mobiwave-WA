@@ -216,7 +216,36 @@ test("reply action calls the mocked Meta-send integration", async ({ page }, tes
 });
 
 
-test("workspace navigation exposes all six sections without losing the active business context", async ({ page }) => {
+test("uncertain inbox send reuses its idempotency key after a page reload", async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes("mobile"), "Send retry integration is covered in the mobile project.");
+  const { sentMessages } = backendData.get(page)!;
+  let calls = 0;
+  await page.route("**/functions/v1/meta-send", async (route) => {
+    sentMessages.push(route.request().postDataJSON() as Record<string, unknown>);
+    calls++;
+    if (calls === 1) return json(route, { error: "Provider outcome could not be confirmed.", status: "outcome_unknown" }, 502);
+    return json(route, { ok: true, message_id: "e2e-message-reconciled", status: "accepted" });
+  });
+  await signIn(page);
+  await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
+  const composer = page.locator('textarea[aria-label="Message reply"]');
+  await composer.fill("Please confirm your delivery address.");
+  await page.locator(".chat-reply").getByRole("button", { name: /^Send/ }).click({ timeout: 7000 });
+  await expect.poll(() => calls).toBe(1);
+  const firstKey = sentMessages[0].idempotency_key;
+  expect(firstKey).toMatch(/^[0-9a-f-]{36}$/i);
+  await expect(composer).toHaveValue("Please confirm your delivery address.");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+  await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
+  await page.locator('textarea[aria-label="Message reply"]').fill("Please confirm your delivery address.");
+  await page.locator(".chat-reply").getByRole("button", { name: /^Send/ }).click({ timeout: 7000 });
+  await expect.poll(() => calls).toBe(2);
+  expect(sentMessages[1].idempotency_key).toBe(firstKey);
+  await expect(page.getByText("Message accepted by Meta. Delivery confirmation will arrive separately.")).toBeVisible({ timeout: 7000 });
+});
+
+test("workspace navigation exposes all seven sections without losing the active business context", async ({ page }) => {
   await signIn(page);
   const sections = [
     ["Contacts", "Contacts"],
