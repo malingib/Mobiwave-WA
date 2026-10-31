@@ -120,13 +120,13 @@ Deno.serve(async (request) => {
         }
         if (mapped === "failed") {
           const detail = String(firstError?.message ?? firstError?.title ?? "Meta reported that the WhatsApp message failed.");
-          const { error: notificationError } = await admin.from("workspace_notifications").upsert({
+          const { error: notificationError } = await admin.from("workspace_notifications").insert({
             tenant_id: tenantId, recipient_user_id: null, category: "send_error", severity: "error",
             title: "WhatsApp message delivery failed", body: detail.slice(0, 1000),
             entity_type: "message", entity_id: metaId, dedupe_key: "meta-status-failed:" + statusEventKey,
             metadata: { error_code: firstError?.code == null ? "meta_delivery_failed" : String(firstError.code), error_title: firstError?.title ?? null, provider_timestamp: providerTimestamp, received_at: new Date().toISOString() },
-          }, { onConflict: "tenant_id,dedupe_key,recipient_user_id", ignoreDuplicates: true });
-          if (notificationError) throw notificationError;
+          });
+          if (notificationError && notificationError.code !== "23505") throw notificationError;
         }
         
         await emitWebhook(admin, tenantId, "message.status", { message_id: metaId, status: mapped, timestamp: status.timestamp, errors: status.errors ?? [] }, false);
