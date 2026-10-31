@@ -44,6 +44,7 @@ async function mockBackend(page: Page, role = "admin") {
   const createdNotes: Array<Record<string, unknown>> = [];
   const sentMessages: Array<Record<string, unknown>> = [];
   const createdContacts: Array<Record<string, unknown>> = [];
+  let alertRead = false;
 
   await page.route("**/auth/v1/**", async (route) => {
     const request = route.request();
@@ -100,8 +101,8 @@ async function mockBackend(page: Page, role = "admin") {
     if (request.method() === "OPTIONS") return json(route, {}, 200);
     if (path.endsWith("/notification-center")) {
       const payload = request.postDataJSON() as Record<string, unknown>;
-      if (payload.action === "mark_read" || payload.action === "mark_all_read") return json(route, { notifications: [], unread_count: 0 });
-      return json(route, { notifications: [{ id: "alert-1", category: "send_error", severity: "error", title: "WhatsApp delivery failed", body: "Meta could not deliver this message.", metadata: { error_code: "131026" }, created_at: "2026-10-31T10:00:00.000Z", read_at: null }], unread_count: 1 });
+      if (payload.action === "mark_read" || payload.action === "mark_all_read") alertRead = true;
+      return json(route, { notifications: [{ id: "alert-1", category: "send_error", severity: "error", title: "WhatsApp delivery failed", body: "Meta could not deliver this message.", metadata: { error_code: "131026" }, created_at: "2026-10-31T10:00:00.000Z", read_at: alertRead ? "2026-10-31T10:01:00.000Z" : null }], unread_count: alertRead ? 0 : 1 });
     }
     if (path.endsWith("/team-members")) {
       return json(route, { members: [{ user_id: user.id, role, name: "E2E Agent", email: user.email }] });
