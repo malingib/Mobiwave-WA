@@ -221,6 +221,7 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
   const { sentMessages } = backendData.get(page)!;
   let calls = 0;
   await page.route("**/functions/v1/meta-send", async (route) => {
+    if (route.request().method() === "OPTIONS") return json(route, {}, 200);
     sentMessages.push(route.request().postDataJSON() as Record<string, unknown>);
     calls++;
     if (calls === 1) return json(route, { error: "Provider outcome could not be confirmed.", status: "outcome_unknown" }, 502);
