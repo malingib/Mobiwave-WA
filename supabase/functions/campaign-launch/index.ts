@@ -44,7 +44,7 @@ Deno.serve(async (request) => {
       if (attempt.status === "accepted" && attempt.meta_message_id) {
         const { data: latestStatus, error: statusError } = await auth.admin.from("message_status_events").select("status,provider_timestamp").eq("tenant_id", tenantId).eq("meta_message_id", attempt.meta_message_id).order("provider_timestamp", { ascending: false }).limit(1).maybeSingle();
         if (statusError) throw statusError;
-        const status = latestStatus?.status ?? "sent";
+        const status = latestStatus?.status ?? "accepted";
         const patch: Record<string, unknown> = { status, meta_message_id: attempt.meta_message_id, updated_at: new Date().toISOString() };
         if (status === "sent") patch.sent_at = latestStatus?.provider_timestamp ?? new Date().toISOString();
         if (status === "delivered") patch.delivered_at = latestStatus?.provider_timestamp ?? new Date().toISOString();
@@ -114,7 +114,7 @@ Deno.serve(async (request) => {
           await auth.admin.from("workspace_notifications").insert({ tenant_id: tenantId, recipient_user_id: null, category: "campaign_error", severity: unknown ? "critical" : "error", title: unknown ? "Campaign recipient outcome unknown" : "Campaign recipient send failed", body: String(result.error ?? "The durable send service did not confirm Meta acceptance.").slice(0, 900), entity_type: "campaign_recipient", entity_id: recipient.id, dedupe_key: "campaign-send:" + recipient.id, metadata: { campaign_id: campaignId, error_code: unknown ? "send_outcome_unknown" : String(result.status ?? "meta_send_failed"), idempotency_key: idempotencyKey } });
         } else {
           sent++;
-          const { error: recipientUpdateError } = await auth.admin.from("campaign_recipients").update({ status: "sent", meta_message_id: result.message_id, sent_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", recipient.id).eq("status", "sending");
+          const { error: recipientUpdateError } = await auth.admin.from("campaign_recipients").update({ status: "accepted", meta_message_id: result.message_id, accepted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", recipient.id).eq("status", "sending");
           if (recipientUpdateError) throw recipientUpdateError;
         }
       } catch (cause) {
