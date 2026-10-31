@@ -140,7 +140,7 @@ Deno.serve(async (request) => {
     const { error: usageError } = await auth.admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "message_submitted", quantity: 1, reference_id: metaMessageId, metadata: { channel: "agent", outbound_attempt_id: attempt.id } });
     if (usageError) console.error("Usage event persistence failed after Meta acceptance", attempt.id, usageError.message);
     await emitWebhook(auth.admin, tenantId, "message.outbound", { message_id: metaMessageId, to, type, status: "accepted" });
-    return json({ ok: true, message_id: metaMessageId, status: "sent_to_meta" });
+    return json({ ok: true, message_id: metaMessageId, status: "accepted" });
   } catch (error) {
     const message = errorMessage(error);
     return json({ error: message }, /sign in|session is invalid/i.test(message) ? 401 : /permission/i.test(message) ? 403 : 400);
