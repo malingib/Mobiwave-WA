@@ -57,10 +57,20 @@ grant select, insert, update on public.meta_webhook_events to service_role;
 -- Atomic bounded claiming for a service-role worker. Events are not deleted on failure.
 create or replace function public.claim_meta_webhook_events(p_limit integer default 25)
 returns setof public.meta_webhook_events
-language sql
+language plpgsql
 security definer
 set search_path = public
-as $$
+as $
+begin
+  -- Recover worker crashes without reclaiming events that may still be active.
+  update public.meta_webhook_events
+  set status = case when attempts >= 8 then 'dead_letter' else 'retry' end,
+      next_attempt_at = now(),
+      last_error = coalesce(last_error, 'Worker lease expired before completion.'),
+      updated_at = now()
+  where status = 'processing' and updated_at < now() - interval '5 minutes';
+
+  return query
   with candidates as (
     select e.id
     from public.meta_webhook_events e
@@ -75,7 +85,8 @@ as $$
   from candidates
   where e.id = candidates.id
   returning e.*;
-$$;
+end;
+$;
 revoke all on function public.claim_meta_webhook_events(integer) from public, anon, authenticated;
 grant execute on function public.claim_meta_webhook_events(integer) to service_role;
 
