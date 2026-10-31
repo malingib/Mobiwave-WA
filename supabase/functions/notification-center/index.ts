@@ -22,10 +22,12 @@ Deno.serve(async (request) => {
       if (error) throw error;
     } else if (action !== "list") return json({ error: "Unsupported notification action." }, 400);
     const limit = Math.max(1, Math.min(100, Number(body.limit) || 50));
-    const { data, error } = await auth.admin.from("workspace_notifications").select("id,category,severity,title,body,entity_type,entity_id,metadata,created_at,read_at").eq("tenant_id", tenantId).or("recipient_user_id.is.null,recipient_user_id.eq." + auth.userId).order("created_at", { ascending: false }).limit(limit);
-    if (error) throw error;
-    const notifications = data ?? [];
-    return json({ notifications, unread_count: notifications.filter((item) => !item.read_at).length });
+    const [listResult, countResult] = await Promise.all([
+      auth.admin.from("workspace_notifications").select("id,category,severity,title,body,entity_type,entity_id,metadata,created_at,read_at").eq("tenant_id", tenantId).or("recipient_user_id.is.null,recipient_user_id.eq." + auth.userId).order("created_at", { ascending: false }).limit(limit),
+      auth.admin.from("workspace_notifications").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).is("read_at", null).or("recipient_user_id.is.null,recipient_user_id.eq." + auth.userId),
+    ]);
+    if (listResult.error || countResult.error) throw listResult.error ?? countResult.error;
+    return json({ notifications: listResult.data ?? [], unread_count: countResult.count ?? 0 });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Notification request failed." }, 403);
   }
