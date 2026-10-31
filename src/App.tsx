@@ -239,6 +239,26 @@ export default function App() {
     setLoading(false);
   }, [tenantId, user, loadContacts]);
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
+  const loadNotifications = useCallback(async () => {
+    if (!supabase || !tenantId) { setNotifications([]); setNotificationUnread(0); return; }
+    const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "list", limit: 50 } });
+    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not load workspace alerts."); return; }
+    setNotifications((data?.notifications ?? []) as WorkspaceNotification[]);
+    setNotificationUnread(Number(data?.unread_count ?? 0));
+  }, [tenantId]);
+  useEffect(() => { void loadNotifications(); }, [loadNotifications]);
+  async function markNotificationRead(id: string) {
+    if (!supabase || !tenantId) return;
+    const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "mark_read", notification_id: id } });
+    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not acknowledge alert."); return; }
+    await loadNotifications();
+  }
+  async function markAllNotificationsRead() {
+    if (!supabase || !tenantId) return;
+    const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "mark_all_read" } });
+    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not acknowledge alerts."); return; }
+    await loadNotifications();
+  }
   const loadInbox = useCallback(async () => {
     if (!supabase || !tenantId || !user) return;
     const [conversationResult, readResult] = await Promise.all([
