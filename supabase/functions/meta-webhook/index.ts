@@ -132,8 +132,12 @@ Deno.serve(async (request) => {
         }
         
         await emitWebhook(admin, tenantId, "message.status", { message_id: metaId, status: mapped, timestamp: status.timestamp, errors: status.errors ?? [] }, false);
-        const column = mapped === "delivered" ? "delivered_at" : mapped === "read" ? "read_at" : null;
-        if (column) await admin.from("campaign_recipients").update({ status: mapped, [column]: new Date().toISOString() }).eq("tenant_id", tenantId).eq("meta_message_id", metaId);
+        const campaignPatch: Record<string, unknown> = { status: mapped, updated_at: new Date().toISOString() };
+        if (mapped === "sent") campaignPatch.sent_at = providerTimestamp ?? new Date().toISOString();
+        if (mapped === "delivered") campaignPatch.delivered_at = providerTimestamp ?? new Date().toISOString();
+        if (mapped === "read") campaignPatch.read_at = providerTimestamp ?? new Date().toISOString();
+        const { error: campaignStatusError } = await admin.from("campaign_recipients").update(campaignPatch).eq("tenant_id", tenantId).eq("meta_message_id", metaId);
+        if (campaignStatusError) throw campaignStatusError;
       }
     }
     // Mark each durable change envelope complete only after its side effects succeeded.
