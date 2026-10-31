@@ -50,6 +50,7 @@ Deno.serve(async (request) => {
       }, { onConflict: "event_key", ignoreDuplicates: true }).select("id").maybeSingle();
       if (inboxError) throw inboxError;
       if (inboxEvent?.id) requestEventIds.push(inboxEvent.id);
+      else if (!isTrustedReplay) continue; // A provider duplicate is acknowledged; replay is permitted only via the worker secret.
       for (const message of value.messages ?? []) {
         const from = String(message.from ?? "");
         if (!/^\d{8,15}$/.test(from)) continue;
