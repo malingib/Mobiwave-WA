@@ -122,3 +122,8 @@ revoke all on public.message_status_events from public, anon, authenticated;
 revoke all on public.workspace_notifications from public, anon, authenticated;
 grant select, insert, update on public.message_status_events to service_role;
 grant select, insert, update on public.workspace_notifications to service_role;
+
+-- Tenant-wide notifications (recipient_user_id IS NULL) need true deduplication too.
+create unique index if not exists workspace_notifications_tenant_dedupe_uidx
+  on public.workspace_notifications(tenant_id, dedupe_key)
+  where recipient_user_id is null;
