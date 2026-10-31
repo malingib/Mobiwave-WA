@@ -412,7 +412,7 @@ export default function App() {
     const fingerprint = JSON.stringify([tenantId, selectedConversation, conversation.contacts.phone_e164, messageText]);
     const pendingStorageKey = "mobiwave:pending-send:" + tenantId + ":" + selectedConversation;
     let persistedKeys: Record<string, string> = {};
-    try { persistedKeys = JSON.parse(localStorage.getItem(pendingStorageKey) ?? "{}"); } catch { persistedKeys = {}; }
+    try { const stored = JSON.parse(localStorage.getItem(pendingStorageKey) ?? "{}"); if (stored && typeof stored === "object" && !Array.isArray(stored)) persistedKeys = stored as Record<string, string>; } catch { persistedKeys = {}; }
     const idempotencyKey = pendingSendKey?.fingerprint === fingerprint ? pendingSendKey.key : (persistedKeys[fingerprint] ?? crypto.randomUUID());
     persistedKeys[fingerprint] = idempotencyKey;
     try { localStorage.setItem(pendingStorageKey, JSON.stringify(persistedKeys)); } catch { /* in-memory key still protects this page session */ }
