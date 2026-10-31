@@ -33,6 +33,28 @@ Deno.serve(async (request) => {
       updated_at: new Date().toISOString(),
     }).eq("tenant_id", tenantId).eq("campaign_id", campaignId).eq("status", "sending").lt("claimed_at", new Date(Date.now() - 10 * 60 * 1000).toISOString());
 
+    // Reconcile deterministic recipient attempts before claiming any new work.
+    const { data: uncertainRecipients, error: uncertainError } = await auth.admin.from("campaign_recipients").select("id").eq("tenant_id", tenantId).eq("campaign_id", campaignId).eq("status", "failed").eq("error_code", "send_outcome_unknown").limit(100);
+    if (uncertainError) throw uncertainError;
+    for (const row of uncertainRecipients ?? []) {
+      const key = "campaign:" + campaignId + ":" + row.id;
+      const { data: attempt, error: attemptError } = await auth.admin.from("outbound_send_attempts").select("status,meta_message_id,error_code,error_detail").eq("tenant_id", tenantId).eq("idempotency_key", key).maybeSingle();
+      if (attemptError) throw attemptError;
+      if (!attempt) continue;
+      if (attempt.status === "accepted" && attempt.meta_message_id) {
+        const { data: latestStatus, error: statusError } = await auth.admin.from("message_status_events").select("status,provider_timestamp").eq("tenant_id", tenantId).eq("meta_message_id", attempt.meta_message_id).order("provider_timestamp", { ascending: false }).limit(1).maybeSingle();
+        if (statusError) throw statusError;
+        const status = latestStatus?.status ?? "sent";
+        const patch: Record<string, unknown> = { status, meta_message_id: attempt.meta_message_id, updated_at: new Date().toISOString() };
+        if (status === "sent") patch.sent_at = latestStatus?.provider_timestamp ?? new Date().toISOString();
+        if (status === "delivered") patch.delivered_at = latestStatus?.provider_timestamp ?? new Date().toISOString();
+        if (status === "read") patch.read_at = latestStatus?.provider_timestamp ?? new Date().toISOString();
+        await auth.admin.from("campaign_recipients").update(patch).eq("tenant_id", tenantId).eq("id", row.id).eq("status", "failed");
+      } else if (attempt.status === "rejected") {
+        await auth.admin.from("campaign_recipients").update({ error_code: attempt.error_code ?? "meta_rejected", error_detail: attempt.error_detail ?? "Meta rejected this recipient.", updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", row.id).eq("status", "failed");
+      }
+    }
+
     const { data: claims, error: claimError } = await auth.admin.rpc("claim_campaign_recipients", {
       p_tenant_id: tenantId, p_campaign_id: campaignId, p_limit: Math.min(10, available),
     });
