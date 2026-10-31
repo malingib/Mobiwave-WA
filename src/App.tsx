@@ -410,7 +410,12 @@ export default function App() {
     if (!conversation?.contacts?.phone_e164) { setNotice("Contact phone number not found."); return; }
     const messageText = replyText.trim();
     const fingerprint = JSON.stringify([tenantId, selectedConversation, conversation.contacts.phone_e164, messageText]);
-    const idempotencyKey = pendingSendKey?.fingerprint === fingerprint ? pendingSendKey.key : crypto.randomUUID();
+    const pendingStorageKey = "mobiwave:pending-send:" + tenantId + ":" + selectedConversation;
+    let persistedKeys: Record<string, string> = {};
+    try { persistedKeys = JSON.parse(localStorage.getItem(pendingStorageKey) ?? "{}"); } catch { persistedKeys = {}; }
+    const idempotencyKey = pendingSendKey?.fingerprint === fingerprint ? pendingSendKey.key : (persistedKeys[fingerprint] ?? crypto.randomUUID());
+    persistedKeys[fingerprint] = idempotencyKey;
+    try { localStorage.setItem(pendingStorageKey, JSON.stringify(persistedKeys)); } catch { /* in-memory key still protects this page session */ }
     setPendingSendKey({ fingerprint, key: idempotencyKey });
     setBusy(true);
     const { data, error } = await supabase.functions.invoke("meta-send", {
@@ -423,6 +428,8 @@ export default function App() {
       setNotice(data?.error ?? error?.message ?? "Send outcome could not be confirmed. Retry this same message to check its recorded outcome.");
     } else {
       setPendingSendKey(null);
+      delete persistedKeys[fingerprint];
+      try { localStorage.setItem(pendingStorageKey, JSON.stringify(persistedKeys)); } catch { /* server history remains authoritative */ }
       setReplyText("");
       setNotice("Message accepted by Meta. Delivery confirmation will arrive separately.");
     }
