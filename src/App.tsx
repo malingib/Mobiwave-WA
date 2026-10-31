@@ -124,6 +124,7 @@ export default function App() {
   const [campaignVariableValues, setCampaignVariableValues] = useState<Record<string, string>>({});
   const [campaignContacts, setCampaignContacts] = useState<string[]>([]);
   const [replyText, setReplyText] = useState("");
+  const [pendingSendKey, setPendingSendKey] = useState<{ fingerprint: string; key: string } | null>(null);
   const [composerMode, setComposerMode] = useState<"reply" | "note">("reply");
   const [searchContactHistory, setSearchContactHistory] = useState<{ contact: Contact; events: ConsentEvent[] } | null>(null);
   const [consentTarget, setConsentTarget] = useState("");
@@ -383,11 +384,24 @@ export default function App() {
     }
     const conversation = conversations.find((c) => c.id === selectedConversation);
     if (!conversation?.contacts?.phone_e164) { setNotice("Contact phone number not found."); return; }
+    const messageText = replyText.trim();
+    const fingerprint = JSON.stringify([tenantId, selectedConversation, conversation.contacts.phone_e164, messageText]);
+    const idempotencyKey = pendingSendKey?.fingerprint === fingerprint ? pendingSendKey.key : crypto.randomUUID();
+    setPendingSendKey({ fingerprint, key: idempotencyKey });
     setBusy(true);
-    const { data, error } = await supabase.functions.invoke("meta-send", { body: { tenant_id: tenantId, to: conversation.contacts.phone_e164, type: "text", text: replyText.trim() } });
+    const { data, error } = await supabase.functions.invoke("meta-send", {
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: { tenant_id: tenantId, to: conversation.contacts.phone_e164, type: "text", text: messageText, idempotency_key: idempotencyKey },
+    });
     setBusy(false);
-    if (error || data?.error) setNotice(data?.error ?? error?.message ?? "Send failed.");
-    else { setReplyText(""); setNotice("Message submitted to Meta."); }
+    if (error || data?.error) {
+      // Preserve the key after uncertain results so retrying cannot duplicate a provider submission.
+      setNotice(data?.error ?? error?.message ?? "Send outcome could not be confirmed. Retry this same message to check its recorded outcome.");
+    } else {
+      setPendingSendKey(null);
+      setReplyText("");
+      setNotice("Message accepted by Meta. Delivery confirmation will arrive separately.");
+    }
     await loadMessages(); await loadWorkspace();
   }
   async function resolveConversation(conversation: Conversation) {
