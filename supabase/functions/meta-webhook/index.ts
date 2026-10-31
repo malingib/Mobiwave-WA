@@ -32,6 +32,7 @@ Deno.serve(async (request) => {
   try { body = JSON.parse(rawBody); } catch { return json({ error: "Invalid JSON." }, 400); }
   if (body.object !== "whatsapp_business_account") return json({ received: true, ignored: true });
   try {
+    const requestEventIds: string[] = [];
     for (const entry of body.entry ?? []) for (const change of entry.changes ?? []) {
       const value = change.value ?? {};
       const phoneNumberId = String(value.metadata?.phone_number_id ?? "");
@@ -40,12 +41,13 @@ Deno.serve(async (request) => {
       if (!integration) continue;
       const tenantId = integration.tenant_id;
       const eventKey = await sha256(JSON.stringify({ entry_id: entry.id ?? null, field: change.field ?? null, value }));
-      const { error: inboxError } = await admin.from("meta_webhook_events").upsert({
+      const { data: inboxEvent, error: inboxError } = await admin.from("meta_webhook_events").upsert({
         tenant_id: tenantId, event_key: eventKey, phone_number_id: phoneNumberId,
         payload: { entry_id: entry.id ?? null, field: change.field ?? null, value },
         status: "processing", updated_at: new Date().toISOString(),
-      }, { onConflict: "event_key", ignoreDuplicates: true });
+      }, { onConflict: "event_key", ignoreDuplicates: true }).select("id").maybeSingle();
       if (inboxError) throw inboxError;
+      if (inboxEvent?.id) requestEventIds.push(inboxEvent.id);
       for (const message of value.messages ?? []) {
         const from = String(message.from ?? "");
         if (!/^\d{8,15}$/.test(from)) continue;
@@ -133,13 +135,10 @@ Deno.serve(async (request) => {
       }
     }
     // Mark each durable change envelope complete only after its side effects succeeded.
-    const { data: pendingEvents, error: pendingError } = await admin.from("meta_webhook_events")
-      .select("id,payload").eq("status", "processing").order("received_at", { ascending: false }).limit(100);
-    if (pendingError) throw pendingError;
-    for (const event of pendingEvents ?? []) {
+    if (requestEventIds.length) {
       const { error: finishError } = await admin.from("meta_webhook_events").update({
         status: "processed", processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      }).eq("id", event.id);
+      }).in("id", requestEventIds);
       if (finishError) throw finishError;
     }
     return json({ received: true });
