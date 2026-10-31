@@ -22,6 +22,13 @@ create table if not exists public.outbound_send_attempts (
   accepted_at timestamptz,
   unique (tenant_id, idempotency_key)
 );
+-- Distinguish provider acceptance from actual delivery in message and campaign state.
+alter table public.messages drop constraint if exists messages_status_check;
+alter table public.messages add constraint messages_status_check
+  check (status in ('received','queued','processing','accepted','sent','delivered','read','failed','outcome_unknown'));
+alter table public.campaign_recipients drop constraint if exists campaign_recipients_status_check;
+alter table public.campaign_recipients add constraint campaign_recipients_status_check
+  check (status in ('queued','sending','accepted','sent','delivered','read','failed','skipped','outcome_unknown'));
 create index if not exists outbound_send_attempts_recovery_idx
   on public.outbound_send_attempts(status, updated_at)
   where status in ('prepared','submitting','outcome_unknown');
