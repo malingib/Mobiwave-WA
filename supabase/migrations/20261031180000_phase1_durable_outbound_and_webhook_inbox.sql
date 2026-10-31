@@ -33,6 +33,8 @@ alter table public.campaign_recipients add constraint campaign_recipients_status
 create index if not exists outbound_send_attempts_recovery_idx
   on public.outbound_send_attempts(status, updated_at)
   where status in ('prepared','submitting','outcome_unknown');
+create index if not exists outbound_send_attempts_contact_idx on public.outbound_send_attempts(contact_id);
+create index if not exists outbound_send_attempts_conversation_idx on public.outbound_send_attempts(conversation_id) where conversation_id is not null;
 create unique index if not exists outbound_send_attempts_meta_message_uidx
   on public.outbound_send_attempts(tenant_id, meta_message_id)
   where meta_message_id is not null;
@@ -55,6 +57,7 @@ create table if not exists public.meta_webhook_events (
   last_error text,
   updated_at timestamptz not null default now()
 );
+create index if not exists meta_webhook_events_tenant_idx on public.meta_webhook_events(tenant_id) where tenant_id is not null;
 create index if not exists meta_webhook_events_work_idx
   on public.meta_webhook_events(status, next_attempt_at, received_at)
   where status in ('pending','retry');
@@ -132,6 +135,7 @@ create table if not exists public.workspace_notifications (
   read_at timestamptz,
   unique (tenant_id, dedupe_key, recipient_user_id)
 );
+create index if not exists workspace_notifications_recipient_idx on public.workspace_notifications(recipient_user_id) where recipient_user_id is not null;
 create index if not exists workspace_notifications_inbox_idx
   on public.workspace_notifications(tenant_id, recipient_user_id, created_at desc)
   where read_at is null;
