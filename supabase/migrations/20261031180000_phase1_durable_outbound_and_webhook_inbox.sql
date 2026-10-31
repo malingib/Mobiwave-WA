@@ -78,3 +78,47 @@ as $$
 $$;
 revoke all on function public.claim_meta_webhook_events(integer) from public, anon, authenticated;
 grant execute on function public.claim_meta_webhook_events(integer) to service_role;
+
+
+-- Append-only provider status history and workspace-facing operational notifications.
+create table if not exists public.message_status_events (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  meta_message_id text not null,
+  status text not null check (status in ('accepted','sent','delivered','read','failed')),
+  provider_timestamp timestamptz,
+  error_code text,
+  error_title text,
+  error_detail text,
+  event_key text not null unique,
+  payload jsonb not null default '{}'::jsonb,
+  received_at timestamptz not null default now()
+);
+create index if not exists message_status_events_lookup_idx
+  on public.message_status_events(tenant_id, meta_message_id, received_at);
+
+create table if not exists public.workspace_notifications (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  recipient_user_id uuid references auth.users(id) on delete cascade,
+  category text not null check (category in ('message_status','send_error','campaign_error','integration_error','system')),
+  severity text not null default 'info' check (severity in ('info','warning','error','critical')),
+  title text not null,
+  body text not null,
+  entity_type text,
+  entity_id text,
+  dedupe_key text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  read_at timestamptz,
+  unique (tenant_id, dedupe_key, recipient_user_id)
+);
+create index if not exists workspace_notifications_inbox_idx
+  on public.workspace_notifications(tenant_id, recipient_user_id, created_at desc)
+  where read_at is null;
+alter table public.message_status_events enable row level security;
+alter table public.workspace_notifications enable row level security;
+revoke all on public.message_status_events from public, anon, authenticated;
+revoke all on public.workspace_notifications from public, anon, authenticated;
+grant select, insert, update on public.message_status_events to service_role;
+grant select, insert, update on public.workspace_notifications to service_role;
