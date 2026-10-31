@@ -62,7 +62,7 @@ Deno.serve(async (request) => {
     if (priorError) throw priorError;
     if (prior) {
       if (prior.request_hash !== requestHash) return json({ error: "This idempotency key was already used for a different request." }, 409);
-      if (prior.status === "accepted") return json({ ok: true, message_id: prior.meta_message_id, status: "sent_to_meta", idempotent_replay: true });
+      if (prior.status === "accepted") return json({ ok: true, message_id: prior.meta_message_id, status: "accepted", idempotent_replay: true });
       if (prior.status === "rejected") return json({ error: prior.error_detail || "Meta rejected this message.", idempotent_replay: true }, 502);
       return json({ error: "A send attempt with this key is already in progress or has an unknown provider outcome. It was not resent to prevent duplicate delivery.", status: prior.status, idempotent_replay: true }, 409);
     }
@@ -103,12 +103,22 @@ Deno.serve(async (request) => {
     }
 
     const metaMessageId = String(result.messages[0].id);
+    const acceptedEventKey = await sha256(JSON.stringify({ tenantId, metaMessageId, status: "accepted" }));
+    const { error: acceptedHistoryError } = await auth.admin.from("message_status_events").upsert({
+      tenant_id: tenantId, meta_message_id: metaMessageId, status: "accepted", provider_timestamp: new Date().toISOString(),
+      event_key: acceptedEventKey, payload: { source: "meta-send" },
+    }, { onConflict: "event_key", ignoreDuplicates: true });
+    if (acceptedHistoryError) console.error("Could not append Meta acceptance history", acceptedHistoryError.message);
+    const { data: providerStatuses, error: providerStatusError } = await auth.admin.from("message_status_events").select("status").eq("tenant_id", tenantId).eq("meta_message_id", metaMessageId).limit(20);
+    if (providerStatusError) console.error("Could not reconcile early provider status", providerStatusError.message);
+    const statusRank: Record<string, number> = { accepted: 0, sent: 1, delivered: 2, read: 3, failed: 4 };
+    const initialStatus = (providerStatuses ?? []).reduce((current, event) => (statusRank[event.status] ?? 0) > (statusRank[current] ?? 0) ? event.status : current, "accepted");
     let messageId: string | null = null;
     if (conversationId) {
       const { data: savedMessage, error: messageError } = await auth.admin.from("messages").insert({
         tenant_id: tenantId, conversation_id: conversationId, direction: "outbound",
         actor_type: "agent", message_type: type, body: type === "text" ? payload.text.body : "[Template: " + payload.template.name + "]",
-        status: "accepted", meta_message_id: metaMessageId, metadata: { meta_status: "accepted", outbound_attempt_id: attempt.id },
+        status: initialStatus, meta_message_id: metaMessageId, metadata: { meta_status: initialStatus, outbound_attempt_id: attempt.id },
       }).select("id").single();
       if (messageError) {
         await auth.admin.from("outbound_send_attempts").update({ status: "outcome_unknown", meta_message_id: metaMessageId, error_code: "message_persistence_failed", error_detail: "Meta accepted the message but message history persistence failed; reconcile without resending.", updated_at: new Date().toISOString() }).eq("id", attempt.id);
@@ -128,7 +138,7 @@ Deno.serve(async (request) => {
     }
     const { error: usageError } = await auth.admin.from("usage_events").insert({ tenant_id: tenantId, event_type: "message_submitted", quantity: 1, reference_id: metaMessageId, metadata: { channel: "agent", outbound_attempt_id: attempt.id } });
     if (usageError) console.error("Usage event persistence failed after Meta acceptance", attempt.id, usageError.message);
-    await emitWebhook(auth.admin, tenantId, "message.outbound", { message_id: metaMessageId, to, type, status: "sent_to_meta" });
+    await emitWebhook(auth.admin, tenantId, "message.outbound", { message_id: metaMessageId, to, type, status: "accepted" });
     return json({ ok: true, message_id: metaMessageId, status: "sent_to_meta" });
   } catch (error) {
     const message = errorMessage(error);
