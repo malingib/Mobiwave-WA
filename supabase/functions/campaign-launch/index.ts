@@ -28,13 +28,13 @@ Deno.serve(async (request) => {
     // A request that died after claiming but before recording its outcome must
     // never be silently retried: Meta may already have accepted the message.
     await auth.admin.from("campaign_recipients").update({
-      status: "failed", error_code: "send_outcome_unknown",
+      status: "outcome_unknown", error_code: "send_outcome_unknown",
       error_detail: "The send worker stopped before confirming the result. Check WhatsApp before manually re-queueing.",
       updated_at: new Date().toISOString(),
     }).eq("tenant_id", tenantId).eq("campaign_id", campaignId).eq("status", "sending").lt("claimed_at", new Date(Date.now() - 10 * 60 * 1000).toISOString());
 
     // Reconcile deterministic recipient attempts before claiming any new work.
-    const { data: uncertainRecipients, error: uncertainError } = await auth.admin.from("campaign_recipients").select("id").eq("tenant_id", tenantId).eq("campaign_id", campaignId).eq("status", "failed").eq("error_code", "send_outcome_unknown").limit(100);
+    const { data: uncertainRecipients, error: uncertainError } = await auth.admin.from("campaign_recipients").select("id").eq("tenant_id", tenantId).eq("campaign_id", campaignId).in("status", ["failed", "outcome_unknown"]).eq("error_code", "send_outcome_unknown").limit(100);
     if (uncertainError) throw uncertainError;
     for (const row of uncertainRecipients ?? []) {
       const key = "campaign:" + campaignId + ":" + row.id;
@@ -49,7 +49,7 @@ Deno.serve(async (request) => {
         if (status === "sent") patch.sent_at = latestStatus?.provider_timestamp ?? new Date().toISOString();
         if (status === "delivered") patch.delivered_at = latestStatus?.provider_timestamp ?? new Date().toISOString();
         if (status === "read") patch.read_at = latestStatus?.provider_timestamp ?? new Date().toISOString();
-        await auth.admin.from("campaign_recipients").update(patch).eq("tenant_id", tenantId).eq("id", row.id).eq("status", "failed");
+        await auth.admin.from("campaign_recipients").update(patch).eq("tenant_id", tenantId).eq("id", row.id).in("status", ["failed", "outcome_unknown"]);
       } else if (attempt.status === "rejected") {
         await auth.admin.from("campaign_recipients").update({ error_code: attempt.error_code ?? "meta_rejected", error_detail: attempt.error_detail ?? "Meta rejected this recipient.", updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", row.id).eq("status", "failed");
       }
@@ -119,15 +119,17 @@ Deno.serve(async (request) => {
         }
       } catch (cause) {
         failed++;
-        await auth.admin.from("campaign_recipients").update({ status: "failed", error_code: "send_outcome_unknown", error_detail: "The durable send request did not return a confirmed outcome. The deterministic recipient key is retained; reconcile before any resend.", updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", recipient.id).eq("status", "sending");
+        await auth.admin.from("campaign_recipients").update({ status: "outcome_unknown", error_code: "send_outcome_unknown", error_detail: "The durable send request did not return a confirmed outcome. The deterministic recipient key is retained; reconcile before any resend.", updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", recipient.id).eq("status", "sending");
         console.error("Campaign recipient durable send failed", recipient.id, cause instanceof Error ? cause.message : "unknown");
       }
     }
-    const [{ count: queued }, { count: sending }, { count: failedRecipients }] = await Promise.all([
+    const [{ count: queued }, { count: sending }, { count: failedCount }, { count: unknownCount }] = await Promise.all([
       auth.admin.from("campaign_recipients").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("campaign_id", campaignId).eq("status", "queued"),
       auth.admin.from("campaign_recipients").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("campaign_id", campaignId).eq("status", "sending"),
       auth.admin.from("campaign_recipients").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("campaign_id", campaignId).eq("status", "failed"),
+      auth.admin.from("campaign_recipients").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("campaign_id", campaignId).eq("status", "outcome_unknown"),
     ]);
+    const failedRecipients = (failedCount ?? 0) + (unknownCount ?? 0);
     const remaining = (queued ?? 0) + (sending ?? 0);
     const nextStatus = remaining > 0 ? "running" : (failedRecipients ?? 0) > 0 ? "failed" : "completed";
     await auth.admin.from("campaigns").update({ status: nextStatus, finished_at: nextStatus === "running" ? null : new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", campaignId).eq("tenant_id", tenantId);
