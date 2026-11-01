@@ -34,6 +34,7 @@ async function json(route: Route, body: unknown, status = 200) {
       "access-control-allow-origin": "*",
       "access-control-allow-headers": "apikey, authorization, content-type, x-client-info, prefer, accept, range, content-range",
       "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
+      "access-control-expose-headers": "content-range",
       "content-range": "0-0/1",
     },
     body: JSON.stringify(body),
@@ -132,8 +133,16 @@ async function signIn(page: Page) {
   await page.getByLabel("Work email").fill(user.email);
   await page.getByRole("textbox", { name: "Password" }).fill("e2e-password-123");
   await page.getByRole("button", { name: /sign in securely/i }).click();
-  await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await expect(page.locator(".breadcrumbs").getByText("Demo Business")).toBeVisible();
+}
+
+/* Opens a dashboard view from either the desktop sidebar or the mobile drawer. */
+async function openView(page: Page, view: string) {
+  const drawerButton = page.getByRole("button", { name: "Open navigation" });
+  if (await drawerButton.isVisible()) await drawerButton.click();
+  await page.locator("#primary-navigation").getByRole("button", { name: view, exact: true }).click();
+  await expect(page.getByRole("heading", { name: view, exact: true })).toBeVisible();
 }
 
 test.beforeEach(async ({ page }, testInfo) => {
@@ -142,8 +151,8 @@ test.beforeEach(async ({ page }, testInfo) => {
 
 test("public landing page loads and labels preview metrics as sample data", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText(/illustrative preview.*sample data/i)).toBeVisible();
-  await expect(page.getByText("ONE NUMBER, ONE BUSINESS ACCOUNT")).toBeVisible();
+  await expect(page.getByText(/Product preview · illustrative sample data/i)).toBeVisible();
+  await expect(page.getByText(/WhatsApp business messaging for Kenya/i).first()).toBeVisible();
   const dimensions = await page.evaluate(() => ({
     viewport: window.innerWidth,
     document: document.documentElement.scrollWidth,
@@ -151,10 +160,12 @@ test("public landing page loads and labels preview metrics as sample data", asyn
   expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
 });
 
-test("sign-in opens the authenticated inbox with the selected business account", async ({ page }) => {
+test("sign-in opens the workspace overview with the selected business account", async ({ page }) => {
   await signIn(page);
   await expect(page.getByText("Amina Customer")).toBeVisible();
-  await expect(page.locator('#primary-navigation [aria-current="page"]')).toHaveAttribute("aria-label", "Inbox");
+  await expect(page.locator('#primary-navigation [aria-current="page"]')).toHaveAttribute("aria-label", "Overview");
+  await openView(page, "Inbox");
+  await expect(page.locator(".conversation-item").filter({ hasText: "Amina Customer" })).toBeVisible();
 });
 
 test("mobile navigation opens, closes on Escape, and closes after navigation", async ({ page }, testInfo) => {
@@ -164,22 +175,23 @@ test("mobile navigation opens, closes on Escape, and closes after navigation", a
   const menu = page.getByRole("button", { name: "Open navigation" });
   const sidebar = page.locator("#primary-navigation");
   await menu.click();
-  await expect(sidebar).toHaveClass(/is-open/);
+  await expect(sidebar).not.toHaveClass(/-translate-x-full/);
   await expect(page.getByRole("button", { name: "Contacts" })).toBeVisible();
 
   await page.keyboard.press("Escape");
-  await expect(sidebar).not.toHaveClass(/is-open/);
+  await expect(sidebar).toHaveClass(/-translate-x-full/);
 
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page.getByRole("button", { name: "Contacts" }).click();
-  await expect(page.getByRole("heading", { name: "Contacts" })).toBeVisible();
-  await expect(sidebar).not.toHaveClass(/is-open/);
+  await expect(page.getByRole("heading", { name: "Contacts", exact: true })).toBeVisible();
+  await expect(sidebar).toHaveClass(/-translate-x-full/);
 });
 
 test("mobile inbox switches between conversation list and chat and submits an internal note", async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.includes("mobile"), "Mobile conversation layout is covered in the mobile project.");
   const { createdNotes } = backendData.get(page)!;
   await signIn(page);
+  await openView(page, "Inbox");
 
   await test.step("open the customer conversation", async () => {
     await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
@@ -206,6 +218,7 @@ test("reply action calls the mocked Meta-send integration", async ({ page }, tes
   test.skip(!testInfo.project.name.includes("mobile"), "Reply integration is covered in the mobile project.");
   const { sentMessages } = backendData.get(page)!;
   await signIn(page);
+  await openView(page, "Inbox");
   await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
   await page.locator('textarea[aria-label="Message reply"]').fill("Thanks, we will check this for you.");
   await page.locator(".chat-reply").getByRole("button", { name: /^Send/ }).click({ timeout: 7000 });
@@ -228,6 +241,7 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
     return json(route, { ok: true, message_id: "e2e-message-reconciled", status: "accepted" });
   });
   await signIn(page);
+  await openView(page, "Inbox");
   await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
   const composer = page.locator('textarea[aria-label="Message reply"]');
   await composer.fill("Please confirm your delivery address.");
@@ -237,7 +251,7 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
   expect(firstKey).toMatch(/^[0-9a-f-]{36}$/i);
   await expect(composer).toHaveValue("Please confirm your delivery address.");
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+  await openView(page, "Inbox");
   await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
   await page.locator('textarea[aria-label="Message reply"]').fill("Please confirm your delivery address.");
   await page.locator(".chat-reply").getByRole("button", { name: /^Send/ }).click({ timeout: 7000 });
@@ -246,9 +260,10 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
   await expect(page.getByText("Message accepted by Meta. Delivery confirmation will arrive separately.")).toBeVisible({ timeout: 7000 });
 });
 
-test("workspace navigation exposes all seven sections without losing the active business context", async ({ page }) => {
+test("workspace navigation exposes all eight sections without losing the active business context", async ({ page }) => {
   await signIn(page);
   const sections = [
+    ["Overview", "Overview"],
     ["Contacts", "Contacts"],
     ["Campaigns", "Campaigns"],
     ["Alerts", "Alerts"],
