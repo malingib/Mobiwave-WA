@@ -231,3 +231,11 @@ test("shots pricing", async ({ page }) => {
   await page.waitForTimeout(800);
   await page.screenshot({ path: "/tmp/opencode/shots/pricing.png", fullPage: false });
 });
+
+test("shots login", async ({ page }, testInfo) => {
+  await page.goto("/login");
+  await page.getByRole("heading", { name: "Welcome back" }).waitFor();
+  await page.waitForTimeout(400);
+  const suffix = testInfo.project.name.includes("mobile") ? "login-mobile" : "login";
+  await page.screenshot({ path: `/tmp/opencode/shots/${suffix}.png` });
+});

@@ -264,8 +264,8 @@ export default function LandingPage() {
                         <strong className="block truncate text-[12px] font-medium text-ink-900">{row.name}</strong>
                         <span className="block text-[11px] text-ink-400">{row.phone}</span>
                       </span>
-                      <span className={"inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold " + (row.active ? "border-brand-200 bg-brand-50 text-brand-800" : "border-[#fecdca] bg-[#fef3f2] text-[#b42318]")}>
-                        <span className={"h-1.5 w-1.5 rounded-full " + (row.active ? "bg-brand-500" : "bg-[#d92d20]")} />{row.status}
+                      <span className={"inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold " + (row.active ? "border-success/20 bg-success-soft text-success" : "border-danger/20 bg-danger-soft text-danger")}>
+                        <span className={"h-1.5 w-1.5 rounded-full " + (row.active ? "bg-success" : "bg-danger")} />{row.status}
                       </span>
                     </div>
                   ))}

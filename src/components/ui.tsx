@@ -2,18 +2,18 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { Activity, Check, MessageCircle } from "lucide-react";
 
 /* Brand lockup used across sidebar, auth and error screens. */
-export function Brand({ compact = false, iconOnly = false, tone = "onDark" }: { compact?: boolean; iconOnly?: boolean; tone?: "onDark" | "onLight" }) {
+export function Brand({ compact = false, iconOnly = false, tone = "onLight" }: { compact?: boolean; iconOnly?: boolean; tone?: "onDark" | "onLight" }) {
   const isDark = tone === "onDark";
   return (
     <div className="flex items-center gap-2.5">
-      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white shadow-brand">
-        <MessageCircle size={17} strokeWidth={2.5} />
+      <div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-brand-600 text-white shadow-brand">
+        <MessageCircle size={18} strokeWidth={2.5} />
       </div>
       {!iconOnly && (
         <div className="leading-none">
-          <strong className={"font-display text-[14.5px] font-bold tracking-tight " + (isDark ? "text-white" : "text-text")}>
+          <strong className={"font-display text-[15.5px] font-bold tracking-tight " + (isDark ? "text-white" : "text-text")}>
             MobiWave
-            <span className={"ml-1 font-sans text-[10.5px] font-bold tracking-normal " + (isDark ? "text-brand-200" : "text-brand-600")}>
+            <span className={"ml-1 font-sans text-[11px] font-bold tracking-normal " + (isDark ? "text-brand-200" : "text-brand-600")}>
               WA
             </span>
           </strong>
@@ -73,23 +73,23 @@ export function Empty({ icon, title, text }: { icon: ReactNode; title: string; t
 
 export function SetupRow({ done = false, label, detail }: { done?: boolean; label: string; detail: string }) {
   return (
-    <div className="setup-row flex items-start gap-3 rounded-lg border border-hairline-strong bg-raised px-3 py-2.5">
+    <div className="setup-row flex items-start gap-3 rounded-lg border border-hairline bg-raised px-3 py-2.5">
       <div
         className={
-          "mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full text-white " +
-          (done ? "bg-brand-600" : "border border-hairline-strong bg-surface")
+          "mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full " +
+          (done ? "bg-success text-white" : "border border-hairline-strong bg-surface text-text-faint")
         }
       >
         {done ? <Check size={12} strokeWidth={3} /> : null}
       </div>
       <div className="min-w-0 flex-1">
-        <strong className="text-[12.5px] font-medium text-text">{label}</strong>
+        <strong className="text-[12.5px] font-semibold text-text">{label}</strong>
         <p className="mt-0.5 text-[11.5px] leading-relaxed text-text-muted">{detail}</p>
       </div>
       <span
         className={
           "flex-none rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] " +
-          (done ? "bg-brand-100 text-brand-800" : "bg-raised text-text-muted")
+          (done ? "bg-success-soft text-success" : "bg-surface text-text-muted")
         }
       >
         {done ? "Done" : "Pending"}
@@ -122,27 +122,27 @@ export function KpiCard({
 }) {
   const deltaClass =
     deltaTone === "positive"
-      ? "bg-brand-50 text-brand-700 ring-1 ring-brand-100"
+      ? "bg-success-soft text-success ring-1 ring-success/20"
       : deltaTone === "negative"
-        ? "bg-rose-50 text-rose-700 ring-1 ring-rose-100"
-        : "bg-raised text-text-muted ring-1 ring-hairline-strong";
+        ? "bg-danger-soft text-danger ring-1 ring-danger/20"
+        : "bg-raised text-text-muted ring-1 ring-hairline";
   return (
     <article className="panel relative flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-4 pt-3.5">
-        <span className="flex items-center gap-1.5 text-[12px] font-medium text-text-muted">
-          {icon && <span className="text-text-faint">{icon}</span>}
+      <div className="flex items-center justify-between gap-2 px-5 pt-4">
+        <span className="flex items-center gap-2 text-[14px] font-semibold text-text">
+          {icon && <span className="text-brand-600">{icon}</span>}
           {label}
         </span>
         {action}
       </div>
-      <div className="flex items-end gap-2 px-4 pb-1 pt-2">
-        <strong className="font-display text-[27px] font-semibold leading-none tracking-[-0.03em] text-text">{value}</strong>
-        {delta && <span className={"mb-0.5 rounded px-1.5 py-0.5 text-[10.5px] font-semibold " + deltaClass}>{delta}</span>}
+      <div className="flex items-end gap-2 px-5 pb-1 pt-3">
+        <strong className="font-display text-[30px] font-bold leading-none tracking-[-0.035em] text-text">{value}</strong>
+        {delta && <span className={"mb-0.5 rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold " + deltaClass}>{delta}</span>}
       </div>
-      {trend && <div className="mt-1 h-[52px] w-full">{trend}</div>}
+      {trend && <div className="mt-1 h-[58px] w-full">{trend}</div>}
       {(hint || children) && (
-        <div className="mt-auto flex items-center justify-between gap-3 border-t border-hairline-strong px-4 py-2.5">
-          {hint && <span className="truncate text-[11.5px] text-text-faint">{hint}</span>}
+        <div className="mt-auto flex items-center justify-between gap-3 border-t border-hairline px-5 py-3">
+          {hint && <span className="truncate text-[12px] text-text-muted">{hint}</span>}
           {children}
         </div>
       )}
@@ -166,14 +166,14 @@ export function WidgetCard({
 }) {
   return (
     <section className={"panel flex min-w-0 flex-col " + className}>
-      <header className="flex flex-wrap items-start justify-between gap-2 border-b border-hairline-strong px-4 py-3">
+      <header className="flex flex-wrap items-start justify-between gap-2 px-5 pb-1 pt-4">
         <div className="min-w-0">
-          <h2 className="text-[13.5px] font-semibold text-text">{title}</h2>
-          {subtitle && <p className="mt-0.5 truncate text-[11.5px] text-text-muted">{subtitle}</p>}
+          <h2 className="text-[16px] font-bold text-text">{title}</h2>
+          {subtitle && <p className="mt-1 truncate text-[12px] text-text-muted">{subtitle}</p>}
         </div>
         {action}
       </header>
-      <div className="min-h-0 flex-1 p-4">{children}</div>
+      <div className="min-h-0 flex-1 p-5 pt-3">{children}</div>
     </section>
   );
 }

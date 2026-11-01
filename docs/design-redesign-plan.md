@@ -1,19 +1,20 @@
 # MobiWave WA redesign plan
 
-Status: active plan for the Midnight shell redesign.
+Status: light visual redesign complete; ready for review and merge.
 Scope owner: product + frontend.
 Reference reviewed: NexLink CRM admin template (`https://nexlink.layoutdrop.com/demo/index.html`).
 
-The reference is a useful **layout** reference only. It is a generic CRM template with AI chat, knowledge crawling and multiple app surfaces that are outside MobiWave WA's fixed scope. This plan copies its information-architecture discipline and visual polish, not its feature set.
+The reference is a **visual and layout** reference. It is a generic CRM template with AI chat, knowledge crawling and multiple app surfaces that are outside MobiWave WA's fixed scope. This plan adopts its light surface stack, indigo accent, typography and shell proportions, not its feature set.
 
 ## Progress log
 
-- **Phase A — shell and navigation:** complete. Dark app shell, grouped sidebar, Overview default, real tenant data, mobile drawer, auth shell.
+- **Phase A — shell and navigation:** complete. App shell, grouped sidebar, Overview default, real tenant data, mobile drawer, auth shell.
 - **Phase B — inbox and contacts polish:** complete for this pass. Realtime Overview series updates, status chips, relative timestamps, unread markers, empty chat/composer states, consent summary strip.
 - **Phase C — campaign safety UX:** complete for this pass. Campaign detail dialog with stored recipient counts, full template preview, pre-launch safety checklist, failed-recipient review list with Meta error detail, and a safety strip in campaign history.
 - **Phase D — integrations and account:** complete for this pass. Health summary cards with anchor navigation, section IDs, removed the out-of-scope knowledge webhook option, restored setup checklist styling, profile account banner, and settings readiness rows.
 - **Phase E — landing refinement:** complete for this pass. Verifiable hero metrics, consent/safety evidence section with a labelled sample ledger, safety FAQ entries, responsive dashboard header fix, deterministic donut rendering, and a light `.marketing-theme` scope for public pages.
-- **Integration merge:** complete. `main`'s Phase 1 reliability foundation (durable outbound attempts, idempotent sends, unknown-outcome retention, workspace alerts) and the consent-safe contact CSV importer are merged into the redesign on `integration/main-reliability-csv`. Conflicts were resolved in favour of the Midnight shell, with the reliability logic and CSV importer preserved.
+- **Integration merge:** complete. `main`'s Phase 1 reliability foundation (durable outbound attempts, idempotent sends, unknown-outcome retention, workspace alerts) and the consent-safe contact CSV importer are merged into the redesign on `integration/main-reliability-csv`. Conflicts were resolved in favour of the product shell, with the reliability logic and CSV importer preserved.
+- **Phase F — light visual system:** complete. Replaced the Midnight dark shell with the reference's light surface stack, indigo accent and Instrument Sans. Sidebar is 250px, header 80px, cards are white with 10px radii. Public marketing pages, auth, inbox, contacts, campaigns, integrations, alerts, profile and settings now share one light token system. WhatsApp green is reserved for consent, delivery and connection success. There is no dark theme and no theme toggle.
 - **Next:** review the integrated branch, then open the merge request against `main`.
 
 ## 1. Product guardrails (non-negotiable)
@@ -143,25 +144,27 @@ Keep the provider-failure alert surface delivered by the reliability work. Alert
 | Blog, calendar, email client, authentication page pack | Reject for now | Not core WhatsApp messaging; adds dead surface area. |
 | Forms/tables and extended UI catalogue | Reject | Template-demo content, not product navigation. |
 | Unofficial WhatsApp connection options | Reject | Violates the official-Cloud-API-only rule. |
-| Purple Bootstrap theme, generic admin chrome | Adapt | Keep the layout discipline; use the Midnight token system. |
+| Purple Bootstrap theme, generic admin chrome | Adapt | Adopt the light surface stack, indigo accent, Instrument Sans and 250px/80px shell proportions; reject the template demo content. |
 
 ## 6. Design system
 
 Source of truth: `src/index.css` (`@theme` tokens) and `src/components/ui.tsx`.
 
-- **Surfaces:** canvas `#101413`, surface `#171c1a`, raised `#1e2422`, hairlines at 6% / 12% white.
-- **Brand:** green anchor `brand-400 #22c98a` → `brand-700 #086546`; CTA text on brand is `#04281d`.
-- **Text:** `text #e6ece9`, `text-muted #93a29b`, `text-faint #6b7a73`.
-- **Accent series:** green, indigo `#6c8cff`, amber `#f0b44c`, violet, rose.
-- **Type:** Inter Tight, display headings with tight tracking; 12–14px operational text.
-- **Shape:** 12px panels, 10px controls, 8px compact buttons.
+- **Surfaces:** canvas `#FDFDFF`, surface `#FFFFFF`, raised `#F6F7FB`, hairline `#EEEEF3`, strong hairline `#E3E4EC`.
+- **Brand:** indigo anchor `brand-600 #5955D1`; hover `brand-700 #4A46BD`; CTA text on brand is white.
+- **WhatsApp green:** `success #009966` and `success-soft #E8F8F1` for consent, delivery and connection success only.
+- **Text:** `text #0C243C`, `text-muted #696981`, `text-faint #9A9AB0`.
+- **Accent series:** indigo `#5955D1`, light indigo `#A9A6F5`, green `#009966`, amber `#F5A70D`, red `#F83636`.
+- **Type:** Instrument Sans, display headings with tight tracking; 12–14px operational text.
+- **Shape:** 10px panels, 8px controls, 8px compact buttons.
 - **Status:** success/warning/danger/neutral pills with dot + label.
+- **Theme:** light only. There is no dark theme and no theme toggle.
 
-Required shell components (built in this change):
+Required shell components:
 
 - `app-shell` flex frame.
-- Sidebar: brand, workspace switcher, grouped nav, help card, user card.
-- Sticky top bar: mobile menu, breadcrumbs, connection state, refresh, profile shortcut.
+- Sidebar: brand, workspace switcher, grouped nav, help card, user card; 250px wide on desktop.
+- Sticky top bar: mobile menu, breadcrumbs, connection state, alerts shortcut, refresh, profile shortcut; 80px tall.
 - `content` container with consistent padding and max width.
 - Mobile backdrop + drawer with Escape/route close.
 
@@ -171,7 +174,7 @@ Required shell components (built in this change):
 
 - Add Overview to the view model and make it the default.
 - Group sidebar navigation into Workspace / Messaging / Administration / Account.
-- Build the dark app shell, sticky top bar and mobile drawer.
+- Build the app shell, sticky top bar and mobile drawer.
 - Feed Overview real tenant data (conversations, contacts, campaigns, templates, 14-day message series).
 - Keep every existing screen and action working.
 
@@ -201,9 +204,18 @@ Acceptance: type-check and production build pass; sign-in lands on Overview; eve
 ### Phase F — integration merge
 
 - Merge `main`'s Phase 1 reliability foundation and the consent-safe contact CSV importer.
-- Keep the Midnight shell, campaign safety dialog, Overview and public marketing scope intact.
+- Keep the campaign safety dialog, Overview and public marketing scope intact.
 - Preserve Alerts as a first-class monitoring view with unread counts and acknowledgement.
 - Re-run typecheck, production build and the Playwright suite after conflict resolution.
+
+### Phase G — light visual system
+
+- Replace the Midnight tokens with the reference light stack and indigo brand.
+- Switch typography to Instrument Sans and update shell proportions (250px sidebar, 80px header).
+- Restyle shared panels, KPI cards, widgets, tables, modals, auth and public pages.
+- Keep WhatsApp green only for consent, delivery and connection states.
+- Remove dark-theme assumptions; the product is light-only with no theme toggle.
+- Re-run typecheck, production build, Playwright and the screenshot suite.
 
 ## 8. Non-goals
 

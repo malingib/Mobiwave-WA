@@ -15,12 +15,12 @@ type MetaStatus = { enabled?: boolean; verified?: boolean; display_phone_number?
 
 export type DailyMessagePoint = { date: string; label: string; inbound: number; outbound: number };
 
-/* Recharts needs concrete values, so these mirror the Midnight token set. */
-const SERIES_1 = "#22c98a";
-const SERIES_2 = "#6c8cff";
-const SERIES_3 = "#f0b44c";
-const AXIS = "#73827b";
-const GRID = "rgba(255,255,255,0.06)";
+/* Recharts needs concrete values, so these mirror the light token set. */
+const SERIES_1 = "#5955d1";
+const SERIES_2 = "#a9a6f5";
+const SERIES_3 = "#f5a70d";
+const AXIS = "#9a9ab0";
+const GRID = "#eeeef3";
 
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
@@ -38,7 +38,7 @@ function ChartTooltip({ active, payload, label }: any) {
   );
 }
 
-const STATUS_COLORS: Record<string, string> = { open: SERIES_1, pending: SERIES_3, resolved: SERIES_2 };
+const STATUS_COLORS: Record<string, string> = { open: "#009966", pending: SERIES_3, resolved: SERIES_1 };
 
 /* Compact 7/14 day sparkline used inside the KPI cards. */
 function Sparkline({ data, dataKey, color }: { data: DailyMessagePoint[]; dataKey: "inbound" | "outbound"; color: string }) {
@@ -95,9 +95,9 @@ export default function Overview({
       messages14d: inbound + outbound,
       activeCampaigns, approvedTemplates,
       consentMix: [
-        { name: "Opted in", value: optedIn, fill: SERIES_1 },
-        { name: "Opted out", value: optedOut, fill: "#e15b7c" },
-        { name: "No record", value: unknown, fill: "#cfd7d3" },
+        { name: "Opted in", value: optedIn, fill: "#009966" },
+        { name: "Opted out", value: optedOut, fill: "#f83636" },
+        { name: "No record", value: unknown, fill: "#d9dae4" },
       ],
       statusMix: [
         { name: "Open", value: open, fill: STATUS_COLORS.open },
@@ -324,7 +324,7 @@ export default function Overview({
                     <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: AXIS, fontSize: 10.5 }} dy={4} />
                     <YAxis tickLine={false} axisLine={false} tick={{ fill: AXIS, fontSize: 10.5 }} allowDecimals={false} width={36} />
-                    <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                    <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(12, 36, 60, 0.04)" }} />
                     <Bar dataKey="value" name="Contacts" radius={[5, 5, 0, 0]}>
                       {stats.consentMix.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
                     </Bar>

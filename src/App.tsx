@@ -762,25 +762,25 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
   if (tenantError) return <div className="auth-screen"><div className="auth-card"><Brand /><h1>Could not load your account</h1><p>We couldn’t verify your business access. Your account setup has not been changed.</p><div className="inline-notice" role="alert">{tenantError}</div><button type="button" className="primary-button full" onClick={() => void loadTenants()}>Try again</button><button type="button" className="auth-switch" onClick={() => void signOut()}>Sign out</button></div></div>;
   if (!tenants.length) return <div className="auth-screen"><form className="auth-card" onSubmit={createWorkspace}><Brand /><div className="auth-eyebrow">FIRST-TIME SETUP</div><h1>Set up your business</h1><p>Create your business account to keep contacts, WhatsApp connection, campaigns and team access separate.</p><label>Business name</label><input value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} required minLength={2} maxLength={160} placeholder="e.g. MobiWave Demo" /><button className="primary-button full" disabled={busy}>{busy ? "Setting up…" : "Set up business"}</button>{notice && <div className="inline-notice" role="status">{notice}</div>}<button type="button" className="auth-switch" onClick={signOut}>Sign out</button></form></div>;
   return <div className="app-shell">
-    {mobileNavOpen && <button type="button" className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm lg:hidden" aria-label="Close navigation menu" onClick={() => setMobileNavOpen(false)} />}
+    {mobileNavOpen && <button type="button" className="fixed inset-0 z-30 bg-[#0c243c]/35 backdrop-blur-sm lg:hidden" aria-label="Close navigation menu" onClick={() => setMobileNavOpen(false)} />}
     <aside
       id="primary-navigation"
       className={
-        "fixed inset-y-0 left-0 z-40 flex w-[272px] shrink-0 flex-col border-r border-hairline bg-surface transition-transform duration-200 ease-out lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 " +
+        "fixed inset-y-0 left-0 z-40 flex w-[250px] shrink-0 flex-col border-r border-hairline bg-surface transition-transform duration-200 ease-out lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 " +
         (mobileNavOpen ? "translate-x-0 shadow-raised" : "-translate-x-full")
       }
     >
-      <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-4">
+      <div className="flex items-center justify-between gap-2 px-5 pb-3 pt-5">
         <Brand />
         <button type="button" className="icon-btn lg:hidden" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)}>
           <X size={17} />
         </button>
       </div>
 
-      <div className="px-3 py-2">
+      <div className="px-4 py-2">
         {tenants.length > 1 ? (
-          <div className="relative flex items-center gap-2 rounded-xl border border-hairline bg-raised/60 p-2">
-            <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-brand-600 text-[11px] font-bold text-[#04281d]">
+          <div className="relative flex items-center gap-2 rounded-lg border border-hairline bg-raised p-2">
+            <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-brand-600 text-[11px] font-bold text-white">
               {activeTenant?.name.slice(0, 2).toUpperCase() ?? "MW"}
             </div>
             <select
@@ -794,23 +794,23 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
             <ChevronDown size={14} className="pointer-events-none absolute right-4 text-text-faint" />
           </div>
         ) : (
-          <div className="flex items-center gap-2 rounded-xl border border-hairline bg-raised/60 p-2">
-            <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-brand-600 text-[11px] font-bold text-[#04281d]">
+          <div className="flex items-center gap-2 rounded-lg border border-hairline bg-raised p-2">
+            <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-brand-600 text-[11px] font-bold text-white">
               {activeTenant?.name.slice(0, 2).toUpperCase() ?? "MW"}
             </div>
             <div className="min-w-0 flex-1">
               <span className="block truncate text-[12.5px] font-semibold text-text">{activeTenant?.name ?? "MobiWave WA"}</span>
               <span className="block text-[10.5px] text-text-faint">Business account</span>
             </div>
-            <span className="flex-none rounded bg-brand-500/10 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.08em] text-brand-300">{activeTenant?.role ?? "Member"}</span>
+            <span className="flex-none rounded bg-brand-50 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.08em] text-brand-700">{activeTenant?.role ?? "Member"}</span>
           </div>
         )}
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 pb-4" aria-label="Workspace navigation">
+      <nav className="flex-1 overflow-y-auto px-4 pb-4" aria-label="Workspace navigation">
         {navigation.map(({ section, items }) => (
-          <div key={section} className="pt-3 first:pt-0">
-            <div className="px-2 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-text-faint">{section}</div>
+          <div key={section} className="pt-4 first:pt-2">
+            <div className="px-2 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-brand-600">{section}</div>
             {items.map((item) => (
               <button
                 key={item.label}
@@ -823,12 +823,12 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
                 <item.icon size={18} />
                 <span>{item.label}</span>
                 {item.label === "Inbox" && unreadCount > 0 && (
-                  <span className="ml-auto min-w-[1.25rem] rounded-full bg-brand-500/15 px-1.5 py-0.5 text-center text-[10.5px] font-bold text-brand-200">
+                  <span className="ml-auto min-w-[1.25rem] rounded-full bg-brand-600 px-1.5 py-0.5 text-center text-[10.5px] font-bold text-white">
                     {unreadCount}
                   </span>
                 )}
                 {item.label === "Alerts" && notificationUnread > 0 && (
-                  <span className="ml-auto min-w-[1.25rem] rounded-full bg-[#f0b44c]/15 px-1.5 py-0.5 text-center text-[10.5px] font-bold text-[#f0b44c]">
+                  <span className="ml-auto min-w-[1.25rem] rounded-full bg-warning-soft px-1.5 py-0.5 text-center text-[10.5px] font-bold text-warning">
                     {notificationUnread}
                   </span>
                 )}
@@ -838,20 +838,20 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
         ))}
       </nav>
 
-      <div className="border-t border-hairline px-3 py-3">
+      <div className="border-t border-hairline px-4 py-3">
         <a
           href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md"
-          className="mb-2 flex items-start gap-2.5 rounded-xl border border-hairline bg-surface p-3 transition-colors hover:bg-raised"
+          className="mb-2 flex items-start gap-2.5 rounded-lg border border-hairline bg-raised p-3 transition-colors hover:bg-surface"
         >
-          <CircleHelp size={17} className="mt-0.5 flex-none text-brand-300" />
+          <CircleHelp size={17} className="mt-0.5 flex-none text-brand-600" />
           <span className="min-w-0 flex-1">
             <strong className="block text-[12px] font-semibold text-text">Need a hand?</strong>
             <span className="block text-[11px] text-text-muted">Setup and deployment guide</span>
           </span>
           <ArrowUpRight size={14} className="mt-0.5 flex-none text-text-faint" />
         </a>
-        <div className="flex items-center gap-2.5 rounded-xl border border-hairline bg-raised/60 p-2">
-          <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-brand-600 text-[12px] font-bold text-[#04281d]">
+        <div className="flex items-center gap-2.5 rounded-lg border border-hairline bg-raised p-2">
+          <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-brand-600 text-[12px] font-bold text-white">
             {user.email?.slice(0, 1).toUpperCase() ?? "U"}
           </div>
           <div className="min-w-0 flex-1">
@@ -884,6 +884,14 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           <span className={metaStatus?.enabled && metaStatus?.verified ? "environment is-connected" : "environment is-disconnected"}>
             <span className="status-dot" /> {metaStatus?.enabled ? "WhatsApp connected" : "WhatsApp not connected"}
           </span>
+          <button type="button" className="icon-btn relative" aria-label="Open alerts" onClick={() => { setView("Alerts"); setMobileNavOpen(false); }}>
+            <Bell size={17} />
+            {notificationUnread > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[9px] font-bold text-white">
+                {notificationUnread}
+              </span>
+            )}
+          </button>
           <button type="button" className="icon-btn" aria-label="Refresh" onClick={() => void loadWorkspace()}>
             <RefreshCw size={17} className={loading ? "spin" : ""} />
           </button>
@@ -1077,7 +1085,7 @@ Content-Type: application/json
           <div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Business account access</strong><p>Your current role is {activeTenant?.role ?? "Member"}. Administrative actions are restricted to business account owners and admins.</p></div><span className="fixed-setting">{isAdmin?"Admin access":"Member access"}</span></div><div className="setting-row"><div className="setting-icon"><LogOut size={19}/></div><div className="setting-copy"><strong>Sign out</strong><p>End this session on the current browser.</p></div><button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button></div></div><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Privacy and data separation</strong><p>Business account data is kept separate. Use Profile to update your account details; administrative actions are restricted by role.</p></div></div></section>}
       {loading&&<div className="loading-bar"><LoaderCircle className="spin" size={14}/> Loading workspace data…</div>}
       {notice&&<div className="toast" role="status"><div className="toast-icon"><Check size={15}/></div><span>{notice}</span><button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
-      <footer className="footer"><span>© 2026 MobiWave Innovations Ltd</span><span><span className="footer-dot"/> {metaStatus?.enabled?"Meta API connected":"Meta not connected"}</span></footer>
+      <footer className="footer"><span>© 2026 MobiWave Innovations Ltd</span><span><span className={metaStatus?.enabled ? "footer-dot is-connected" : "footer-dot"}/> {metaStatus?.enabled?"Meta API connected":"Meta not connected"}</span></footer>
     </main>
     {selectedCampaign && (() => {
       const campaign = selectedCampaign;
