@@ -13,7 +13,8 @@ The reference is a useful **layout** reference only. It is a generic CRM templat
 - **Phase C — campaign safety UX:** complete for this pass. Campaign detail dialog with stored recipient counts, full template preview, pre-launch safety checklist, failed-recipient review list with Meta error detail, and a safety strip in campaign history.
 - **Phase D — integrations and account:** complete for this pass. Health summary cards with anchor navigation, section IDs, removed the out-of-scope knowledge webhook option, restored setup checklist styling, profile account banner, and settings readiness rows.
 - **Phase E — landing refinement:** complete for this pass. Verifiable hero metrics, consent/safety evidence section with a labelled sample ledger, safety FAQ entries, responsive dashboard header fix, deterministic donut rendering, and a light `.marketing-theme` scope for public pages.
-- **Next:** merge the existing `main` reliability and contact CSV work into the redesign on a dedicated integration branch.
+- **Integration merge:** complete. `main`'s Phase 1 reliability foundation (durable outbound attempts, idempotent sends, unknown-outcome retention, workspace alerts) and the consent-safe contact CSV importer are merged into the redesign on `integration/main-reliability-csv`. Conflicts were resolved in favour of the Midnight shell, with the reliability logic and CSV importer preserved.
+- **Next:** review the integrated branch, then open the merge request against `main`.
 
 ## 1. Product guardrails (non-negotiable)
 
@@ -50,6 +51,9 @@ MESSAGING
   Inbox               /dashboard/inbox      shared inbox, assignments, notes
   Contacts            /dashboard/contacts   consent + suppression source of truth
   Campaigns           /dashboard/campaigns  approved-template outbound
+
+MONITORING
+  Alerts              /dashboard/alerts     provider failures and operational issues
 
 ADMINISTRATION
   Integrations        /dashboard/integrations  Meta connection, API keys, webhooks
@@ -107,6 +111,8 @@ Redesign work: list/chat visual hierarchy, clearer unread markers, sticky chat h
 
 Keep CSV-safe, paginated server search, consent history and suppression. Redesign work: consent-first table, clearer source/evidence column, bulk-safe actions, and import only when the consent-safe importer ships.
 
+The consent-safe CSV importer now ships on the integration branch. It maps phone, name and consent-evidence columns, validates E.164 numbers, skips duplicates, imports every row as consent-unknown, and never grants marketing consent. It is visible to owners and admins only.
+
 ### 4.5 Campaigns
 
 Keep approved-template selection, variable preview, opt-in recipient picking, bounded batches and unknown-outcome review.
@@ -122,6 +128,10 @@ Redesign work: split into clear sections (Connection, Meta webhook, Developer AP
 ### 4.7 Profile and Settings
 
 Keep Supabase Auth updates, role display and sign-out. Redesign work: account card, security notes, and workspace membership summary. No notification preferences until preferences exist server-side.
+
+### 4.8 Alerts
+
+Keep the provider-failure alert surface delivered by the reliability work. Alerts are tenant-scoped, show severity, Meta error code/title, reference ID and timestamp, and support per-alert and bulk acknowledgement. The sidebar shows an unread count. Alerts are read-only operational evidence; they never trigger an automatic retry.
 
 ## 5. Explicitly rejected from the reference
 
@@ -187,6 +197,13 @@ Acceptance: type-check and production build pass; sign-in lands on Overview; eve
 
 - Hero/proof tightening, testimonial or evidence section only if verifiable.
 - Performance and accessibility pass.
+
+### Phase F — integration merge
+
+- Merge `main`'s Phase 1 reliability foundation and the consent-safe contact CSV importer.
+- Keep the Midnight shell, campaign safety dialog, Overview and public marketing scope intact.
+- Preserve Alerts as a first-class monitoring view with unread counts and acknowledgement.
+- Re-run typecheck, production build and the Playwright suite after conflict resolution.
 
 ## 8. Non-goals
 

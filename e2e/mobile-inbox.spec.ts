@@ -183,7 +183,7 @@ test("mobile navigation opens, closes on Escape, and closes after navigation", a
 
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page.getByRole("button", { name: "Contacts" }).click();
-  await expect(page.getByRole("heading", { name: "Contacts" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Contacts", exact: true })).toBeVisible();
   await expect(sidebar).toHaveClass(/-translate-x-full/);
 });
 
@@ -241,6 +241,7 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
     return json(route, { ok: true, message_id: "e2e-message-reconciled", status: "accepted" });
   });
   await signIn(page);
+  await openView(page, "Inbox");
   await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
   const composer = page.locator('textarea[aria-label="Message reply"]');
   await composer.fill("Please confirm your delivery address.");
@@ -250,7 +251,7 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
   expect(firstKey).toMatch(/^[0-9a-f-]{36}$/i);
   await expect(composer).toHaveValue("Please confirm your delivery address.");
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+  await openView(page, "Inbox");
   await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
   await page.locator('textarea[aria-label="Message reply"]').fill("Please confirm your delivery address.");
   await page.locator(".chat-reply").getByRole("button", { name: /^Send/ }).click({ timeout: 7000 });
@@ -259,9 +260,10 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
   await expect(page.getByText("Message accepted by Meta. Delivery confirmation will arrive separately.")).toBeVisible({ timeout: 7000 });
 });
 
-test("workspace navigation exposes all seven sections without losing the active business context", async ({ page }) => {
+test("workspace navigation exposes all eight sections without losing the active business context", async ({ page }) => {
   await signIn(page);
   const sections = [
+    ["Overview", "Overview"],
     ["Contacts", "Contacts"],
     ["Campaigns", "Campaigns"],
     ["Alerts", "Alerts"],

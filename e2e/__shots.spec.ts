@@ -140,6 +140,7 @@ async function mockBackend(page: Page) {
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() === "OPTIONS") return json(route, {});
     if (path.endsWith("/team-members")) return json(route, { members: [{ user_id: user.id, role: "admin", name: "E2E Agent", email: user.email }] });
+    if (path.endsWith("/notification-center")) return json(route, { notifications: [{ id: "alert-1", category: "send_error", severity: "error", title: "WhatsApp delivery failed", body: "Meta could not deliver this message. Review the recipient before retrying.", metadata: { error_code: "131026", error_title: "Message undeliverable" }, entity_id: "campaign-recipient-1", created_at: "2026-10-31T10:00:00.000Z", read_at: null }], unread_count: 1 });
     return json(route, { success: true });
   });
 }
@@ -199,6 +200,9 @@ test("shots dashboard", async ({ page }) => {
   await page.locator("#primary-navigation").getByRole("button", { name: "Integrations", exact: true }).click();
   await page.waitForTimeout(500);
   await page.screenshot({ path: "/tmp/opencode/shots/integrations.png" });
+  await page.locator("#primary-navigation").getByRole("button", { name: "Alerts", exact: true }).click();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: "/tmp/opencode/shots/alerts.png" });
   await page.locator("#primary-navigation").getByRole("button", { name: "Profile", exact: true }).click();
   await page.waitForTimeout(400);
   await page.screenshot({ path: "/tmp/opencode/shots/profile.png" });
