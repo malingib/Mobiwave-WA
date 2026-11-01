@@ -9,6 +9,7 @@ import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import LandingPage from "./LandingPage";
 import PricingPage from "./PricingPage";
 import { ErrorPage } from "./ErrorPages";
+import ContactCsvImport from "./ContactCsvImport";
 import Overview, { type DailyMessagePoint } from "./dashboard/Overview";
 import { Brand } from "./components/ui";
 type View = "Overview" | "Inbox" | "Contacts" | "Campaigns" | "Alerts" | "Integrations" | "Profile" | "Settings";
@@ -912,6 +913,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           ))}
           <span className="consent-summary-note">Only opted-in contacts are eligible for campaign delivery.</span>
         </div>
+        {isAdmin&&<ContactCsvImport tenantId={tenantId} onImported={() => void loadWorkspace()}/>}
         {isAdmin&&<form className="panel form-panel" onSubmit={addContact}><h2>Add contact</h2><div className="form-grid"><div className="field"><label>Phone number (E.164) *</label><input value={contactPhone} onChange={(e)=>setContactPhone(e.target.value)} required pattern="\+[1-9][0-9]{7,14}" placeholder="+2547XXXXXXXX"/></div><div className="field"><label>Display name</label><input value={contactName} onChange={(e)=>setContactName(e.target.value)} placeholder="Customer name"/></div></div><label className="checkbox-line"><input type="checkbox" checked={contactOptIn} onChange={(e)=>setContactOptIn(e.target.checked)}/> I have verifiable permission to send WhatsApp messages to this contact.</label>{contactOptIn&&<div className="field"><label>Consent source / record *</label><input value={contactConsentSource} onChange={(e)=>setContactConsentSource(e.target.value)} required placeholder="e.g. website signup form, 2026-10-16"/></div>}<div className="form-actions"><span className="muted small">Unconfirmed contacts are not eligible for campaigns.</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add contact</button></div></form>}
         <div className="section-header">
           <div><h2>Contact list</h2><p>{contacts.length ? `Showing ${contactPage * 100 + 1}–${contactPage * 100 + contacts.length} of ${totalContacts} contact(s)` : `${totalContacts} contact(s)`}</p></div>
