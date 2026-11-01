@@ -71,7 +71,7 @@ returns setof public.meta_webhook_events
 language plpgsql
 security definer
 set search_path = public
-as $
+as $$
 begin
   -- Recover worker crashes without reclaiming events that may still be active.
   update public.meta_webhook_events
@@ -97,7 +97,7 @@ begin
   where e.id = candidates.id
   returning e.*;
 end;
-$;
+$$;
 revoke all on function public.claim_meta_webhook_events(integer) from public, anon, authenticated;
 grant execute on function public.claim_meta_webhook_events(integer) to service_role;
 
