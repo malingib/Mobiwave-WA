@@ -2,18 +2,21 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNo
 import type { Session, User } from "@supabase/supabase-js";
 import {
   Activity, ArrowLeft, ArrowUpRight, Check, ChevronDown, CircleHelp,
-  LogOut, MessageCircle, Menu, Plus, RefreshCw, Search,
+  LayoutDashboard, LogOut, MessageCircle, Menu, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail,
 } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import LandingPage from "./LandingPage";
 import PricingPage from "./PricingPage";
 import { ErrorPage } from "./ErrorPages";
-type View = "Inbox" | "Contacts" | "Campaigns" | "Integrations" | "Profile" | "Settings";
+import Overview, { type DailyMessagePoint } from "./dashboard/Overview";
+import { Brand } from "./components/ui";
+type View = "Overview" | "Inbox" | "Contacts" | "Campaigns" | "Integrations" | "Profile" | "Settings";
 type Tenant = { id: string; name: string; slug: string; role: string };
 type Contact = { id: string; phone_e164: string; display_name?: string; consent_status: string; consent_source?: string; consent_at?: string; opted_out_at?: string };
 type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string; components?: any[] };
-type Campaign = { id: string; name: string; status: string; created_at: string; template_id?: string };
+type Campaign = { id: string; name: string; status: string; created_at: string; template_id?: string; template_parameters?: Array<{ type: string; parameters?: Array<{ type: string; text?: string }> }> };
+type CampaignFailure = { id: string; error_code?: string; error_detail?: string; contacts?: { display_name?: string; phone_e164?: string } | null };
 type Conversation = { id: string; status: string; assigned_to?: string | null; unread?: boolean; last_message_at?: string; contacts?: { display_name?: string; phone_e164: string } };
 type TeamMember = { user_id: string; role: string; name: string; email: string };
 type ConsentEvent = { id: string; previous_status?: string | null; consent_status: string; consent_source?: string | null; changed_at: string };
@@ -44,6 +47,32 @@ function getTemplateParameters(parts: TemplatePart[], values: Record<string, str
     parameters: part.variables.map((_, index) => ({ type: "text", text: values[`${part.componentIndex}:${index}`] ?? "" })),
   }));
 }
+/* Renders the stored campaign parameter values into its template components. */
+function campaignPreview(campaign: Campaign, template?: Template) {
+  let parameterIndex = 0;
+  const parameterComponent = (text: string) => {
+    if (!/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/.test(text)) return text;
+    const parameters = campaign.template_parameters?.[parameterIndex]?.parameters ?? [];
+    parameterIndex += 1;
+    let index = 0;
+    return text.replace(/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/g, () => parameters[index++]?.text || "—");
+  };
+  const parts: Array<{ label: string; text: string }> = [];
+  for (const component of template?.components ?? []) {
+    const type = String(component?.type ?? "").toLowerCase();
+    if (["header", "body", "footer"].includes(type) && typeof component?.text === "string") {
+      parts.push({ label: type.toUpperCase(), text: parameterComponent(component.text) });
+    }
+    if (type === "buttons") {
+      for (const button of component.buttons ?? []) {
+        const label = String(button?.type ?? "button").replaceAll("_", " ").toUpperCase();
+        const text = [button?.text, button?.url].filter(Boolean).join(" · ");
+        parts.push({ label, text: text ? parameterComponent(text) : "—" });
+      }
+    }
+  }
+  return parts;
+}
 function MessageMedia({ mediaId, type, filename, tenantId }: { mediaId: string; type: string; filename?: string; tenantId: string }) {
   const [source, setSource] = useState("");
   const [error, setError] = useState(false);
@@ -65,14 +94,81 @@ function MessageMedia({ mediaId, type, filename, tenantId }: { mediaId: string; 
   if (type === "audio") return <audio controls src={source}/>;
   return <a className="message-media-download" href={source} download={filename || "WhatsApp attachment"}>{filename || "Download attachment"}</a>;
 }
-const views: { label: View; icon: typeof MessageCircle; section?: string }[] = [
-  { label: "Inbox", icon: MessageCircle, section: "MESSAGING" },
-  { label: "Contacts", icon: Users },
-  { label: "Campaigns", icon: Zap },
-  { label: "Integrations", icon: Settings2, section: "ADMINISTRATION" },
-  { label: "Profile", icon: UserRound, section: "ACCOUNT" },
-  { label: "Settings", icon: SettingsIcon },
+const navigation: { section: string; items: { label: View; icon: typeof MessageCircle }[] }[] = [
+  { section: "Workspace", items: [{ label: "Overview", icon: LayoutDashboard }] },
+  {
+    section: "Messaging",
+    items: [
+      { label: "Inbox", icon: MessageCircle },
+      { label: "Contacts", icon: Users },
+      { label: "Campaigns", icon: Zap },
+    ],
+  },
+  { section: "Administration", items: [{ label: "Integrations", icon: Settings2 }] },
+  {
+    section: "Account",
+    items: [
+      { label: "Profile", icon: UserRound },
+      { label: "Settings", icon: SettingsIcon },
+    ],
+  },
 ];
+
+/* Builds a dense 14-day inbound/outbound series from tenant message rows. */
+function buildDailyMessageSeries(rows: Array<{ direction: string; created_at: string }>): DailyMessagePoint[] {
+  const days = 14;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const buckets = new Map<string, DailyMessagePoint>();
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const day = new Date(today);
+    day.setDate(day.getDate() - offset);
+    const key = day.toISOString().slice(0, 10);
+    buckets.set(key, {
+      date: key,
+      label: day.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+      inbound: 0,
+      outbound: 0,
+    });
+  }
+  for (const row of rows) {
+    const bucket = buckets.get(new Date(row.created_at).toISOString().slice(0, 10));
+    if (!bucket) continue;
+    if (row.direction === "inbound") bucket.inbound += 1;
+    else if (row.direction === "outbound") bucket.outbound += 1;
+  }
+  return [...buckets.values()];
+}
+
+/* Adds one realtime message event to an existing 14-day series. */
+function bumpDailyMessageSeries(series: DailyMessagePoint[], row: { direction?: string; created_at?: string }): DailyMessagePoint[] {
+  if (!row.direction || !row.created_at) return series;
+  const key = new Date(row.created_at).toISOString().slice(0, 10);
+  const index = series.findIndex((day) => day.date === key);
+  if (index === -1) return series;
+  const next = series.slice();
+  const day = next[index];
+  next[index] = row.direction === "inbound"
+    ? { ...day, inbound: day.inbound + 1 }
+    : row.direction === "outbound"
+      ? { ...day, outbound: day.outbound + 1 }
+      : day;
+  return next;
+}
+
+/* Compact relative timestamp used by the inbox conversation list. */
+function relativeTime(value?: string): string {
+  if (!value) return "No messages";
+  const diff = Date.now() - new Date(value).getTime();
+  const minutes = Math.round(diff / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(value).toLocaleDateString();
+}
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -88,7 +184,7 @@ export default function App() {
   const [tenantId, setTenantId] = useState("");
   const [tenantLoading, setTenantLoading] = useState(true);
   const [tenantError, setTenantError] = useState("");
-  const [view, setView] = useState<View>("Inbox");
+  const [view, setView] = useState<View>("Overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   useEffect(() => {
     if (!mobileNavOpen) return;
@@ -107,6 +203,11 @@ export default function App() {
   const [contactHasMore, setContactHasMore] = useState(false);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [campaignCounts, setCampaignCounts] = useState<{ total: number; queued: number; failed: number } | null>(null);
+  const [campaignCountsLoading, setCampaignCountsLoading] = useState(false);
+  const [campaignFailures, setCampaignFailures] = useState<CampaignFailure[]>([]);
+  const [dailyMessages, setDailyMessages] = useState<DailyMessagePoint[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [conversationStatusFilter, setConversationStatusFilter] = useState("open");
@@ -168,7 +269,7 @@ export default function App() {
   }, [user]);
   useEffect(() => { void loadTenants(); }, [loadTenants]);
   useEffect(() => { setProfileName(String(user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "")); }, [user]);
-  useEffect(() => { setNewApiKey(""); setNewWebhookSecret(""); setMetaWebhookToken(""); setContactPage(0); setSearch(""); setConsentTarget(""); setSearchContactHistory(null); setSelectedConversation(""); }, [tenantId]);
+  useEffect(() => { setNewApiKey(""); setNewWebhookSecret(""); setMetaWebhookToken(""); setContactPage(0); setSearch(""); setConsentTarget(""); setSearchContactHistory(null); setSelectedConversation(""); setDailyMessages([]); setSelectedCampaign(null); setCampaignCounts(null); setCampaignFailures([]); }, [tenantId]);
   const activeTenant = tenants.find((t) => t.id === tenantId);
   const isAdmin = activeTenant ? ["owner", "admin"].includes(activeTenant.role) : false;
   const canAgent = activeTenant ? ["owner", "admin", "agent"].includes(activeTenant.role) : false;
@@ -190,16 +291,17 @@ export default function App() {
   const loadWorkspace = useCallback(async () => {
     if (!supabase || !tenantId) {
       setContacts([]); setTemplates([]); setCampaigns([]); setConversations([]); setTeamMembers([]);
-      setMetaStatus(null); setMetaPhoneId(""); setMetaWabaId(""); setMetaWebhookToken(""); setApiKeys([]); setWebhooks([]); setWebhookDeliveries([]); return;
+      setMetaStatus(null); setMetaPhoneId(""); setMetaWabaId(""); setMetaWebhookToken(""); setApiKeys([]); setWebhooks([]); setWebhookDeliveries([]); setDailyMessages([]); return;
     }
     setLoading(true);
     const results = await Promise.all([
       supabase.from("wa_templates").select("id,meta_template_name,language_code,category,meta_status,components").eq("tenant_id", tenantId).order("meta_template_name"),
-      supabase.from("campaigns").select("id,name,status,created_at,template_id").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
+      supabase.from("campaigns").select("id,name,status,created_at,template_id,template_parameters").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
       supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
       supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at").eq("tenant_id", tenantId).maybeSingle(),
       supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+      supabase.from("messages").select("direction,created_at").eq("tenant_id", tenantId).gte("created_at", new Date(Date.now() - 13 * 86_400_000).toISOString()).order("created_at", { ascending: false }).limit(5000),
     ]).catch((cause: unknown) => {
       console.error("MobiWave WA workspace load failed:", cause);
       setNotice("We could not load business account data. Check your connection and refresh.");
@@ -207,10 +309,11 @@ export default function App() {
       return null;
     });
     if (!results) return;
-    const [t, ca, co, mi, ak, wh] = results;
+    const [t, ca, co, mi, ak, wh, msg] = results;
     if (t.error || ca.error || co.error || mi.error) setNotice("Could not load business account data. Please refresh and try again.");
     setTemplates((t.data ?? []) as Template[]);
     setCampaigns((ca.data ?? []) as Campaign[]);
+    setDailyMessages(buildDailyMessageSeries((msg.data ?? []) as Array<{ direction: string; created_at: string }>));
     const [teamResponse, readResponse] = await Promise.all([
       supabase.functions.invoke("team-members", { body: { tenant_id: tenantId } }),
       user ? supabase.from("conversation_reads").select("conversation_id,last_read_at").eq("tenant_id", tenantId).eq("user_id", user.id) : Promise.resolve({ data: [], error: null }),
@@ -265,7 +368,8 @@ export default function App() {
     const channel = client.channel(`inbox-${tenantId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "conversations", filter: `tenant_id=eq.${tenantId}` }, () => { void loadInbox(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: `tenant_id=eq.${tenantId}` }, (payload) => {
-        const row = payload.new as { conversation_id?: string };
+        const row = payload.new as { conversation_id?: string; direction?: string; created_at?: string };
+        if (payload.eventType === "INSERT") setDailyMessages((series) => bumpDailyMessageSeries(series, row));
         void loadInbox();
         if (row?.conversation_id === selectedConversation) { void loadMessages(); void markConversationRead(selectedConversation); }
       })
@@ -277,6 +381,15 @@ export default function App() {
     return () => { void client.removeChannel(channel); };
   }, [tenantId, selectedConversation, loadInbox, loadMessages]);
   useEffect(() => { if (selectedConversation) void markConversationRead(selectedConversation); }, [selectedConversation, tenantId, user?.id]);
+  useEffect(() => {
+    if (!selectedCampaign) return;
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setSelectedCampaign(null); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => { document.body.style.overflow = original; window.removeEventListener("keydown", onKeyDown); };
+  }, [selectedCampaign]);
+  useEffect(() => { window.scrollTo(0, 0); }, [view]);
   async function signIn(event: FormEvent) {
     event.preventDefault(); if (!supabase) return;
     setBusy(true); setNotice("");
@@ -370,6 +483,35 @@ export default function App() {
     const { data, error } = await supabase.functions.invoke("campaign-launch", { body: { tenant_id: tenantId, campaign_id: campaignId } });
     setBusy(false); setNotice(error ? error.message : data?.error ?? ("Campaign batch: " + (data?.sent ?? 0) + " sent, " + (data?.skipped ?? 0) + " skipped, " + (data?.failed ?? 0) + " failed. " + (data?.remaining ?? 0) + " remain queued."));
     await loadWorkspace();
+    if (selectedCampaign?.id === campaignId) {
+      const nextStatus = !error && !data?.error && data?.status ? String(data.status) : selectedCampaign.status;
+      const refreshed = { ...selectedCampaign, status: nextStatus };
+      void openCampaign(refreshed);
+    }
+  }
+  async function openCampaign(campaign: Campaign) {
+    setSelectedCampaign(campaign);
+    setCampaignCounts(null);
+    setCampaignFailures([]);
+    if (!supabase || !tenantId) return;
+    const client = supabase;
+    setCampaignCountsLoading(true);
+    const baseCount = () => client.from("campaign_recipients").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("campaign_id", campaign.id);
+    try {
+      const [total, queued, failed, failures] = await Promise.all([
+        baseCount(),
+        baseCount().eq("status", "queued"),
+        baseCount().eq("status", "failed"),
+        client.from("campaign_recipients")
+          .select("id,error_code,error_detail,contacts(display_name,phone_e164)")
+          .eq("tenant_id", tenantId).eq("campaign_id", campaign.id).eq("status", "failed")
+          .order("updated_at", { ascending: false }).limit(5),
+      ]);
+      setCampaignCounts({ total: total.count ?? 0, queued: queued.count ?? 0, failed: failed.count ?? 0 });
+      setCampaignFailures((failures.data ?? []) as CampaignFailure[]);
+    } finally {
+      setCampaignCountsLoading(false);
+    }
   }
   async function sendReply(event: FormEvent) {
     event.preventDefault(); if (!supabase || !selectedConversation || !replyText.trim()) return;
@@ -505,6 +647,11 @@ export default function App() {
   async function signOut() { if (supabase) await supabase.auth.signOut(); setTenants([]); setTenantId(""); setTenantLoading(false); }
   const filteredContacts = contacts;
   const visibleCampaignContacts = contacts.filter((contact) => contact.consent_status === "opted_in");
+  const unreadCount = conversations.filter((conversation) => conversation.unread).length;
+  const pageConsent = contacts.reduce<Record<string, number>>((counts, contact) => {
+    counts[contact.consent_status] = (counts[contact.consent_status] ?? 0) + 1;
+    return counts;
+  }, {});
   const filteredConversations = useMemo(() => conversations.filter((conversation) => {
     const matchesStatus = conversationStatusFilter === "all" || (conversationStatusFilter === "unread" ? Boolean(conversation.unread) : conversation.status === conversationStatusFilter);
     const matchesAssignee = conversationAssigneeFilter === "all" || (conversationAssigneeFilter === "mine" ? conversation.assigned_to === user?.id : conversationAssigneeFilter === "unassigned" ? !conversation.assigned_to : conversation.assigned_to === conversationAssigneeFilter);
@@ -546,8 +693,8 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
         <section className="auth-form-side">
           <form className="auth-form-card" onSubmit={forgotMode ? sendPasswordReset : signIn}>
             <div className="auth-mobile-brand"><Brand /></div>
-            <div className="auth-form-topline"><span className="auth-eyebrow">{forgotMode ? "ACCOUNT RECOVERY" : authMode === "signin" ? "WELCOME BACK" : "GET STARTED"}</span><span className="auth-secure"><LockKeyhole size={13}/> Secure sign-in</span></div>
-            <h2>{forgotMode ? "Reset your password" : authMode === "signin" ? "Sign in to your account" : "Create your account"}</h2>
+            <div className="auth-form-topline"><span className="auth-eyebrow">{forgotMode ? "ACCOUNT RECOVERY" : authMode === "signin" ? "SECURE SIGN-IN" : "GET STARTED"}</span><span className="auth-secure"><LockKeyhole size={13}/> Encrypted session</span></div>
+            <h2>{forgotMode ? "Reset your password" : authMode === "signin" ? "Welcome back" : "Create your account"}</h2>
             <p className="auth-form-description">{forgotMode ? "Enter the email address linked to your account and we’ll send a password-reset link if it exists." : authMode === "signin" ? "Pick up where your team left off." : "Create an account to set up your business account."}</p>
             <label htmlFor="auth-email">Work email</label>
             <div className="auth-input-wrap"><Mail size={17}/><input id="auth-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required placeholder="you@company.co.ke" /></div>
@@ -569,16 +716,152 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
   if (tenantError) return <div className="auth-screen"><div className="auth-card"><Brand /><h1>Could not load your account</h1><p>We couldn’t verify your business access. Your account setup has not been changed.</p><div className="inline-notice" role="alert">{tenantError}</div><button type="button" className="primary-button full" onClick={() => void loadTenants()}>Try again</button><button type="button" className="auth-switch" onClick={() => void signOut()}>Sign out</button></div></div>;
   if (!tenants.length) return <div className="auth-screen"><form className="auth-card" onSubmit={createWorkspace}><Brand /><div className="auth-eyebrow">FIRST-TIME SETUP</div><h1>Set up your business</h1><p>Create your business account to keep contacts, WhatsApp connection, campaigns and team access separate.</p><label>Business name</label><input value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} required minLength={2} maxLength={160} placeholder="e.g. MobiWave Demo" /><button className="primary-button full" disabled={busy}>{busy ? "Setting up…" : "Set up business"}</button>{notice && <div className="inline-notice" role="status">{notice}</div>}<button type="button" className="auth-switch" onClick={signOut}>Sign out</button></form></div>;
   return <div className="app-shell">
-    {mobileNavOpen && <button type="button" className="mobile-nav-backdrop" aria-label="Close navigation menu" onClick={() => setMobileNavOpen(false)} />}
-    <aside id="primary-navigation" className={mobileNavOpen ? "sidebar is-open" : "sidebar"}>
-      <Brand />
-      {tenants.length > 1 ? <div className="workspace-picker"><div className="workspace-avatar">{activeTenant?.name.slice(0,2).toUpperCase() ?? "MW"}</div><select value={tenantId} onChange={(e) => { setTenantId(e.target.value); setSelectedConversation(""); }} aria-label="Switch business account">{tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select><ChevronDown size={15} /></div> : <div className="workspace-picker workspace-identity"><div className="workspace-avatar">{activeTenant?.name.slice(0,2).toUpperCase() ?? "MW"}</div><span className="workspace-name">{activeTenant?.name ?? "MobiWave WA"}</span></div>}
-      {views.map((item) => <div key={item.label}>{item.section && <div className="nav-label">{item.section}</div>}<button className={view === item.label ? "nav-item active" : "nav-item"} aria-label={item.label} aria-current={view === item.label ? "page" : undefined} onClick={() => { setView(item.label); setMobileNavOpen(false); }}><item.icon size={18} /><span>{item.label}</span></button></div>)}
-      <div className="sidebar-bottom"><div className="help-card"><CircleHelp size={18} /><div><strong>Need a hand?</strong><span>Read the setup guide</span></div><a href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md" aria-label="Open setup guide"><ArrowUpRight size={15} /></a></div><div className="profile"><div className="profile-avatar">{user.email?.slice(0,1).toUpperCase() ?? "U"}</div><div><strong>{user.email}</strong><span>{activeTenant?.role ?? "Member"}</span></div><button className="icon-button" onClick={signOut} aria-label="Sign out"><LogOut size={17} /></button></div></div>
+    {mobileNavOpen && <button type="button" className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm lg:hidden" aria-label="Close navigation menu" onClick={() => setMobileNavOpen(false)} />}
+    <aside
+      id="primary-navigation"
+      className={
+        "fixed inset-y-0 left-0 z-40 flex w-[272px] shrink-0 flex-col border-r border-hairline bg-surface transition-transform duration-200 ease-out lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 " +
+        (mobileNavOpen ? "translate-x-0 shadow-raised" : "-translate-x-full")
+      }
+    >
+      <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-4">
+        <Brand />
+        <button type="button" className="icon-btn lg:hidden" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)}>
+          <X size={17} />
+        </button>
+      </div>
+
+      <div className="px-3 py-2">
+        {tenants.length > 1 ? (
+          <div className="relative flex items-center gap-2 rounded-xl border border-hairline bg-raised/60 p-2">
+            <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-brand-600 text-[11px] font-bold text-[#04281d]">
+              {activeTenant?.name.slice(0, 2).toUpperCase() ?? "MW"}
+            </div>
+            <select
+              className="h-9 w-full min-w-0 appearance-none rounded-lg border border-hairline-strong bg-surface px-2 pr-7 text-[12.5px] font-medium text-text"
+              value={tenantId}
+              onChange={(e) => { setTenantId(e.target.value); setSelectedConversation(""); }}
+              aria-label="Switch business account"
+            >
+              {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <ChevronDown size={14} className="pointer-events-none absolute right-4 text-text-faint" />
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 rounded-xl border border-hairline bg-raised/60 p-2">
+            <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-brand-600 text-[11px] font-bold text-[#04281d]">
+              {activeTenant?.name.slice(0, 2).toUpperCase() ?? "MW"}
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="block truncate text-[12.5px] font-semibold text-text">{activeTenant?.name ?? "MobiWave WA"}</span>
+              <span className="block text-[10.5px] text-text-faint">Business account</span>
+            </div>
+            <span className="flex-none rounded bg-brand-500/10 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.08em] text-brand-300">{activeTenant?.role ?? "Member"}</span>
+          </div>
+        )}
+      </div>
+
+      <nav className="flex-1 overflow-y-auto px-3 pb-4" aria-label="Workspace navigation">
+        {navigation.map(({ section, items }) => (
+          <div key={section} className="pt-3 first:pt-0">
+            <div className="px-2 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-text-faint">{section}</div>
+            {items.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                className={view === item.label ? "nav-item active mt-0.5" : "nav-item mt-0.5"}
+                aria-label={item.label}
+                aria-current={view === item.label ? "page" : undefined}
+                onClick={() => { setView(item.label); setMobileNavOpen(false); }}
+              >
+                <item.icon size={18} />
+                <span>{item.label}</span>
+                {item.label === "Inbox" && unreadCount > 0 && (
+                  <span className="ml-auto min-w-[1.25rem] rounded-full bg-brand-500/15 px-1.5 py-0.5 text-center text-[10.5px] font-bold text-brand-200">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        ))}
+      </nav>
+
+      <div className="border-t border-hairline px-3 py-3">
+        <a
+          href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md"
+          className="mb-2 flex items-start gap-2.5 rounded-xl border border-hairline bg-surface p-3 transition-colors hover:bg-raised"
+        >
+          <CircleHelp size={17} className="mt-0.5 flex-none text-brand-300" />
+          <span className="min-w-0 flex-1">
+            <strong className="block text-[12px] font-semibold text-text">Need a hand?</strong>
+            <span className="block text-[11px] text-text-muted">Setup and deployment guide</span>
+          </span>
+          <ArrowUpRight size={14} className="mt-0.5 flex-none text-text-faint" />
+        </a>
+        <div className="flex items-center gap-2.5 rounded-xl border border-hairline bg-raised/60 p-2">
+          <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-brand-600 text-[12px] font-bold text-[#04281d]">
+            {user.email?.slice(0, 1).toUpperCase() ?? "U"}
+          </div>
+          <div className="min-w-0 flex-1">
+            <strong className="block truncate text-[11.5px] font-semibold text-text">{user.email}</strong>
+            <span className="block text-[10.5px] capitalize text-text-muted">{activeTenant?.role ?? "Member"}</span>
+          </div>
+          <button type="button" className="icon-btn" onClick={() => void signOut()} aria-label="Sign out"><LogOut size={16} /></button>
+        </div>
+      </div>
     </aside>
+
     <main className="main">
-      <header className="topbar"><button type="button" className="mobile-menu-button" aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"} aria-controls="primary-navigation" aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen((open) => !open)}><Menu size={19}/></button><div className="breadcrumbs"><span>{activeTenant?.name ?? "Business account"}</span><span className="crumb-sep">/</span><strong>{view}</strong></div><div className="top-actions"><span className={metaStatus?.enabled ? "environment is-connected" : "environment is-disconnected"}><span className="status-dot" /> {metaStatus?.enabled ? "WhatsApp connected" : "WhatsApp not connected"}</span><button className="icon-button" aria-label="Refresh" onClick={() => void loadWorkspace()}><RefreshCw size={17} /></button><div className="mini-avatar">{user.email?.slice(0,1).toUpperCase()}</div></div></header>
+      <header className="topbar">
+        <button
+          type="button"
+          className="icon-btn lg:hidden"
+          aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
+          aria-controls="primary-navigation"
+          aria-expanded={mobileNavOpen}
+          onClick={() => setMobileNavOpen((open) => !open)}
+        >
+          <Menu size={19} />
+        </button>
+        <div className="breadcrumbs">
+          <span>{activeTenant?.name ?? "Business account"}</span>
+          <span className="crumb-sep">/</span>
+          <strong>{view}</strong>
+        </div>
+        <div className="top-actions">
+          <span className={metaStatus?.enabled && metaStatus?.verified ? "environment is-connected" : "environment is-disconnected"}>
+            <span className="status-dot" /> {metaStatus?.enabled ? "WhatsApp connected" : "WhatsApp not connected"}
+          </span>
+          <button type="button" className="icon-btn" aria-label="Refresh" onClick={() => void loadWorkspace()}>
+            <RefreshCw size={17} className={loading ? "spin" : ""} />
+          </button>
+          <button type="button" className="mini-avatar" aria-label="Open profile" onClick={() => { setView("Profile"); setMobileNavOpen(false); }}>
+            {user.email?.slice(0, 1).toUpperCase()}
+          </button>
+        </div>
+      </header>
+      {view === "Overview" && <section className="content">
+        <PageHeading eyebrow="WORKSPACE OVERVIEW" title="Overview" description="Live view of conversations, contacts and campaign readiness for this business account." />
+        <Overview
+          conversations={conversations}
+          contacts={contacts}
+          campaigns={campaigns}
+          templates={templates}
+          dailyMessages={dailyMessages}
+          metaStatus={metaStatus}
+          onNavigate={(next) => setView(next as View)}
+          onOpenConversation={(conversationId) => { setSelectedConversation(conversationId); setView("Inbox"); }}
+        />
+      </section>}
       {view === "Contacts" && <section className="content"><PageHeading eyebrow="CUSTOMER DATA" title="Contacts" description="Store consent and suppression status before using contacts for campaigns."/>
+        <div className="consent-summary">
+          <span className="consent-summary-label">This page</span>
+          {(["opted_in", "opted_out", "unknown"] as const).map((status) => (
+            <span className="consent-summary-chip" key={status}><Status status={status}/><b>{pageConsent[status] ?? 0}</b></span>
+          ))}
+          <span className="consent-summary-note">Only opted-in contacts are eligible for campaign delivery.</span>
+        </div>
         {isAdmin&&<form className="panel form-panel" onSubmit={addContact}><h2>Add contact</h2><div className="form-grid"><div className="field"><label>Phone number (E.164) *</label><input value={contactPhone} onChange={(e)=>setContactPhone(e.target.value)} required pattern="\+[1-9][0-9]{7,14}" placeholder="+2547XXXXXXXX"/></div><div className="field"><label>Display name</label><input value={contactName} onChange={(e)=>setContactName(e.target.value)} placeholder="Customer name"/></div></div><label className="checkbox-line"><input type="checkbox" checked={contactOptIn} onChange={(e)=>setContactOptIn(e.target.checked)}/> I have verifiable permission to send WhatsApp messages to this contact.</label>{contactOptIn&&<div className="field"><label>Consent source / record *</label><input value={contactConsentSource} onChange={(e)=>setContactConsentSource(e.target.value)} required placeholder="e.g. website signup form, 2026-10-16"/></div>}<div className="form-actions"><span className="muted small">Unconfirmed contacts are not eligible for campaigns.</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add contact</button></div></form>}
         <div className="section-header">
           <div><h2>Contact list</h2><p>{contacts.length ? `Showing ${contactPage * 100 + 1}–${contactPage * 100 + contacts.length} of ${totalContacts} contact(s)` : `${totalContacts} contact(s)`}</p></div>
@@ -610,41 +893,65 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           <div className="field campaign-recipient-field"><label>Find opted-in recipients</label><p className="field-hint">Only contacts with recorded opt-in can be selected. Selected contacts stay selected as you move between pages.</p><div className="search-field"><Search size={16}/><input aria-label="Search opted-in recipients" value={search} onChange={(e)=>{setSearch(e.target.value);setContactPage(0);}} placeholder="Search name or phone"/></div><div className="contact-select">{contactsLoading?<div className="contact-search-state"><LoaderCircle size={15} className="spin"/> Loading recipients…</div>:visibleCampaignContacts.map(c=><label key={c.id} className="checkbox-line"><input type="checkbox" checked={campaignContacts.includes(c.id)} onChange={(e)=>setCampaignContacts(list=>e.target.checked?[...list,c.id]:list.filter(id=>id!==c.id))}/><span className="campaign-contact-name">{c.display_name||"Unnamed contact"}<small>{c.phone_e164}</small></span></label>)}{!contactsLoading&&visibleCampaignContacts.length===0&&<div className="contact-search-state">{search.trim()?"No opted-in contacts match this search.":"No opted-in contacts on this page."}</div>}</div><div className="pagination-controls compact-pagination"><button type="button" className="secondary-button compact" disabled={contactPage===0} onClick={()=>setContactPage(page=>Math.max(0,page-1))}>Previous</button><span>Page {contactPage+1}</span><button type="button" className="secondary-button compact" disabled={!contactHasMore} onClick={()=>setContactPage(page=>page+1)}>Next</button></div></div>
           <div className="form-actions"><span className="muted small">{campaignContacts.length} recipient(s) selected</span><button className="primary-button" disabled={busy}><Plus size={15}/> Save draft</button></div>
         </form>}
-        <div className="section-header"><div><h2>Campaign history</h2><p>Each send batch processes up to 10 recipients.</p></div></div><div className="source-list"><div className="source-table-head campaign-head"><span>CAMPAIGN</span><span>STATUS</span><span>CREATED</span><span/></div>{campaigns.length===0?<Empty icon={<Zap size={24}/>} title="No campaigns" text="Create a campaign draft above."/>:campaigns.map(c=><div className="source-row campaign-row" key={c.id}><div className="source-main"><div className="source-icon"><Zap size={17}/></div><div className="source-text"><strong>{c.name}</strong><small>{templates.find(t=>t.id===c.template_id)?.meta_template_name||"Template unavailable"}</small></div></div><div><Status status={c.status}/></div><div className="source-added">{new Date(c.created_at).toLocaleDateString()}</div><div className="row-actions">{isAdmin&&["draft","paused","running"].includes(c.status)&&<button className="secondary-button compact" aria-label={`${c.status==="running"?"Continue":"Send"} campaign batch: ${c.name}`} onClick={()=>void launchCampaign(c.id)} disabled={busy}>{c.status==="running"?"Continue batch":"Send batch"} <ArrowUpRight size={13}/></button>}</div></div>)}</div>
+        <div className="section-header"><div><h2>Campaign history</h2><p>Each send batch processes up to 10 recipients.</p></div></div>
+        <div className="campaign-safety-chips"><span><ShieldCheck size={12}/> Approved templates only</span><span><Users size={12}/> Opted-in audience</span><span><RefreshCw size={12}/> 10 recipients per batch</span></div>
+        <div className="source-list"><div className="source-table-head campaign-head"><span>CAMPAIGN</span><span>STATUS</span><span>CREATED</span><span/></div>{campaigns.length===0?<Empty icon={<Zap size={24}/>} title="No campaigns" text="Create a campaign draft above."/>:campaigns.map(c=><div className="source-row campaign-row" key={c.id}><div className="source-main"><div className="source-icon"><Zap size={17}/></div><div className="source-text"><button type="button" className="campaign-name-button" onClick={()=>void openCampaign(c)}>{c.name}</button><small>{templates.find(t=>t.id===c.template_id)?.meta_template_name||"Template unavailable"}</small></div></div><div><Status status={c.status}/></div><div className="source-added">{new Date(c.created_at).toLocaleDateString()}</div><div className="row-actions"><button className="secondary-button compact" onClick={()=>void openCampaign(c)}>Details</button>{isAdmin&&["draft","paused","running"].includes(c.status)&&<button className="secondary-button compact" aria-label={`${c.status==="running"?"Continue":"Send"} campaign batch: ${c.name}`} onClick={()=>void launchCampaign(c.id)} disabled={busy}>{c.status==="running"?"Continue batch":"Send batch"} <ArrowUpRight size={13}/></button>}</div></div>)}</div>
       </section>}
       {view === "Inbox" && <section className="content inbox-content">
         <div className="inbox-page-header"><div><h1>Inbox</h1><p>{metaStatus?.display_phone_number ? `WhatsApp conversations for ${metaStatus.display_phone_number}` : "Conversations with your WhatsApp contacts"}</p></div>{metaStatus?.enabled && <span className="inbox-number-pill"><span className="status-dot"/>{metaStatus.display_phone_number || "WhatsApp number connected"}</span>}</div>
         <div className={selectedConversation ? "inbox-layout has-selection" : "inbox-layout"}>
           <div className="conversation-list">
-            <div className="inbox-list-title"><strong>Conversations</strong><span>{filteredConversations.length} shown · {conversations.filter(c=>c.unread).length} unread</span></div>
+            <div className="inbox-list-title"><strong>Conversations</strong><span>{filteredConversations.length} shown · {unreadCount} unread</span></div>
             <div className="inbox-filters">
               <div className="search-field"><Search size={14}/><input aria-label="Search conversations" value={conversationSearch} onChange={e=>setConversationSearch(e.target.value)} placeholder="Search name or phone"/></div>
-              <select aria-label="Filter by status" value={conversationStatusFilter} onChange={e=>setConversationStatusFilter(e.target.value)}><option value="open">Open</option><option value="pending">Pending</option><option value="resolved">Resolved</option><option value="unread">Unread</option><option value="all">All statuses</option></select>
-              <select aria-label="Filter by assignee" value={conversationAssigneeFilter} onChange={e=>setConversationAssigneeFilter(e.target.value)}><option value="all">All assignments</option><option value="mine">Assigned to me</option><option value="unassigned">Unassigned</option>{teamMembers.map(member=><option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select>
+              <div className="inbox-filter-row">
+                <div className="inbox-status-tabs" role="group" aria-label="Filter by status">
+                  {[["open", "Open"], ["pending", "Pending"], ["resolved", "Resolved"], ["unread", "Unread"], ["all", "All"]].map(([value, label]) => (
+                    <button key={value} type="button" className={conversationStatusFilter === value ? "active" : ""} aria-pressed={conversationStatusFilter === value} onClick={() => setConversationStatusFilter(value)}>{label}</button>
+                  ))}
+                </div>
+                <select aria-label="Filter by assignee" value={conversationAssigneeFilter} onChange={e=>setConversationAssigneeFilter(e.target.value)}><option value="all">All assignments</option><option value="mine">Assigned to me</option><option value="unassigned">Unassigned</option>{teamMembers.map(member=><option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select>
+              </div>
             </div>
             {filteredConversations.length===0?<Empty icon={<MessageCircle size={22}/>} title={conversations.length?"No matching conversations":"No conversations yet"} text={conversations.length?"Try changing your search or filters.":metaStatus?.enabled?"New messages from your contacts will appear here.":"Connect your WhatsApp number to see messages here."}/>:filteredConversations.map(c=>{
               const assignee=teamMembers.find(member=>member.user_id===c.assigned_to);
               return <div className="conversation-row" key={c.id}>
                 <button className={selectedConversation===c.id?"conversation-item selected":"conversation-item"} onClick={()=>setSelectedConversation(c.id)}>
                   <div className="conversation-avatar">{(c.contacts?.display_name||c.contacts?.phone_e164||"?").slice(0,1).toUpperCase()}</div>
-                  <div className="conversation-summary"><strong>{c.contacts?.display_name||c.contacts?.phone_e164||"Unknown contact"}</strong><span>{c.status}{c.unread?" · UNREAD":""}</span><small>{c.last_message_at?new Date(c.last_message_at).toLocaleString():"No messages"}</small><small>{assignee?"With "+assignee.name:"Unassigned"}</small></div>
-                  {c.unread&&<i className="unread-indicator" aria-label="Unread"/>}
+                  <div className="conversation-summary">
+                    <div className="conversation-summary-top"><strong>{c.contacts?.display_name||c.contacts?.phone_e164||"Unknown contact"}</strong><span className="conversation-aside">{c.unread&&<i className="unread-indicator" aria-label="Unread"/>}<small className="conversation-time">{relativeTime(c.last_message_at)}</small></span></div>
+                    <div className="conversation-meta"><span className={"conversation-status is-"+c.status}>{c.status}{c.unread?" · unread":""}</span><small>{assignee?"With "+assignee.name:"Unassigned"}</small></div>
+                  </div>
                 </button>
               </div>;
             })}
           </div>
           <div className="chat-panel">
-            {!selectedConversation?<div className="empty-chat"><MessageCircle size={28}/><strong>Choose a conversation</strong><span>Select a contact to read and reply to their messages.</span></div>:<>
-              <div className="chat-header"><button type="button" className="inbox-back-button" onClick={()=>setSelectedConversation("")}><ArrowLeft size={16}/> Conversations</button><div className="chat-contact-heading"><strong>{conversations.find(c=>c.id===selectedConversation)?.contacts?.display_name||conversations.find(c=>c.id===selectedConversation)?.contacts?.phone_e164}</strong><span>{conversations.find(c=>c.id===selectedConversation)?.contacts?.phone_e164}</span></div>{(()=>{const c=conversations.find(x=>x.id===selectedConversation);return c?<div className="chat-head-actions">{(isAdmin||activeTenant?.role==="agent")&&<label className="assignment-control"><span>Assigned to</span><select aria-label="Assign conversation" value={c.assigned_to||""} onChange={e=>void assignConversation(c,e.target.value)}><option value="">Unassigned</option>{teamMembers.map(member=><option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>}{canAgent&&c.status!=="resolved"&&<button className="secondary-button compact" onClick={()=>void resolveConversation(c)}>Resolve</button>}</div>:null})()}</div>
-              <div className="chat-messages">{messages.map(m=><div key={m.id} className={m.is_note?"message-bubble internal-note":m.direction==="outbound"?"message-bubble outbound":"message-bubble inbound"}>{m.body&&<p>{m.body}</p>}{m.media_id&&m.message_type&&<MessageMedia mediaId={m.media_id} type={m.message_type} filename={m.filename} tenantId={tenantId}/>}<small>{m.is_note?"Internal note · "+(m.author_id===user?.id?"You":"Teammate"):m.actor_type}{m.status?" · "+m.status:""} · {new Date(m.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div>)}</div>
-              {canAgent?<><div className="composer-tabs"><button type="button" className={composerMode==="reply"?"active":""} onClick={()=>setComposerMode("reply")}>Reply</button><button type="button" className={composerMode==="note"?"active":""} onClick={()=>setComposerMode("note")}>Internal note</button></div><form className="chat-reply" onSubmit={sendReply}><textarea aria-label={composerMode==="note"?"Internal note":"Message reply"} value={replyText} onChange={e=>setReplyText(e.target.value)} placeholder={composerMode==="note"?"Write a note for your team…":"Reply within the 24-hour service window…"} required/><button className="primary-button" disabled={busy}>{composerMode==="note"?"Add note":"Send"} <Send size={15}/></button></form></>:<p className="read-only-inbox">Your account role has read-only inbox access.</p>}
+            {!selectedConversation?<div className="empty-chat"><div className="empty-chat-icon"><MessageCircle size={26}/></div><strong>Choose a conversation</strong><span>Select a contact to read and reply to their messages.</span><div className="empty-chat-tips"><span>Assign an owner</span><span>Reply inside 24h</span><span>Leave a private note</span></div></div>:<>
+              <div className="chat-header"><button type="button" className="inbox-back-button" onClick={()=>setSelectedConversation("")}><ArrowLeft size={16}/> Conversations</button><div className="chat-contact-heading"><strong>{conversations.find(c=>c.id===selectedConversation)?.contacts?.display_name||conversations.find(c=>c.id===selectedConversation)?.contacts?.phone_e164}</strong><span>{conversations.find(c=>c.id===selectedConversation)?.contacts?.phone_e164}</span></div>{(()=>{const c=conversations.find(x=>x.id===selectedConversation);return c?<div className="chat-head-actions"><span className={"chat-status is-"+c.status}>{c.status}</span>{(isAdmin||activeTenant?.role==="agent")&&<label className="assignment-control"><span>Assigned to</span><select aria-label="Assign conversation" value={c.assigned_to||""} onChange={e=>void assignConversation(c,e.target.value)}><option value="">Unassigned</option>{teamMembers.map(member=><option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>}{canAgent&&c.status!=="resolved"&&<button className="secondary-button compact" onClick={()=>void resolveConversation(c)}>Resolve</button>}</div>:null})()}</div>
+              <div className="chat-messages">{messages.length===0?<div className="chat-empty"><MessageCircle size={22}/><strong>No messages yet</strong><span>Incoming and outgoing WhatsApp messages will appear here.</span></div>:messages.map(m=><div key={m.id} className={m.is_note?"message-bubble internal-note":m.direction==="outbound"?"message-bubble outbound":"message-bubble inbound"}>{m.body&&<p>{m.body}</p>}{m.media_id&&m.message_type&&<MessageMedia mediaId={m.media_id} type={m.message_type} filename={m.filename} tenantId={tenantId}/>}<small>{m.is_note?"Internal note · "+(m.author_id===user?.id?"You":"Teammate"):m.actor_type}{m.status?" · "+m.status:""} · {new Date(m.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div>)}</div>
+              {canAgent?<><div className="composer-tabs"><button type="button" className={composerMode==="reply"?"active":""} onClick={()=>setComposerMode("reply")}>Reply</button><button type="button" className={composerMode==="note"?"active":""} onClick={()=>setComposerMode("note")}>Internal note</button></div><form className="chat-reply" onSubmit={sendReply}><div className="chat-reply-body"><textarea aria-label={composerMode==="note"?"Internal note":"Message reply"} value={replyText} onChange={e=>setReplyText(e.target.value)} placeholder={composerMode==="note"?"Write a note for your team…":"Reply within the 24-hour service window…"} required/><small className="composer-hint">{composerMode==="note"?"Private note · only your team can see this.":"Official Cloud API · replies require an open 24-hour service window."}<span>{replyText.length}</span></small></div><button className="primary-button" disabled={busy}>{composerMode==="note"?"Add note":"Send"} <Send size={15}/></button></form></>:<p className="read-only-inbox">Your account role has read-only inbox access.</p>}
             </>}
           </div>
         </div>
       </section>}
       {view === "Integrations" && <section className="content">
         <PageHeading eyebrow="WHATSAPP & DEVELOPER TOOLS" title="Integrations" description="Connect one WhatsApp Business number to this business account, then configure developer access only if needed."/>
-        <div className="integration-card">
+        <div className="integration-health">
+          {[
+            { label: "WhatsApp number", value: metaStatus?.enabled && metaStatus?.verified ? "Connected" : metaStatus?.verified ? "Verify token" : "Not connected", hint: metaStatus?.display_phone_number || "Official Meta Cloud API", tone: metaStatus?.enabled && metaStatus?.verified ? "success" : "warning", href: "#integration-connection" },
+            { label: "Approved templates", value: String(approvedTemplates.length), hint: `${templates.length} synced from Meta`, tone: approvedTemplates.length ? "success" : "warning", href: "#integration-connection" },
+            { label: "Active API keys", value: String(apiKeys.filter((key) => !key.revoked_at).length), hint: "Workspace-scoped server access", tone: apiKeys.some((key) => !key.revoked_at) ? "success" : "neutral", href: "#integration-api" },
+            { label: "Customer webhooks", value: String(webhooks.filter((webhook) => webhook.enabled).length), hint: `${webhooks.length} endpoint(s) configured`, tone: webhooks.some((webhook) => webhook.enabled) ? "success" : "neutral", href: "#integration-customer-webhooks" },
+          ].map((card) => (
+            <a className={"integration-health-card is-" + card.tone} href={card.href} key={card.label}>
+              <span className="integration-health-label">{card.label}</span>
+              <strong>{card.value}</strong>
+              <small>{card.hint}</small>
+            </a>
+          ))}
+        </div>
+        <div className="integration-card" id="integration-connection">
           <div className="integration-head"><div className="integration-logo"><MessageCircle size={24}/></div><div><strong>WhatsApp Business Platform</strong><p>Official Meta Cloud API</p></div><Status status={metaStatus?.enabled&&metaStatus?.verified?"connected":metaStatus?.verified?"verified":"not connected"}/></div>
           <div className="checklist">
             <SetupRow done={Boolean(metaStatus?.phone_number_id)} label="Business number details saved" detail="Phone Number ID and WABA ID are stored for this business account."/>
@@ -660,7 +967,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           </form>}
           {metaStatus?.display_phone_number&&<div className="connected-detail"><Check size={15}/> Connected number: {metaStatus.display_phone_number}{metaStatus.verified_name?" · "+metaStatus.verified_name:""}</div>}
         </div>
-        <div className="panel form-panel">
+        <div className="panel form-panel" id="integration-webhook">
           <h2>2. Configure Meta's webhook callback</h2>
           <p className="muted small">Meta requires a callback URL and verification token. Copy both values into your Meta app's Webhooks configuration. The token is stored as a hash and shown only when generated; it cannot be retrieved after leaving this screen.</p>
           <div className="field"><label>Callback URL</label><div className="copyable-value"><code>{window.location.origin.replace(/\/$/,"")+"/api/webhooks/whatsapp"}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(window.location.origin.replace(/\/$/,"")+"/api/webhooks/whatsapp","Callback URL")}>Copy URL</button></div></div>
@@ -674,7 +981,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           </ol>
           <p className="muted small">Webhook verification is separate from access-token verification. The platform's Meta App Secret must be configured in the server environment as <code>META_APP_SECRET</code> to validate POST signatures.</p>
         </div>
-        <div className="panel form-panel">
+        <div className="panel form-panel" id="integration-api">
           <h2>Developer API</h2><p className="muted small">Use business-account-scoped keys for server-to-server integrations. Never put API keys in browser code or public repositories.</p>
           {isAdmin&&<form onSubmit={createApiKey} className="api-key-create"><div className="field"><label>Key name</label><input value={apiKeyName} onChange={(e)=>setApiKeyName(e.target.value)} required minLength={2} maxLength={120}/></div><button className="primary-button" disabled={busy}><Plus size={15}/> Create API key</button></form>}
           {newApiKey&&<div className="new-key-box"><strong>Copy your new key now</strong><code>{newApiKey}</code><button className="secondary-button" onClick={()=>void copyApiKey()}>Copy key</button><small>It will disappear if you refresh or leave this screen.</small></div>}
@@ -685,10 +992,10 @@ X-API-Key: YOUR_MOBIWAVE_API_KEY
 Content-Type: application/json
 {"to":"+2547XXXXXXXX","template_name":"approved_template","language_code":"en","components":[]}`}</pre></div>
         </div>
-        <details className="panel form-panel">
+        <details className="panel form-panel" id="integration-customer-webhooks">
           <summary><strong>Advanced: customer event webhooks</strong><span className="muted small"> Send MobiWave events to your own HTTPS endpoints</span></summary>
           <p className="muted small">This is separate from the Meta callback above. Customer webhooks send signed MobiWave events to your server; they do not receive Meta's inbound WhatsApp webhook.</p>
-          {isAdmin&&<form className="webhook-create" onSubmit={createWebhook}><div className="form-grid"><div className="field"><label>Webhook name</label><input value={webhookName} onChange={(e)=>setWebhookName(e.target.value)} required minLength={2} maxLength={120}/></div><div className="field"><label>HTTPS endpoint URL</label><input type="url" value={webhookUrl} onChange={(e)=>setWebhookUrl(e.target.value)} required placeholder="https://api.yourbusiness.co.ke/hooks/mobiwave"/></div></div><div className="webhook-event-options">{[["message.inbound","Inbound message"],["message.status","Delivery status"],["message.outbound","Outbound message"],["campaign.completed","Campaign completed"],["knowledge.indexed","Knowledge indexed"],["conversation.updated","Conversation updated"]].map(([value,label])=><label key={value} className="checkbox-line"><input type="checkbox" checked={webhookEvents.includes(value)} onChange={(e)=>setWebhookEvents(current=>e.target.checked?[...current,value]:current.filter(item=>item!==value))}/>{label}</label>)}</div><div className="form-actions"><span className="muted small">HTTPS only · public host required</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add webhook</button></div></form>}
+          {isAdmin&&<form className="webhook-create" onSubmit={createWebhook}><div className="form-grid"><div className="field"><label>Webhook name</label><input value={webhookName} onChange={(e)=>setWebhookName(e.target.value)} required minLength={2} maxLength={120}/></div><div className="field"><label>HTTPS endpoint URL</label><input type="url" value={webhookUrl} onChange={(e)=>setWebhookUrl(e.target.value)} required placeholder="https://api.yourbusiness.co.ke/hooks/mobiwave"/></div></div><div className="webhook-event-options">{[["message.inbound","Inbound message"],["message.status","Delivery status"],["message.outbound","Outbound message"],["campaign.completed","Campaign completed"],["conversation.updated","Conversation updated"]].map(([value,label])=><label key={value} className="checkbox-line"><input type="checkbox" checked={webhookEvents.includes(value)} onChange={(e)=>setWebhookEvents(current=>e.target.checked?[...current,value]:current.filter(item=>item!==value))}/>{label}</label>)}</div><div className="form-actions"><span className="muted small">HTTPS only · public host required</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add webhook</button></div></form>}
           {newWebhookSecret&&<div className="new-key-box"><strong>Copy your webhook signing secret now</strong><code>{newWebhookSecret}</code><button className="secondary-button" onClick={()=>void copyWebhookSecret()}>Copy secret</button><small>Use this secret to verify X-MobiWave-Signature. It cannot be retrieved again.</small></div>}
           <div className="api-key-list">{webhooks.length===0?<p className="muted small">No customer webhooks configured.</p>:webhooks.map(h=><div className="api-key-row" key={h.id}><div><strong>{h.name}</strong><code>{h.endpoint_url}</code><small>Events: {h.events.join(", ")}</small>{h.last_error&&<small className="error-text">{h.last_error}</small>}{h.last_delivery_at&&<small>Last delivery: {new Date(h.last_delivery_at).toLocaleString()}</small>}</div><Status status={h.enabled?(h.last_status||"active"):"disabled"}/>{isAdmin&&h.enabled&&<button className="secondary-button compact" onClick={()=>void testWebhook(h)} disabled={busy}>Send test</button>}{isAdmin&&<button className="secondary-button compact" onClick={()=>void manageWebhook(h,h.enabled?"disable":"enable")}>{h.enabled?"Disable":"Enable"}</button>}{isAdmin&&<button className="icon-button" onClick={()=>void manageWebhook(h,"delete")} aria-label="Delete webhook"><Trash2 size={15}/></button>}</div>)}</div>
           <div className="section-header"><div><h3>Recent delivery history</h3><p>Latest 50 attempts across this business account.</p></div></div>
@@ -696,15 +1003,114 @@ Content-Type: application/json
           <div className="muted small">Signatures use HMAC-SHA256 over the exact raw JSON body. Use X-MobiWave-Delivery for idempotency.</div>
         </details>
       </section>}
-      {view === "Profile" && <section className="content"><PageHeading eyebrow="ACCOUNT" title="Your profile" description="Manage your profile name and update your sign-in password."/><form className="panel form-panel profile-form" onSubmit={saveProfile}><h2>Personal details</h2><div className="profile-summary"><div className="profile-avatar large">{(profileName.trim() || user.email || "U").slice(0,1).toUpperCase()}</div><div><strong>{profileName.trim() || "Workspace member"}</strong><span>{activeTenant?.role ?? "Member"} · {activeTenant?.name ?? "No workspace"}</span></div></div><div className="field"><label>Full name</label><input value={profileName} onChange={(e)=>setProfileName(e.target.value)} maxLength={120} placeholder="Your name"/></div><div className="field"><label>Email address</label><input value={user.email ?? ""} readOnly aria-readonly="true"/><small className="muted small">Your sign-in email is managed by your authentication account.</small></div><div className="field"><label>New password <span className="muted small">(optional)</span></label><input type="password" value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} minLength={8} autoComplete="new-password" placeholder="At least 8 characters"/></div><div className="form-actions"><span className="muted small">Leave the password blank to keep it unchanged.</span><button className="primary-button" disabled={busy}>{busy?"Saving…":"Save profile"}</button></div></form><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Account security</strong><p>Use a unique password. Your profile is stored with your authenticated account and does not change workspace permissions.</p></div></div></section>}
-      {view === "Settings" && <section className="content"><PageHeading eyebrow="PREFERENCES" title="Settings" description="Review your business account and account access."/><div className="panel settings-panel"><div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Active business account</strong><p>{activeTenant?.name ?? "No business account selected"} · Account ID and role are managed by business account membership.</p></div><span className="fixed-setting">{activeTenant?.role ?? "Member"}</span></div><div className="setting-row"><div className="setting-icon"><MessageCircle size={19}/></div><div className="setting-copy"><strong>WhatsApp connection</strong><p>{metaStatus?.enabled ? "Meta Cloud API is enabled for this business account." : "Meta Cloud API is not enabled yet. Open Integrations to configure and verify it."}</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Integrations")}>Open integrations</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Business account access</strong><p>Your current role is {activeTenant?.role ?? "Member"}. Administrative actions are restricted to business account owners and admins.</p></div><span className="fixed-setting">{isAdmin?"Admin access":"Member access"}</span></div><div className="setting-row"><div className="setting-icon"><LogOut size={19}/></div><div className="setting-copy"><strong>Sign out</strong><p>End this session on the current browser.</p></div><button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button></div></div><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Privacy and data separation</strong><p>Business account data is kept separate. Use Profile to update your account details; administrative actions are restricted by role.</p></div></div></section>}
+      {view === "Profile" && <section className="content"><PageHeading eyebrow="ACCOUNT" title="Your profile" description="Manage your profile name and update your sign-in password."/>
+        <div className="account-banner">
+          <div className="account-banner-avatar">{(profileName.trim() || user.email || "U").slice(0,1).toUpperCase()}</div>
+          <div className="account-banner-copy"><strong>{profileName.trim() || "Workspace member"}</strong><span>{user.email}</span></div>
+          <div className="account-banner-meta"><span className="account-role">{activeTenant?.role ?? "Member"}</span><span>{activeTenant?.name ?? "No workspace"}</span></div>
+          <button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button>
+        </div>
+        <form className="panel form-panel profile-form" onSubmit={saveProfile}><h2>Personal details</h2><div className="field"><label>Full name</label><input value={profileName} onChange={(e)=>setProfileName(e.target.value)} maxLength={120} placeholder="Your name"/></div><div className="field"><label>Email address</label><input value={user.email ?? ""} readOnly aria-readonly="true"/><small className="muted small">Your sign-in email is managed by your authentication account.</small></div><div className="field"><label>New password <span className="muted small">(optional)</span></label><input type="password" value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} minLength={8} autoComplete="new-password" placeholder="At least 8 characters"/></div><div className="form-actions"><span className="muted small">Leave the password blank to keep it unchanged.</span><button className="primary-button" disabled={busy}>{busy?"Saving…":"Save profile"}</button></div></form><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Account security</strong><p>Use a unique password. Your profile is stored with your authenticated account and does not change workspace permissions.</p></div></div></section>}
+      {view === "Settings" && <section className="content"><PageHeading eyebrow="PREFERENCES" title="Settings" description="Review your business account and account access."/><div className="panel settings-panel"><div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Active business account</strong><p>{activeTenant?.name ?? "No business account selected"} · Account ID and role are managed by business account membership.</p></div><span className="fixed-setting">{activeTenant?.role ?? "Member"}</span></div><div className="setting-row"><div className="setting-icon"><MessageCircle size={19}/></div><div className="setting-copy"><strong>WhatsApp connection</strong><p>{metaStatus?.enabled ? "Meta Cloud API is enabled for this business account." : "Meta Cloud API is not enabled yet. Open Integrations to configure and verify it."}</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Integrations")}>Open integrations</button></div>
+          <div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Team access</strong><p>{teamMembers.length} member(s) can access this business account. Roles are managed by workspace membership.</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Profile")}>View profile</button></div>
+          <div className="setting-row"><div className="setting-icon"><Zap size={19}/></div><div className="setting-copy"><strong>Messaging readiness</strong><p>{approvedTemplates.length} approved template(s) · {webhooks.filter((webhook)=>webhook.enabled).length} customer webhook(s) enabled.</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Campaigns")}>Open campaigns</button></div>
+          <div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Customer-service window</strong><p>Free-form replies are allowed inside Meta's 24-hour customer-service window. Outside it, use an approved template.</p></div><span className="fixed-setting">Policy</span></div>
+          <div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Business account access</strong><p>Your current role is {activeTenant?.role ?? "Member"}. Administrative actions are restricted to business account owners and admins.</p></div><span className="fixed-setting">{isAdmin?"Admin access":"Member access"}</span></div><div className="setting-row"><div className="setting-icon"><LogOut size={19}/></div><div className="setting-copy"><strong>Sign out</strong><p>End this session on the current browser.</p></div><button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button></div></div><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Privacy and data separation</strong><p>Business account data is kept separate. Use Profile to update your account details; administrative actions are restricted by role.</p></div></div></section>}
       {loading&&<div className="loading-bar"><LoaderCircle className="spin" size={14}/> Loading workspace data…</div>}
       {notice&&<div className="toast" role="status"><div className="toast-icon"><Check size={15}/></div><span>{notice}</span><button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
       <footer className="footer"><span>© 2026 MobiWave Innovations Ltd</span><span><span className="footer-dot"/> {metaStatus?.enabled?"Meta API connected":"Meta not connected"}</span></footer>
     </main>
+    {selectedCampaign && (() => {
+      const campaign = selectedCampaign;
+      const template = templates.find((item) => item.id === campaign.template_id);
+      const preview = campaignPreview(campaign, template);
+      const templateApproved = template?.meta_status === "approved";
+      const canLaunch = isAdmin && ["draft", "paused", "running"].includes(campaign.status);
+      const queuedRecipients = campaignCounts?.queued ?? 0;
+      return (
+        <div className="modal-backdrop" role="presentation" onClick={() => setSelectedCampaign(null)}>
+          <div className="modal-panel campaign-modal" role="dialog" aria-modal="true" aria-labelledby="campaign-modal-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div className="modal-head-copy">
+                <span className="eyebrow"><Zap size={13}/> CAMPAIGN DETAIL</span>
+                <h2 id="campaign-modal-title">{campaign.name}</h2>
+                <p>{template ? `${template.meta_template_name} · ${template.language_code}` : "Template unavailable"}</p>
+              </div>
+              <div className="modal-head-actions">
+                <Status status={campaign.status}/>
+                <button type="button" className="icon-btn" aria-label="Close campaign details" onClick={() => setSelectedCampaign(null)}><X size={17}/></button>
+              </div>
+            </div>
+            <div className="campaign-detail-stats">
+              {[
+                ["Recipients", campaignCountsLoading ? "…" : String(campaignCounts?.total ?? 0)],
+                ["Queued", campaignCountsLoading ? "…" : String(campaignCounts?.queued ?? 0)],
+                ["Failed", campaignCountsLoading ? "…" : String(campaignCounts?.failed ?? 0)],
+              ].map(([label, value]) => (
+                <div className="campaign-detail-stat" key={label}><span>{label}</span><strong>{value}</strong></div>
+              ))}
+            </div>
+            <div className="campaign-detail-section">
+              <div className="section-header"><div><h3>Template preview</h3><p>Values stored with this campaign.</p></div></div>
+              {preview.length ? preview.map((part, index) => (
+                <div className="campaign-preview-part" key={part.label + index}><small>{part.label}</small><p>{part.text}</p></div>
+              )) : <p className="muted small">This template has no variable parameters to preview.</p>}
+            </div>
+            <div className="campaign-detail-section">
+              <h3>Pre-launch safety</h3>
+              <div className="campaign-safety-list">
+                <div className={templateApproved ? "safety-row done" : "safety-row blocked"}>
+                  <span className="safety-mark">{templateApproved ? <Check size={13}/> : <X size={13}/>}</span>
+                  <div><strong>Meta-approved template</strong><small>{templateApproved ? "Approved and ready to send." : "This template is not approved for sending."}</small></div>
+                </div>
+                <div className="safety-row done"><span className="safety-mark"><Check size={13}/></span><div><strong>Consent re-checked at send</strong><small>Opted-out contacts are skipped and never sent to.</small></div></div>
+                <div className="safety-row done"><span className="safety-mark"><Check size={13}/></span><div><strong>Batch capped at 10</strong><small>Each launch claims and sends at most ten recipients.</small></div></div>
+                <div className="safety-row done"><span className="safety-mark"><Check size={13}/></span><div><strong>Unknown outcomes held</strong><small>Unconfirmed sends are marked failed for review and never retried automatically.</small></div></div>
+              </div>
+            </div>
+            {campaignCounts && campaignCounts.failed > 0 && (
+              <div className="campaign-detail-section">
+                <div className="section-header">
+                  <div>
+                    <h3>Failed recipients</h3>
+                    <p>Review the outcome in WhatsApp before re-queueing. MobiWave does not retry unknown results.</p>
+                  </div>
+                </div>
+                {campaignFailures.length ? (
+                  <div className="failure-list">
+                    {campaignFailures.map((failure) => (
+                      <div className="failure-row" key={failure.id}>
+                        <div className="failure-who">
+                          <strong>{failure.contacts?.display_name || failure.contacts?.phone_e164 || "Contact"}</strong>
+                          <small>{failure.contacts?.phone_e164}</small>
+                        </div>
+                        <div className="failure-why">
+                          <span className="failure-code">{failure.error_code || "unknown_outcome"}</span>
+                          <small>{failure.error_detail || "The outcome was not confirmed."}</small>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="inline-notice" role="status">This campaign has {campaignCounts.failed} failed recipient(s). Open the recipient record in WhatsApp before re-queueing.</div>
+                )}
+              </div>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="secondary-button" onClick={() => setSelectedCampaign(null)}>Close</button>
+              {canLaunch && (
+                <>
+                  {!campaignCountsLoading && campaignCounts && queuedRecipients === 0 && <span className="modal-action-hint">No recipients are currently queued.</span>}
+                  <button type="button" className="primary-button" onClick={() => void launchCampaign(campaign.id)} disabled={busy || campaignCountsLoading || queuedRecipients === 0}>{campaign.status === "running" ? "Continue batch" : "Send next batch"} <ArrowUpRight size={14}/></button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    })()}
   </div>;
 }
-function Brand() { return <div className="brand"><div className="brand-mark"><MessageCircle size={21} strokeWidth={2.5}/></div><div><strong>MobiWave</strong><span>WHATSAPP PLATFORM</span></div></div>; }
 function PageHeading({eyebrow,title,description}:{eyebrow:string;title:string;description:string}) { return <div className="page-heading"><div><div className="eyebrow"><Activity size={14}/>{eyebrow}</div><h1>{title}</h1><p className="page-description">{description}</p></div></div>; }
 function Status({status}:{status:string}) { const s=status.toLowerCase(); const tone=["approved","indexed","completed","delivered","read","connected","opted_in","sent","verified"].includes(s)?"success":["failed","rejected","opted_out","paused"].includes(s)?"danger":["needs_review","suggested","pending","running","queued","unknown","not connected","draft"].includes(s)?"warning":"neutral"; return <span className={"status-pill "+tone}><span/>{status.replaceAll("_"," ")}</span>; }
 function Empty({icon,title,text}:{icon:ReactNode;title:string;text:string}) { return <div className="empty-state">{icon}<strong>{title}</strong><span>{text}</span></div>; }

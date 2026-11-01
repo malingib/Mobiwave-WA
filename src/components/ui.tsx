@@ -165,8 +165,8 @@ export function WidgetCard({
   children: ReactNode;
 }) {
   return (
-    <section className={"panel flex flex-col " + className}>
-      <header className="flex items-start justify-between gap-3 border-b border-hairline-strong px-4 py-3">
+    <section className={"panel flex min-w-0 flex-col " + className}>
+      <header className="flex flex-wrap items-start justify-between gap-2 border-b border-hairline-strong px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-[13.5px] font-semibold text-text">{title}</h2>
           {subtitle && <p className="mt-0.5 truncate text-[11.5px] text-text-muted">{subtitle}</p>}

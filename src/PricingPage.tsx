@@ -35,7 +35,7 @@ const rateRows: [string, string, string, string][] = [
 
 export default function PricingPage() {
   return (
-    <div className="min-h-screen bg-canvas font-sans text-ink-900">
+    <div className="marketing-theme min-h-screen bg-canvas font-sans text-ink-900">
       <MarketingNav items={[{ label: "Features", href: "/#features" }, { label: "Pricing", href: "/pricing" }, { label: "FAQs", href: "/#faq" }]} current="Pricing" />
 
       <main>

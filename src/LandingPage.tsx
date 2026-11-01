@@ -35,6 +35,8 @@ const faqs: [string, React.ReactNode][] = [
   ["How much does WhatsApp Business API cost in Kenya?", <>Costs can include Meta's message charges and any platform or implementation fees. The final amount depends on message category, destination and your setup. Review the <a className="font-semibold text-brand-700 hover:text-brand-800" href="/pricing">MobiWave WA pricing page</a> and contact the team for details rather than assuming a single flat WhatsApp rate.</>],
   ["Can I connect MobiWave WA to my existing systems?", "Supported integrations include workspace-scoped API keys and signed webhooks. Check the available integration settings and documentation before planning a specific connection."],
   ["Can I use unofficial WhatsApp QR tools?", "No. MobiWave WA is built around Meta's official WhatsApp Cloud API. It does not use unofficial WhatsApp Web engines or QR-pairing automation."],
+  ["How are opt-outs handled?", "Consent is re-checked immediately before each campaign send. Contacts with an opt-out on record are skipped automatically, and the consent history keeps the previous status, source and timestamp."],
+  ["What happens if a campaign send result is unknown?", "A claimed send with an unknown result is marked failed for review and is not retried automatically, because Meta may already have accepted the message. Check the outcome in WhatsApp before re-queueing the recipient."],
 ];
 
 const chartBars = [42, 58, 36, 71, 64, 88, 76, 95, 68, 82, 74, 90];
@@ -139,7 +141,7 @@ function ProductPreview() {
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-canvas font-sans text-ink-900">
+    <div className="marketing-theme min-h-screen bg-canvas font-sans text-ink-900">
       <MarketingNav />
 
       <main>
@@ -180,8 +182,8 @@ export default function LandingPage() {
           <div className="grid grid-cols-2 gap-px border-x border-ink-200 bg-ink-200 sm:grid-cols-4">
             {[
               ["1,000", "free service replies / month"],
-              ["6", "message categories handled"],
-              ["24/7", "shared inbox coverage"],
+              ["24h", "customer-service reply window"],
+              ["10", "recipients per campaign batch"],
               ["100%", "official Cloud API"],
             ].map(([value, label]) => (
               <div key={label} className="bg-surface px-4 py-5">
@@ -211,6 +213,68 @@ export default function LandingPage() {
                 </span>
               </div>
             ))}
+          </div>
+        </section>
+
+        {/* Consent and safety ------------------------------------------- */}
+        <section className="border-b border-ink-200 bg-surface">
+          <div className="mx-auto grid max-w-[1180px] items-center gap-10 px-5 py-16 lg:grid-cols-2 lg:px-8">
+            <Reveal>
+              <Kicker>Consent and delivery safety</Kicker>
+              <h2 className="mt-4 font-display text-[clamp(1.7rem,2.8vw,2.3rem)] font-semibold leading-[1.12] tracking-[-0.03em]">
+                Outbound that respects <span className="text-brand-600">the record.</span>
+              </h2>
+              <p className="mt-3.5 max-w-lg text-[14.5px] leading-relaxed text-ink-500">
+                Campaigns only use contacts with recorded opt-in and Meta-approved templates. Consent is checked again immediately before each send, and opted-out contacts are skipped.
+              </p>
+              <ul className="mt-6 space-y-3">
+                {[
+                  ["Recorded opt-in", "Every consent change keeps its source and timestamp."],
+                  ["Approved templates", "Outbound campaigns use templates approved in Meta."],
+                  ["Batches of ten", "Each launch processes at most ten recipients."],
+                  ["Unknown outcomes held", "Unconfirmed sends are marked for review and never retried automatically."],
+                ].map(([title, text]) => (
+                  <li key={title} className="flex items-start gap-3">
+                    <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-brand-50 text-brand-700 ring-1 ring-brand-200">
+                      <CircleCheck size={12} />
+                    </span>
+                    <span>
+                      <strong className="block text-[13px] font-semibold">{title}</strong>
+                      <span className="mt-0.5 block text-[12.5px] leading-relaxed text-ink-500">{text}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Reveal>
+            <Reveal delay={100}>
+              <div className="overflow-hidden rounded-xl border border-ink-200 bg-surface shadow-raised">
+                <div className="flex items-center justify-between border-b border-ink-200 bg-ink-50 px-4 py-3">
+                  <strong className="text-[12px] font-semibold text-ink-800">Consent ledger</strong>
+                  <span className="rounded border border-brand-200 bg-brand-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-brand-800">Sample</span>
+                </div>
+                <div className="divide-y divide-ink-100">
+                  {[
+                    { initials: "AC", name: "Amina Customer", phone: "+254 7•• ••• 001", status: "Opted in", active: true },
+                    { initials: "BO", name: "Brian Otieno", phone: "+254 7•• ••• 022", status: "Opted in", active: true },
+                    { initials: "DK", name: "David Kamau", phone: "+254 7•• ••• 044", status: "Opted out", active: false },
+                  ].map((row) => (
+                    <div key={row.name} className="flex items-center gap-3 px-4 py-3">
+                      <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-brand-100 text-[10px] font-bold text-brand-800">{row.initials}</span>
+                      <span className="min-w-0 flex-1">
+                        <strong className="block truncate text-[12px] font-medium text-ink-900">{row.name}</strong>
+                        <span className="block text-[11px] text-ink-400">{row.phone}</span>
+                      </span>
+                      <span className={"inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold " + (row.active ? "border-brand-200 bg-brand-50 text-brand-800" : "border-[#fecdca] bg-[#fef3f2] text-[#b42318]")}>
+                        <span className={"h-1.5 w-1.5 rounded-full " + (row.active ? "bg-brand-500" : "bg-[#d92d20]")} />{row.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="border-t border-ink-200 bg-canvas px-4 py-3 text-[11px] leading-relaxed text-ink-500">
+                  Opt-outs are suppressed from campaign delivery automatically. Consent history is kept per contact.
+                </div>
+              </div>
+            </Reveal>
           </div>
         </section>
 

@@ -166,7 +166,7 @@ export default function Overview({
           title="Message volume"
           subtitle="Inbound and outbound messages per day"
           action={
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="flex rounded-md border border-hairline-strong bg-raised p-0.5" role="group" aria-label="Chart range">
                 {([7, 14] as const).map((value) => (
                   <button
@@ -198,7 +198,7 @@ export default function Overview({
           ) : (
             <div className="h-[236px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={visibleMessages} margin={{ top: 6, right: 4, bottom: 0, left: -20 }}>
+                <AreaChart data={visibleMessages} margin={{ top: 6, right: 4, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="fillInbound" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={SERIES_1} stopOpacity={0.2} />
@@ -211,7 +211,7 @@ export default function Overview({
                   </defs>
                   <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: AXIS, fontSize: 10.5 }} dy={4} />
-                  <YAxis tickLine={false} axisLine={false} tick={{ fill: AXIS, fontSize: 10.5 }} allowDecimals={false} width={36} />
+                  <YAxis tickLine={false} axisLine={false} tick={{ fill: AXIS, fontSize: 10.5 }} allowDecimals={false} width={40} />
                   <Tooltip content={<ChartTooltip />} cursor={{ stroke: GRID }} />
                   <Area type="monotone" dataKey="inbound" name="Inbound" stroke={SERIES_1} strokeWidth={1.8} fill="url(#fillInbound)" />
                   <Area type="monotone" dataKey="outbound" name="Outbound" stroke={SERIES_2} strokeWidth={1.8} fill="url(#fillOutbound)" />
@@ -234,10 +234,10 @@ export default function Overview({
             </div>
           ) : (
             <div className="flex h-[236px] flex-col">
-              <div className="relative min-h-0 flex-1">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="relative h-[180px]">
+                <ResponsiveContainer width="100%" height={180} debounce={50}>
                   <PieChart>
-                    <Pie data={stats.statusMix} dataKey="value" nameKey="name" innerRadius={56} outerRadius={78} paddingAngle={2} stroke="none">
+                    <Pie data={stats.statusMix} dataKey="value" nameKey="name" innerRadius={52} outerRadius={72} paddingAngle={2} stroke="none" isAnimationActive={false}>
                       {stats.statusMix.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
                     </Pie>
                     <Tooltip content={<ChartTooltip />} />
@@ -320,10 +320,10 @@ export default function Overview({
             ) : (
               <div className="h-[148px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={stats.consentMix} margin={{ top: 4, right: 4, bottom: 0, left: -24 }} barCategoryGap={20}>
+                  <BarChart data={stats.consentMix} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barCategoryGap={20}>
                     <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: AXIS, fontSize: 10.5 }} dy={4} />
-                    <YAxis tickLine={false} axisLine={false} tick={{ fill: AXIS, fontSize: 10.5 }} allowDecimals={false} width={32} />
+                    <YAxis tickLine={false} axisLine={false} tick={{ fill: AXIS, fontSize: 10.5 }} allowDecimals={false} width={36} />
                     <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
                     <Bar dataKey="value" name="Contacts" radius={[5, 5, 0, 0]}>
                       {stats.consentMix.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}

@@ -34,6 +34,7 @@ async function json(route: Route, body: unknown, status = 200) {
       "access-control-allow-origin": "*",
       "access-control-allow-headers": "apikey, authorization, content-type, x-client-info, prefer, accept, range, content-range",
       "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
+      "access-control-expose-headers": "content-range",
       "content-range": "0-0/1",
     },
     body: JSON.stringify(body),
@@ -115,7 +116,7 @@ async function signIn(page: Page) {
   await page.getByLabel("Work email").fill(user.email);
   await page.getByRole("textbox", { name: "Password" }).fill("e2e-password-123");
   await page.getByRole("button", { name: /sign in securely/i }).click();
-  await expect(page.getByRole("heading", { name: /Welcome back/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await expect(page.locator(".breadcrumbs").getByText("Demo Business")).toBeVisible();
 }
 

@@ -27,7 +27,7 @@ export function ErrorPage({ kind = "error", title, description }: ErrorPageProps
   }[kind];
 
   return (
-    <main className="flex min-h-screen flex-col bg-canvas font-sans">
+    <main className="marketing-theme flex min-h-screen flex-col bg-canvas font-sans">
       <div className="flex items-center justify-between gap-4 px-5 py-5 sm:px-8">
         <a className="flex items-center gap-2.5" href="/" aria-label="MobiWave WA home">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-brand">

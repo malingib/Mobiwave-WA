@@ -27,13 +27,35 @@ const contacts = [
 ];
 
 const templates = [
-  { id: "t1", meta_template_name: "order_update", language_code: "en", category: "UTILITY", meta_status: "approved", components: [] },
+  {
+    id: "t1",
+    meta_template_name: "order_update",
+    language_code: "en",
+    category: "UTILITY",
+    meta_status: "approved",
+    components: [
+      { type: "HEADER", format: "TEXT", text: "Service update" },
+      { type: "BODY", text: "Hi {{1}}, your service update is ready. Reference {{2}}." },
+      { type: "FOOTER", text: "MobiWave" },
+      { type: "BUTTONS", buttons: [{ type: "URL", text: "View update", url: "https://example.com/updates/{{1}}" }] },
+    ],
+  },
   { id: "t2", meta_template_name: "appointment_reminder", language_code: "en", category: "UTILITY", meta_status: "approved", components: [] },
   { id: "t3", meta_template_name: "weekend_offer", language_code: "en", category: "MARKETING", meta_status: "pending", components: [] },
 ];
 
 const campaigns = [
-  { id: "k1", name: "October service update", status: "running", created_at: "2026-10-24T10:00:00.000Z", template_id: "t1" },
+  {
+    id: "k1",
+    name: "October service update",
+    status: "running",
+    created_at: "2026-10-24T10:00:00.000Z",
+    template_id: "t1",
+    template_parameters: [
+      { type: "body", parameters: [{ type: "text", text: "Amina" }, { type: "text", text: "ORD-1042" }] },
+      { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: "ORD-1042" }] },
+    ],
+  },
   { id: "k2", name: "Appointment reminders", status: "draft", created_at: "2026-10-26T10:00:00.000Z", template_id: "t2" },
 ];
 
@@ -64,6 +86,7 @@ async function json(route: Route, body: unknown, total = 1) {
       "access-control-allow-origin": "*",
       "access-control-allow-headers": "apikey, authorization, content-type, x-client-info, prefer, accept, range, content-range",
       "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
+      "access-control-expose-headers": "content-range",
       "content-range": `0-${Math.max(total - 1, 0)}/${total}`,
     },
     body: JSON.stringify(body),
@@ -93,6 +116,19 @@ async function mockBackend(page: Page) {
     if (table === "contacts") return json(route, contacts, contacts.length);
     if (table === "wa_templates") return json(route, templates, templates.length);
     if (table === "campaigns") return json(route, campaigns, campaigns.length);
+    if (table === "campaign_recipients") {
+      const status = url.searchParams.get("status")?.replace("eq.", "");
+      const total = status === "failed" ? 1 : status === "queued" ? 4 : 12;
+      if (status === "failed") {
+        return json(route, [{
+          id: "recipient-failed-1",
+          error_code: "send_outcome_unknown",
+          error_detail: "The request failed before MobiWave could confirm Meta's response.",
+          contacts: { display_name: "David Kamau", phone_e164: "+254733000444" },
+        }], total);
+      }
+      return json(route, [], total);
+    }
     if (table === "meta_integrations") return json(route, metaIntegration);
     if (table === "messages") {
       return json(route, url.searchParams.has("conversation_id") ? [] : messageRows(), 0);
@@ -113,7 +149,7 @@ async function signIn(page: Page) {
   await page.getByLabel("Work email").fill(user.email);
   await page.getByRole("textbox", { name: "Password" }).fill("e2e-password-123");
   await page.getByRole("button", { name: /sign in securely/i }).click();
-  await page.getByRole("heading", { name: /Welcome back/ }).waitFor();
+  await page.getByRole("heading", { name: "Overview", exact: true }).waitFor();
   await page.waitForTimeout(1200);
 }
 
@@ -147,9 +183,28 @@ test("shots dashboard", async ({ page }) => {
   await page.locator("#primary-navigation").getByRole("button", { name: "Inbox", exact: true }).click();
   await page.waitForTimeout(700);
   await page.screenshot({ path: "/tmp/opencode/shots/inbox.png" });
+  await page.getByRole("button", { name: /Amina Customer/ }).click();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: "/tmp/opencode/shots/chat.png" });
   await page.locator("#primary-navigation").getByRole("button", { name: "Contacts", exact: true }).click();
   await page.waitForTimeout(500);
   await page.screenshot({ path: "/tmp/opencode/shots/contacts.png" });
+  await page.locator("#primary-navigation").getByRole("button", { name: "Campaigns", exact: true }).click();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: "/tmp/opencode/shots/campaigns.png" });
+  await page.getByRole("button", { name: "Details" }).first().click();
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: "/tmp/opencode/shots/campaign-detail.png" });
+  await page.keyboard.press("Escape");
+  await page.locator("#primary-navigation").getByRole("button", { name: "Integrations", exact: true }).click();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: "/tmp/opencode/shots/integrations.png" });
+  await page.locator("#primary-navigation").getByRole("button", { name: "Profile", exact: true }).click();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "/tmp/opencode/shots/profile.png" });
+  await page.locator("#primary-navigation").getByRole("button", { name: "Settings", exact: true }).click();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "/tmp/opencode/shots/settings.png" });
 });
 
 test("shots mobile dashboard", async ({ page }) => {
@@ -159,6 +214,11 @@ test("shots mobile dashboard", async ({ page }) => {
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page.waitForTimeout(500);
   await page.screenshot({ path: "/tmp/opencode/shots/nav-mobile.png" });
+  await page.locator("#primary-navigation").getByRole("button", { name: "Campaigns", exact: true }).click();
+  await page.waitForTimeout(500);
+  await page.getByRole("button", { name: "Details" }).first().click();
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: "/tmp/opencode/shots/campaign-detail-mobile.png" });
 });
 
 test("shots pricing", async ({ page }) => {
