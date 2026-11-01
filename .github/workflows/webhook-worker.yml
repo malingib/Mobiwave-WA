@@ -41,3 +41,17 @@ jobs:
             --header "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
             --header "X-Internal-Token: ${INTERNAL_FUNCTION_TOKEN}" \
             --data '{}'
+      - name: Replay due Meta webhook inbox events
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          INTERNAL_FUNCTION_TOKEN: ${{ secrets.INTERNAL_FUNCTION_TOKEN }}
+        run: |
+          set -eu
+          base="${SUPABASE_URL%/}"
+          curl --silent --show-error --fail-with-body --max-time 45 \
+            --request POST "${base}/functions/v1/meta-webhook-worker" \
+            --header "Content-Type: application/json" \
+            --header "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
+            --header "X-Internal-Token: ${INTERNAL_FUNCTION_TOKEN}" \
+            --data '{}'

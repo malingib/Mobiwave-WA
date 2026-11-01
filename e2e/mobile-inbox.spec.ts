@@ -44,6 +44,7 @@ async function mockBackend(page: Page, role = "admin") {
   const createdNotes: Array<Record<string, unknown>> = [];
   const sentMessages: Array<Record<string, unknown>> = [];
   const createdContacts: Array<Record<string, unknown>> = [];
+  let alertRead = false;
 
   await page.route("**/auth/v1/**", async (route) => {
     const request = route.request();
@@ -98,6 +99,11 @@ async function mockBackend(page: Page, role = "admin") {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (request.method() === "OPTIONS") return json(route, {}, 200);
+    if (path.endsWith("/notification-center")) {
+      const payload = request.postDataJSON() as Record<string, unknown>;
+      if (payload.action === "mark_read" || payload.action === "mark_all_read") alertRead = true;
+      return json(route, { notifications: [{ id: "alert-1", category: "send_error", severity: "error", title: "WhatsApp delivery failed", body: "Meta could not deliver this message.", metadata: { error_code: "131026" }, created_at: "2026-10-31T10:00:00.000Z", read_at: alertRead ? "2026-10-31T10:01:00.000Z" : null }], unread_count: alertRead ? 0 : 1 });
+    }
     if (path.endsWith("/team-members")) {
       return json(route, { members: [{ user_id: user.id, role, name: "E2E Agent", email: user.email }] });
     }
@@ -203,17 +209,49 @@ test("reply action calls the mocked Meta-send integration", async ({ page }, tes
   await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
   await page.locator('textarea[aria-label="Message reply"]').fill("Thanks, we will check this for you.");
   await page.locator(".chat-reply").getByRole("button", { name: /^Send/ }).click({ timeout: 7000 });
-  await expect(page.getByText("Message submitted to Meta.")).toBeVisible({ timeout: 7000 });
+  await expect(page.getByText("Message accepted by Meta. Delivery confirmation will arrive separately.")).toBeVisible({ timeout: 7000 });
   await expect.poll(() => sentMessages.length).toBe(1);
   expect(sentMessages[0]).toMatchObject({ tenant_id: "e2e-tenant-1", to: "+254700000001", type: "text", text: "Thanks, we will check this for you." });
+  expect(sentMessages[0].idempotency_key).toMatch(/^[0-9a-f-]{36}$/i);
 });
 
 
-test("workspace navigation exposes all six sections without losing the active business context", async ({ page }) => {
+test("uncertain inbox send reuses its idempotency key after a page reload", async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes("mobile"), "Send retry integration is covered in the mobile project.");
+  const { sentMessages } = backendData.get(page)!;
+  let calls = 0;
+  await page.route("**/functions/v1/meta-send", async (route) => {
+    if (route.request().method() === "OPTIONS") return json(route, {}, 200);
+    sentMessages.push(route.request().postDataJSON() as Record<string, unknown>);
+    calls++;
+    if (calls === 1) return json(route, { error: "Provider outcome could not be confirmed.", status: "outcome_unknown" }, 502);
+    return json(route, { ok: true, message_id: "e2e-message-reconciled", status: "accepted" });
+  });
+  await signIn(page);
+  await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
+  const composer = page.locator('textarea[aria-label="Message reply"]');
+  await composer.fill("Please confirm your delivery address.");
+  await page.locator(".chat-reply").getByRole("button", { name: /^Send/ }).click({ timeout: 7000 });
+  await expect.poll(() => calls).toBe(1);
+  const firstKey = sentMessages[0].idempotency_key;
+  expect(firstKey).toMatch(/^[0-9a-f-]{36}$/i);
+  await expect(composer).toHaveValue("Please confirm your delivery address.");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+  await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
+  await page.locator('textarea[aria-label="Message reply"]').fill("Please confirm your delivery address.");
+  await page.locator(".chat-reply").getByRole("button", { name: /^Send/ }).click({ timeout: 7000 });
+  await expect.poll(() => calls).toBe(2);
+  expect(sentMessages[1].idempotency_key).toBe(firstKey);
+  await expect(page.getByText("Message accepted by Meta. Delivery confirmation will arrive separately.")).toBeVisible({ timeout: 7000 });
+});
+
+test("workspace navigation exposes all seven sections without losing the active business context", async ({ page }) => {
   await signIn(page);
   const sections = [
     ["Contacts", "Contacts"],
     ["Campaigns", "Campaigns"],
+    ["Alerts", "Alerts"],
     ["Integrations", "Integrations"],
     ["Profile", "Your profile"],
     ["Settings", "Settings"],
@@ -300,4 +338,15 @@ test("agent role can work in the inbox but cannot access administrative contact,
   await expect(page.getByText("WhatsApp Business Platform", { exact: true })).toBeVisible();
   await expect(page.locator('input[placeholder="Numeric ID from Meta"]')).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Generate verification token/ })).toHaveCount(0);
+});
+
+test("workspace alerts show provider failure details and support acknowledgement", async ({ page }) => {
+  await signIn(page);
+  await navigateTo(page, "Alerts");
+  await expect(page.getByRole("heading", { name: "Alerts", exact: true })).toBeVisible();
+  await expect(page.getByText("1 unread alerts")).toBeVisible();
+  await expect(page.getByText("WhatsApp delivery failed")).toBeVisible();
+  await expect(page.getByText("Error code: 131026")).toBeVisible();
+  await page.getByRole("button", { name: "Mark read" }).click();
+  await expect(page.getByText("0 unread alerts")).toBeVisible();
 });
