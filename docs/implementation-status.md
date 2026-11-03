@@ -22,15 +22,18 @@ The dashboard and backend foundation are merged into `main`. The existing Vercel
 - Customer webhook delivery is concurrency-safe through a database atomic claim and two-minute lease shared by immediate and scheduled delivery paths.
 - Supabase Cron is the sole scheduler for the customer and Meta webhook workers; both are active every minute. The GitHub Actions webhook-worker schedule has been removed.
 - Worker authentication uses the internal function token stored in Supabase Vault and Edge Function secrets.
-- The latest production Cron history was verified on 2026-11-03: both worker jobs succeeded for three consecutive minute intervals. This proves invocation only, not customer-endpoint delivery.
+- The latest production Cron history was verified on 2026-11-03: both jobs succeeded every minute through 09:10 UTC; pg_net returned HTTP 200 for both workers. The queues were empty, so no customer/Meta delivery was exercised.
+- Concurrent database tests verified that customer webhook and Meta event claims are exclusive under two simultaneous RPC calls. Customer retry/lease recovery and terminal dead-letter behavior were also tested. All synthetic rows were removed; no external HTTP or Meta side effect was triggered.
 
 ## Still requires account-owner configuration or real provider credentials
 
 - Supabase Auth Site URL and redirect allowlist must be saved in the Supabase dashboard.
+- Supabase Auth leaked-password protection is disabled per Security Advisor and must be enabled by an authorized project owner in Auth → Settings → Password Security.
 - Supabase Edge Function secrets must be entered securely in Supabase; this integration does not expose a secret-management operation.
 - GitHub Actions repository secrets must be added securely in GitHub; this integration does not expose an Actions-secret write operation.
 - Meta app/WABA/phone number/access token/webhook configuration must be completed in Meta and verified against an authorized test number.
 - A controlled end-to-end delivery test against a dedicated HTTPS test receiver is still required; do not use a live customer endpoint.
+- A Meta-authorized test recipient and active WABA integration are required to verify a real inbound message and outbound delivery/status lifecycle.
 - No live end-to-end WhatsApp test has been confirmed in this work session.
 
 ## Safety constraints
