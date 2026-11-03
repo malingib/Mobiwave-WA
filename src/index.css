@@ -2416,3 +2416,40 @@
     .app-shell .overview-page .panel > div:last-child { padding-inline: 1rem; }
   }
 }
+
+
+/* Workspace frame — balanced navigation rail and consistent content canvas. */
+@layer components {
+  .app-shell { min-height: 100vh; background: #f6f7fb; }
+  .app-shell > aside { width: 258px; }
+  .app-shell > aside > div:first-child { min-height: 4.7rem; padding-inline: 1.35rem; }
+  .app-shell > aside nav { padding-inline: 1rem; }
+  .app-shell .nav-item { min-height: 2.45rem; padding-inline: .8rem; gap: .7rem; }
+  .app-shell .nav-item svg { width: 16px; height: 16px; stroke-width: 1.8; }
+  .app-shell .main { min-width: 0; }
+  .app-shell .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    padding-inline: clamp(1rem, 2.2vw, 2rem);
+  }
+  .app-shell .breadcrumbs { gap: .65rem; }
+  .app-shell .breadcrumbs strong { color: #273449; font-weight: 650; }
+  .app-shell .top-actions { gap: .7rem; }
+  .app-shell .content {
+    width: 100%;
+    max-width: 100rem;
+    margin-inline: auto;
+    padding-inline: clamp(1rem, 2.2vw, 2rem);
+  }
+  .app-shell .page-heading { margin-bottom: .2rem; }
+  .app-shell .page-heading h1 { line-height: 1.2; }
+  @media (max-width: 1023px) {
+    .app-shell > aside { width: min(290px, calc(100vw - 3rem)); }
+  }
+  @media (max-width: 640px) {
+    .app-shell .top-actions { gap: .35rem; }
+    .app-shell .environment { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .app-shell .breadcrumbs { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  }
+}
