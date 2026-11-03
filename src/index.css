@@ -2453,3 +2453,135 @@
     .app-shell .breadcrumbs { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   }
 }
+
+
+/* Operational screens: shared NexLink-inspired hierarchy without changing workflows. */
+@layer components {
+  .app-shell .content > .page-heading,
+  .app-shell .content > .inbox-page-header {
+    margin: 0 0 1.35rem;
+    padding: .2rem 0 .95rem;
+    border-bottom: 1px solid #e9edf4;
+  }
+  .app-shell .content > .page-heading h1,
+  .app-shell .inbox-page-header h1 {
+    color: #172235;
+    font-size: clamp(1.35rem, 2vw, 1.7rem);
+    font-weight: 680;
+    letter-spacing: -.045em;
+  }
+  .app-shell .content > .page-heading p,
+  .app-shell .inbox-page-header p { color: #778297; font-size: .78rem; margin-top: .35rem; }
+  .app-shell .content .panel,
+  .app-shell .content .integration-card,
+  .app-shell .content .account-banner,
+  .app-shell .content .privacy-note,
+  .app-shell .content .integration-health-card {
+    border: 1px solid #e8ecf3;
+    border-radius: 11px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(25, 40, 70, .025);
+  }
+  .app-shell .content .form-panel { padding: 1.35rem; }
+  .app-shell .content .form-panel h2,
+  .app-shell .content .panel h2,
+  .app-shell .content .section-header h2 {
+    color: #202c40;
+    font-size: .95rem;
+    font-weight: 650;
+    letter-spacing: -.02em;
+  }
+  .app-shell .content .field label {
+    color: #45536a;
+    font-size: .72rem;
+    font-weight: 620;
+    margin-bottom: .4rem;
+  }
+  .app-shell .content input:not([type="checkbox"]),
+  .app-shell .content select,
+  .app-shell .content textarea {
+    border-color: #e2e7ef;
+    border-radius: 7px;
+    background-color: #fff;
+    box-shadow: none;
+    transition: border-color .16s ease, box-shadow .16s ease;
+  }
+  .app-shell .content input:focus,
+  .app-shell .content select:focus,
+  .app-shell .content textarea:focus {
+    border-color: #8584df;
+    box-shadow: 0 0 0 3px rgba(89, 85, 209, .09);
+    outline: none;
+  }
+  .app-shell .content .primary-button {
+    border-radius: 7px;
+    box-shadow: 0 2px 5px rgba(89, 85, 209, .12);
+    font-weight: 620;
+  }
+  .app-shell .content .secondary-button { border-radius: 7px; }
+  .app-shell .content .section-toolbar,
+  .app-shell .content .section-header { margin-bottom: 1rem; }
+  .app-shell .content .source-list,
+  .app-shell .content .notification-list,
+  .app-shell .content .api-key-list,
+  .app-shell .content .settings-panel { overflow: hidden; border: 1px solid #e8ecf3; border-radius: 10px; background: #fff; }
+  .app-shell .content .source-table-head {
+    min-height: 2.65rem;
+    background: #f8f9fc;
+    color: #8791a3;
+    font-size: .62rem;
+    font-weight: 700;
+    letter-spacing: .09em;
+  }
+  .app-shell .content .source-row,
+  .app-shell .content .notification-item,
+  .app-shell .content .api-key-row,
+  .app-shell .content .setting-row {
+    border-color: #edf0f5;
+    transition: background .15s ease;
+  }
+  .app-shell .content .source-row:hover,
+  .app-shell .content .notification-item:hover,
+  .app-shell .content .api-key-row:hover { background: #fafbfe; }
+  .app-shell .content .integration-health { gap: .8rem; margin-bottom: 1.1rem; }
+  .app-shell .content .integration-health-card { padding: 1rem 1.1rem; transition: transform .18s ease, box-shadow .18s ease; }
+  .app-shell .content .integration-health-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(25,40,70,.06); }
+  .app-shell .content .integration-health-label { color: #7c8799; font-size: .67rem; font-weight: 600; }
+  .app-shell .content .integration-health-card strong { color: #202c40; font-size: 1.35rem; letter-spacing: -.04em; }
+  .app-shell .content .integration-health-card small { color: #8a94a5; font-size: .67rem; }
+  .app-shell .content .integration-head { padding-bottom: 1rem; border-bottom: 1px solid #edf0f5; }
+  .app-shell .content .checklist { padding-block: .75rem; }
+  .app-shell .content .account-banner { padding: 1.15rem 1.25rem; margin-bottom: 1rem; }
+  .app-shell .content .account-banner-avatar { background: #eeefff; color: #5955d1; font-weight: 700; }
+  .app-shell .content .setting-row { padding: 1.1rem 1.25rem; }
+  .app-shell .content .setting-icon { background: #f0f1ff; color: #5955d1; border-radius: 8px; }
+  .app-shell .inbox-layout { gap: .9rem; }
+  .app-shell .conversation-list,
+  .app-shell .chat-panel {
+    border: 1px solid #e7ebf2;
+    border-radius: 11px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(25,40,70,.025);
+  }
+  .app-shell .inbox-list-title { padding: 1rem 1.1rem .75rem; }
+  .app-shell .inbox-list-title strong { color: #202c40; font-size: .88rem; }
+  .app-shell .inbox-filters { padding: 0 1rem 1rem; border-bottom: 1px solid #edf0f5; }
+  .app-shell .conversation-item { padding: .85rem 1rem; transition: background .15s ease; }
+  .app-shell .conversation-item:hover { background: #f8f9fe; }
+  .app-shell .conversation-item.selected { background: #f1f1ff; box-shadow: inset 2px 0 #5955d1; }
+  .app-shell .conversation-avatar { background: #eeefff; color: #5955d1; font-weight: 700; }
+  .app-shell .chat-panel { overflow: hidden; }
+  .app-shell .empty-chat { color: #8791a3; }
+  .app-shell .empty-chat-icon { background: #f0f1ff; color: #5955d1; border-radius: 12px; }
+  @media (max-width: 760px) {
+    .app-shell .content .form-panel { padding: 1rem; }
+    .app-shell .content .integration-health { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .app-shell .content .setting-row { align-items: flex-start; flex-wrap: wrap; gap: .7rem; }
+    .app-shell .inbox-layout { grid-template-columns: minmax(0,1fr); }
+    .app-shell .inbox-layout.has-selection .conversation-list { display: none; }
+    .app-shell .inbox-layout:not(.has-selection) .chat-panel { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .app-shell .content * { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+  }
+}
