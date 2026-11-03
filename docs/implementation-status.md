@@ -19,8 +19,10 @@ The dashboard and backend foundation are merged into `main`. The existing Vercel
 
 ## Added production-readiness work
 
-- A GitHub Actions webhook worker schedule is defined in `.github/workflows/webhook-worker.yml` (every five minutes plus manual dispatch). It requires repository Actions secrets `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `INTERNAL_FUNCTION_TOKEN`.
-- `docs/production-go-live.md` documents the existing production resources, exact Auth URL settings, Edge Function secrets, Meta webhook setup, worker setup, and controlled pilot checklist.
+- Customer webhook delivery is concurrency-safe through a database atomic claim and two-minute lease shared by immediate and scheduled delivery paths.
+- Supabase Cron is the sole scheduler for the customer and Meta webhook workers; both are active every minute. The GitHub Actions webhook-worker schedule has been removed.
+- Worker authentication uses the internal function token stored in Supabase Vault and Edge Function secrets.
+- The latest production Cron history was verified on 2026-11-03: both worker jobs succeeded for three consecutive minute intervals. This proves invocation only, not customer-endpoint delivery.
 
 ## Still requires account-owner configuration or real provider credentials
 
@@ -28,7 +30,7 @@ The dashboard and backend foundation are merged into `main`. The existing Vercel
 - Supabase Edge Function secrets must be entered securely in Supabase; this integration does not expose a secret-management operation.
 - GitHub Actions repository secrets must be added securely in GitHub; this integration does not expose an Actions-secret write operation.
 - Meta app/WABA/phone number/access token/webhook configuration must be completed in Meta and verified against an authorized test number.
-- The worker schedule must be tested after its three GitHub secrets are added.
+- A controlled end-to-end delivery test against a dedicated HTTPS test receiver is still required; do not use a live customer endpoint.
 - No live end-to-end WhatsApp test has been confirmed in this work session.
 
 ## Safety constraints
