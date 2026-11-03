@@ -2369,3 +2369,50 @@
   .app-shell .kpi-icon,
   .app-shell .source-row { transition: none; }
 }
+
+
+/* Overview composition — tighter, data-led dashboard rhythm. */
+@layer components {
+  .app-shell .overview-page { gap: 1.35rem; }
+  .app-shell .overview-intro { padding: .15rem 0 .25rem; }
+  .app-shell .overview-intro h2 { color: #182230; }
+  .app-shell .overview-intro > div:last-child { background: #fff; }
+  .app-shell .overview-page .kpi-card {
+    min-height: 146px;
+    border-radius: 11px;
+    box-shadow: 0 1px 3px rgba(22, 34, 62, .025), 0 5px 18px rgba(22, 34, 62, .025);
+  }
+  .app-shell .overview-page .kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 14px rgba(22, 34, 62, .045), 0 14px 28px rgba(22, 34, 62, .045);
+  }
+  .app-shell .overview-page .panel {
+    border-radius: 11px;
+    box-shadow: 0 1px 3px rgba(22, 34, 62, .025), 0 7px 22px rgba(22, 34, 62, .025);
+  }
+  .app-shell .overview-page .panel > header {
+    padding: 1.15rem 1.25rem .2rem;
+  }
+  .app-shell .overview-page .panel > header h2 {
+    font-size: .88rem;
+    color: #202b3d;
+  }
+  .app-shell .overview-page .panel > div:last-child { padding: .8rem 1.25rem 1.15rem; }
+  .app-shell .overview-page .recharts-cartesian-axis-tick-value {
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 500;
+  }
+  .app-shell .overview-page .recharts-tooltip-wrapper { filter: drop-shadow(0 5px 12px rgba(18, 28, 55, .08)); }
+  .app-shell .overview-page .setup-row {
+    border-radius: 8px;
+    background: #fafbfe;
+  }
+  @media (max-width: 639px) {
+    .app-shell .overview-intro { align-items: flex-start; flex-direction: column; }
+    .app-shell .overview-intro h2 { font-size: 1.25rem; }
+    .app-shell .overview-page .kpi-card { min-height: 132px; }
+    .app-shell .overview-page .panel > header { padding-inline: 1rem; }
+    .app-shell .overview-page .panel > div:last-child { padding-inline: 1rem; }
+  }
+}
