@@ -11,14 +11,17 @@ Deno.serve(async (request) => {
   if (!url || !key) return json({ error: "Server environment is not configured." }, 500);
   const admin = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   const now = new Date().toISOString();
-  const { data, error } = await admin.from("webhook_deliveries").select("id").in("status", ["queued","failed"]).lte("next_attempt_at", now).lt("attempt_count", 8).order("next_attempt_at", { ascending: true }).limit(20);
+  const { data, error } = await admin.from("webhook_deliveries").select("id")
+    .or("and(status.in.(queued,failed),next_attempt_at.lte." + now + ",attempt_count.lt.8),and(status.eq.processing,lease_expires_at.lte." + now + ",attempt_count.lt.8)")
+    .order("next_attempt_at", { ascending: true }).limit(20);
   if (error) return json({ error: "Could not load due webhook deliveries." }, 500);
-  let delivered = 0, retrying = 0, dead = 0;
+  let delivered = 0, retrying = 0, dead = 0, skipped = 0;
   for (const row of data ?? []) {
     const result = await deliverWebhook(admin, row.id);
     if (result.ok) delivered++;
     else if (result.retrying) retrying++;
+    else if (result.skipped) skipped++;
     else dead++;
   }
-  return json({ ok: true, processed: (data ?? []).length, delivered, retrying, dead });
+  return json({ ok: true, processed: (data ?? []).length, delivered, retrying, dead, skipped });
 });
