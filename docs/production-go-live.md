@@ -57,15 +57,16 @@ Do not run campaigns until the Meta credentials, webhook signature verification,
 
 ## 5. Scheduled customer webhook delivery worker
 
-A GitHub Actions workflow at `.github/workflows/webhook-worker.yml` runs every five minutes and supports manual dispatch. It calls the authenticated Supabase `webhook-worker` function.
+Supabase Cron is the sole scheduler for both webhook workers. Both jobs are active on a one-minute schedule:
 
-Add these three repository Actions secrets under GitHub → Settings → Secrets and variables → Actions:
+- `mobiwave-webhook-worker` → `/functions/v1/webhook-worker`
+- `mobiwave-meta-webhook-worker` → `/functions/v1/meta-webhook-worker`
 
-- `SUPABASE_URL` = `https://jyjgvsljcmvbhovzevaz.supabase.co`
-- `SUPABASE_PUBLISHABLE_KEY` = the project's publishable key
-- `INTERNAL_FUNCTION_TOKEN` = exactly the same value configured as the Supabase Edge Function secret
+The worker endpoints authenticate internal calls with `INTERNAL_FUNCTION_TOKEN`. The token is stored in Supabase Vault and the Edge Function environment; never expose it in source control or client code. GitHub Actions does not schedule or invoke either worker.
 
-The workflow fails clearly if a required secret is missing. GitHub schedule events can be delayed, so treat this as retry processing, not a real-time SLA. The worker processes a bounded batch each run and retries deliveries with backoff.
+Customer webhook delivery uses a database-side atomic claim and a two-minute lease. The immediate-send and scheduled-worker paths share the same claim operation, use stable idempotency keys, and apply bounded retries with a terminal dead-letter state. External HTTP delivery remains at-least-once; receivers should deduplicate using the supplied idempotency key because exactly-once delivery cannot be guaranteed across network timeouts.
+
+The production Cron history was checked on 2026-11-03: both jobs succeeded at 09:03, 09:04 and 09:05 UTC. This verifies scheduler invocation, not successful delivery to a customer's external endpoint.
 
 ## 6. Controlled pilot checklist
 
@@ -76,7 +77,7 @@ The workflow fails clearly if a required secret is missing. GitHub schedule even
 - [ ] WhatsApp: send one authorized test template; receive a reply; check inbox and message status.
 - [ ] Inbox: confirm new messages arrive in real time; assign a conversation, add a private note, and verify unread state is per agent.
 - [ ] Media: open an inbound attachment as an authorized workspace agent and verify unauthorized or cross-tenant requests fail.
-- [ ] Webhooks: create a test customer endpoint and verify signed delivery, retries, and idempotency.
+- [ ] Webhooks: create a dedicated test customer endpoint and verify signed delivery, retries, lease recovery, and idempotency; never use a real customer endpoint for synthetic tests.
 - [ ] Review Supabase Security Advisor after setup and monitor Edge Function logs during the pilot.
 
 ## Known scope limits
@@ -84,4 +85,4 @@ The workflow fails clearly if a required secret is missing. GitHub schedule even
 - Campaign launcher is intentionally bounded per invocation; run subsequent batches until the queue is drained.
 - Campaign sends process at most ten recipients per invocation; unknown Meta send outcomes require manual review and must not be retried automatically.
 - Media previews are limited to 8 MB per attachment.
-- This is an MVP foundation. Before broad production rollout, add load/penetration tests, privacy/compliance review, backup/restore verification, alerting, and a review of usage limits and billing.
+- This remains an MVP foundation. Before broad production rollout, complete load and penetration tests, privacy/compliance review, alerting, and a review of usage limits and billing.
