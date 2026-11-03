@@ -901,7 +901,6 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
         </div>
       </header>
       {view === "Overview" && <section className="content">
-        <PageHeading eyebrow="WORKSPACE OVERVIEW" title="Overview" description="Live view of conversations, contacts and campaign readiness for this business account." />
         <Overview
           conversations={conversations}
           contacts={contacts}
