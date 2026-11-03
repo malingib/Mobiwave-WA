@@ -127,22 +127,21 @@ export function KpiCard({
         ? "bg-danger-soft text-danger ring-1 ring-danger/20"
         : "bg-raised text-text-muted ring-1 ring-hairline";
   return (
-    <article className="panel relative flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-5 pt-4">
-        <span className="flex items-center gap-2 text-[14px] font-semibold text-text">
-          {icon && <span className="text-brand-600">{icon}</span>}
-          {label}
-        </span>
-        {action}
+    <article className="kpi-card panel group relative flex min-w-0 flex-col overflow-hidden">
+      <div className="flex items-start justify-between gap-3 px-5 pt-5">
+        <div className="min-w-0">
+          <span className="block text-[11px] font-semibold uppercase tracking-[.075em] text-text-muted">{label}</span>
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <strong className="kpi-value font-display text-[32px] font-bold leading-none tracking-[-0.045em] text-text">{value}</strong>
+            {delta && <span className={"mb-0.5 rounded-full px-2 py-1 text-[10px] font-semibold " + deltaClass}>{delta}</span>}
+          </div>
+        </div>
+        {icon && <span className="kpi-icon flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-100">{icon}</span>}
       </div>
-      <div className="flex items-end gap-2 px-5 pb-1 pt-3">
-        <strong className="font-display text-[30px] font-bold leading-none tracking-[-0.035em] text-text">{value}</strong>
-        {delta && <span className={"mb-0.5 rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold " + deltaClass}>{delta}</span>}
-      </div>
-      {trend && <div className="mt-1 h-[58px] w-full">{trend}</div>}
+      {trend && <div className="mt-2 h-[58px] px-1">{trend}</div>}
       {(hint || children) && (
-        <div className="mt-auto flex items-center justify-between gap-3 border-t border-hairline px-5 py-3">
-          {hint && <span className="truncate text-[12px] text-text-muted">{hint}</span>}
+        <div className="mt-auto flex min-h-[42px] items-center justify-between gap-3 border-t border-hairline px-5 py-3">
+          {hint && <span className="min-w-0 truncate text-[11.5px] text-text-muted">{hint}</span>}
           {children}
         </div>
       )}
