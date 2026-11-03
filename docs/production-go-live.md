@@ -66,7 +66,9 @@ The worker endpoints authenticate internal calls with `INTERNAL_FUNCTION_TOKEN`.
 
 Customer webhook delivery uses a database-side atomic claim and a two-minute lease. The immediate-send and scheduled-worker paths share the same claim operation, use stable idempotency keys, and apply bounded retries with a terminal dead-letter state. External HTTP delivery remains at-least-once; receivers should deduplicate using the supplied idempotency key because exactly-once delivery cannot be guaranteed across network timeouts.
 
-The production Cron history was checked on 2026-11-03: both jobs succeeded at 09:03, 09:04 and 09:05 UTC. This verifies scheduler invocation, not successful delivery to a customer's external endpoint.
+The production Cron history was checked on 2026-11-03: both jobs succeeded every minute from 09:03 through 09:10 UTC. The corresponding pg_net responses at 09:08, 09:09 and 09:10 were HTTP 200 with valid worker JSON responses. Queue counts were zero, so this verifies worker invocation and idle-queue handling, not successful delivery to a customer's external endpoint.
+
+Database acceptance tests on 2026-11-03 verified customer-delivery first claim, concurrent duplicate suppression (two simultaneous RPC calls produced one claim and one empty result), expired-lease reclaim, and dead-lettering at the eight-attempt limit. A separate simultaneous-claim test of `claim_meta_webhook_events` likewise produced one claim and one empty result. All synthetic tenant, webhook, delivery and Meta event fixtures were deleted after the tests; no outbound HTTP request or Meta side effect was triggered.
 
 ## 6. Controlled pilot checklist
 
