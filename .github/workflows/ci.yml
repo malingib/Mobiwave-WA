@@ -46,5 +46,7 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Test outbound idempotency behavior
+        run: deno test supabase/functions/api-send/idempotency_test.ts
       - name: Type-check Supabase Edge Functions
         run: deno check supabase/functions/*/index.ts
