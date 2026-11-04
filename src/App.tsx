@@ -198,6 +198,13 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (!notice) return;
+    const needsManualAttention = /could not|failed|error|unknown|unavailable|not available|copy|secret|token|api key|select|enter|record|consent|opted out|suppressed|retry|must|not found/i.test(notice);
+    if (needsManualAttention) return;
+    const timeout = window.setTimeout(() => setNotice(""), 4500);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
   const [workspaceName, setWorkspaceName] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(false);
