@@ -21,11 +21,14 @@ function replayResponse(attempt: Record<string, unknown>) {
     });
   }
   if (status === "rejected") {
+    const limited = attempt.error_code === "monthly_limit_reached";
     return json({
-      error: "The original request was rejected by Meta. Use a new idempotency key for a new attempt.",
+      error: limited
+        ? "The original request was rejected because the workspace reached its monthly message limit."
+        : "The original request was rejected by Meta. Use a new idempotency key for a new attempt.",
       status: "rejected",
       idempotent_replay: true,
-    }, 502);
+    }, limited ? 429 : 502);
   }
   return json({
     error: "A request with this idempotency key is already being processed or has an uncertain provider outcome. Do not retry with a new key until it has been reconciled.",
@@ -39,11 +42,11 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
   try {
-    const suppliedKey = request.headers.get("x-api-key") ?? request.headers.get("Authorization")?.replace(/^Bearer\\s+/i, "") ?? "";
+    const suppliedKey = request.headers.get("x-api-key") ?? request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ?? "";
     if (!suppliedKey.startsWith("mw_live_") || suppliedKey.length < 40) return json({ error: "A valid MobiWave API key is required." }, 401);
 
     const idempotencyKey = request.headers.get("idempotency-key")?.trim() ?? "";
-    if (idempotencyKey.length < 8 || idempotencyKey.length > 200 || /[\\r\\n]/.test(idempotencyKey)) {
+    if (idempotencyKey.length < 8 || idempotencyKey.length > 200 || /[\r\n]/.test(idempotencyKey)) {
       return json({ error: "Provide an Idempotency-Key header between 8 and 200 characters." }, 400);
     }
 
@@ -62,23 +65,12 @@ Deno.serve(async (request) => {
     const language = String(body.language_code ?? "en");
     const components = Array.isArray(body.components) ? body.components : [];
 
-    if (!/^\\+[1-9][0-9]{7,14}$/.test(to) || !/^[a-z0-9_]{1,512}$/.test(templateName)) {
+    if (!/^\+[1-9][0-9]{7,14}$/.test(to) || !/^[a-z0-9_]{1,512}$/.test(templateName)) {
       return json({ error: "Use an E.164 recipient and an approved template name." }, 400);
     }
 
     const requestPayload = { to, template_name: templateName, language_code: language, components };
     const requestHash = await hash(JSON.stringify(requestPayload));
-
-    const { data: limits } = await admin.from("tenant_usage_limits").select("monthly_message_limit").eq("tenant_id", tenantId).maybeSingle();
-    const monthStart = new Date();
-    monthStart.setUTCDate(1);
-    monthStart.setUTCHours(0, 0, 0, 0);
-    const { count: used } = await admin.from("usage_events").select("id", { count: "exact", head: true })
-      .eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString());
-    const monthlyLimit = limits?.monthly_message_limit ?? 0;
-    if (monthlyLimit > 0 && (used ?? 0) >= monthlyLimit) {
-      return json({ error: "This workspace has reached its configured monthly message limit." }, 429);
-    }
 
     const { data: contact } = await admin.from("contacts").select("id,consent_status")
       .eq("tenant_id", tenantId).eq("phone_e164", to).maybeSingle();
@@ -126,6 +118,23 @@ Deno.serve(async (request) => {
         return json({ error: "This Idempotency-Key was already used with a different request payload." }, 409);
       }
       return replayResponse(existing);
+    }
+
+    const { data: limits } = await admin.from("tenant_usage_limits").select("monthly_message_limit").eq("tenant_id", tenantId).maybeSingle();
+    const monthStart = new Date();
+    monthStart.setUTCDate(1);
+    monthStart.setUTCHours(0, 0, 0, 0);
+    const { count: used } = await admin.from("usage_events").select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString());
+    const monthlyLimit = limits?.monthly_message_limit ?? 0;
+    if (monthlyLimit > 0 && (used ?? 0) >= monthlyLimit) {
+      await admin.from("outbound_send_attempts").update({
+        status: "rejected",
+        error_code: "monthly_limit_reached",
+        error_detail: "Workspace monthly message limit reached before provider submission.",
+        updated_at: new Date().toISOString(),
+      }).eq("id", claimed.id).eq("status", "submitting");
+      return json({ error: "This workspace has reached its configured monthly message limit.", status: "rejected" }, 429);
     }
 
     let response: Response;
