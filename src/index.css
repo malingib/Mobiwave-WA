@@ -2375,7 +2375,7 @@
 @layer components {
   .app-shell .overview-page { gap: 1.35rem; }
   .app-shell .overview-intro { padding: .15rem 0 .25rem; }
-  .app-shell .overview-intro h2 { color: #182230; }
+  .app-shell .overview-intro h1 { color: #182230; }
   .app-shell .overview-intro > div:last-child { background: #fff; }
   .app-shell .overview-page .kpi-card {
     min-height: 146px;
@@ -2410,7 +2410,7 @@
   }
   @media (max-width: 639px) {
     .app-shell .overview-intro { align-items: flex-start; flex-direction: column; }
-    .app-shell .overview-intro h2 { font-size: 1.25rem; }
+    .app-shell .overview-intro h1 { font-size: 1.25rem; }
     .app-shell .overview-page .kpi-card { min-height: 132px; }
     .app-shell .overview-page .panel > header { padding-inline: 1rem; }
     .app-shell .overview-page .panel > div:last-child { padding-inline: 1rem; }
