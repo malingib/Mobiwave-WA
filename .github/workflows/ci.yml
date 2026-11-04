@@ -34,6 +34,14 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+      - name: Upload visual review screenshots
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-review-${{ github.run_number }}
+          path: playwright-report/
+          if-no-files-found: error
+          retention-days: 7
       - name: Set up Deno
         uses: denoland/setup-deno@v2
         with:
