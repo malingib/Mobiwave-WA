@@ -151,7 +151,7 @@ async function signIn(page: Page) {
   await page.getByRole("textbox", { name: "Password" }).fill("e2e-password-123");
   await page.getByRole("button", { name: /sign in securely/i }).click();
   await page.getByRole("heading", { name: "Your messaging at a glance", exact: true }).waitFor();
-  await expect(page.locator('#primary-navigation [aria-current="page"]')).toHaveAttribute("aria-label", "Overview");
+  await page.locator('#primary-navigation [aria-current="page"][aria-label="Overview"]').waitFor();
   await page.waitForTimeout(1200);
 }
 
