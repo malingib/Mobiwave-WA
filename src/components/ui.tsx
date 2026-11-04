@@ -139,9 +139,10 @@ export function KpiCard({
         {icon && <span className="kpi-icon flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-100">{icon}</span>}
       </div>
       {trend && <div className="mt-2 h-[58px] px-1">{trend}</div>}
-      {(hint || children) && (
+      {(hint || action || children) && (
         <div className="mt-auto flex min-h-[42px] items-center justify-between gap-3 border-t border-hairline px-5 py-3">
           {hint && <span className="min-w-0 truncate text-[11.5px] text-text-muted">{hint}</span>}
+          {action}
           {children}
         </div>
       )}
