@@ -23,6 +23,9 @@ jobs:
       - name: Install Chromium for Playwright
         run: npx playwright install --with-deps chromium
       - name: Run desktop and mobile end-to-end tests
+        env:
+          VITE_SUPABASE_URL: https://e2e-placeholder.supabase.co
+          VITE_SUPABASE_ANON_KEY: e2e-placeholder-anon-key
         run: npm run test:e2e
       - name: Upload Playwright report on failure
         if: failure()
