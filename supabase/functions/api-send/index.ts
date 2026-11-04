@@ -2,40 +2,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import { decryptToken } from "../_shared/meta.ts";
 import { emitWebhook } from "../_shared/customer-webhooks.ts";
 import { corsHeaders, json } from "../_shared/cors.ts";
+import { hashRequest, validIdempotencyKey, resolveExistingAttempt } from "../_shared/outbound-idempotency.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_VERSION") || "v23.0";
-
-async function hash(value: string) {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
-  return [...digest].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function replayResponse(attempt: Record<string, unknown>) {
-  const status = attempt.status;
-  if (status === "accepted" && attempt.meta_message_id) {
-    return json({
-      ok: true,
-      message_id: attempt.meta_message_id,
-      status: "sent_to_meta",
-      idempotent_replay: true,
-    });
-  }
-  if (status === "rejected") {
-    const limited = attempt.error_code === "monthly_limit_reached";
-    return json({
-      error: limited
-        ? "The original request was rejected because the workspace reached its monthly message limit."
-        : "The original request was rejected by Meta. Use a new idempotency key for a new attempt.",
-      status: "rejected",
-      idempotent_replay: true,
-    }, limited ? 429 : 502);
-  }
-  return json({
-    error: "A request with this idempotency key is already being processed or has an uncertain provider outcome. Do not retry with a new key until it has been reconciled.",
-    status,
-    idempotent_replay: true,
-  }, 409);
-}
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -53,7 +22,7 @@ Deno.serve(async (request) => {
     const url = Deno.env.get("SUPABASE_URL")!;
     const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: apiKey } = await admin.from("tenant_api_keys").select("id,tenant_id,scopes,expires_at,revoked_at").eq("secret_hash", await hash(suppliedKey)).maybeSingle();
+    const { data: apiKey } = await admin.from("tenant_api_keys").select("id,tenant_id,scopes,expires_at,revoked_at").eq("secret_hash", await hashRequest(suppliedKey)).maybeSingle();
     if (!apiKey || apiKey.revoked_at || (apiKey.expires_at && new Date(apiKey.expires_at).getTime() < Date.now()) || !apiKey.scopes?.includes("messages:send")) {
       return json({ error: "API key is invalid, expired, revoked or lacks permission." }, 401);
     }
@@ -70,7 +39,19 @@ Deno.serve(async (request) => {
     }
 
     const requestPayload = { to, template_name: templateName, language_code: language, components };
-    const requestHash = await hash(JSON.stringify(requestPayload));
+    const requestHash = await hashRequest(JSON.stringify(requestPayload));
+
+    // Resolve completed/in-flight retries before checking mutable contact consent,
+    // template approval, or integration state. A retry must not submit a second send.
+    const { data: priorAttempt, error: priorAttemptError } = await admin.from("outbound_send_attempts")
+      .select("id,status,request_hash,meta_message_id,error_code")
+      .eq("tenant_id", tenantId).eq("idempotency_key", idempotencyKey).maybeSingle();
+    if (priorAttemptError) {
+      console.error("Could not read prior outbound idempotency state:", priorAttemptError.code);
+      return json({ error: "The original request state could not be verified. Do not retry with a new key." }, 503);
+    }
+    const priorResponse = resolveExistingAttempt(priorAttempt, requestHash);
+    if (priorResponse) return priorResponse;
 
     const { data: contact } = await admin.from("contacts").select("id,consent_status")
       .eq("tenant_id", tenantId).eq("phone_e164", to).maybeSingle();
@@ -110,14 +91,11 @@ Deno.serve(async (request) => {
       }
 
       const { data: existing, error: existingError } = await admin.from("outbound_send_attempts")
-        .select("id,status,request_hash,meta_message_id")
+        .select("id,status,request_hash,meta_message_id,error_code")
         .eq("tenant_id", tenantId).eq("idempotency_key", idempotencyKey).maybeSingle();
 
       if (existingError || !existing) return json({ error: "The original request state could not be verified. Do not retry with a new key." }, 503);
-      if (existing.request_hash !== requestHash) {
-        return json({ error: "This Idempotency-Key was already used with a different request payload." }, 409);
-      }
-      return replayResponse(existing);
+      return resolveExistingAttempt(existing, requestHash) ?? json({ error: "The original request state could not be verified." }, 503);
     }
 
     const { data: limits } = await admin.from("tenant_usage_limits").select("monthly_message_limit").eq("tenant_id", tenantId).maybeSingle();
