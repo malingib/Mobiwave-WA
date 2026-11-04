@@ -175,10 +175,13 @@ Deno.serve(async (request) => {
 
     if (!response.ok) {
       const providerError = result.error && typeof result.error === "object" ? result.error as Record<string, unknown> : {};
+      const providerStatusUnknown = response.status >= 500;
       await admin.from("outbound_send_attempts").update({
-        status: "rejected",
+        status: providerStatusUnknown ? "outcome_unknown" : "rejected",
         error_code: String(providerError.code ?? response.status),
-        error_detail: "Meta rejected the outbound request.",
+        error_detail: providerStatusUnknown
+          ? "Meta returned a server error; provider acceptance cannot be ruled out."
+          : "Meta rejected the outbound request.",
         updated_at: new Date().toISOString(),
       }).eq("id", claimed.id).eq("status", "submitting");
 
@@ -187,9 +190,11 @@ Deno.serve(async (request) => {
         event_type: "api_request",
         quantity: 1,
         reference_id: apiKey.id,
-        metadata: { outcome: "meta_rejected" },
+        metadata: { outcome: providerStatusUnknown ? "provider_outcome_unknown" : "meta_rejected" },
       });
-      return json({ error: "Meta rejected the message. Verify the template and WhatsApp account.", status: "rejected" }, 502);
+      return providerStatusUnknown
+        ? json({ error: "Meta returned a server error. Reconcile the provider outcome before attempting another send.", status: "outcome_unknown" }, 502)
+        : json({ error: "Meta rejected the message. Verify the template and WhatsApp account.", status: "rejected" }, 502);
     }
 
     if (!metaMessageId) {
