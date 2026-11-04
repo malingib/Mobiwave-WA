@@ -133,7 +133,8 @@ async function signIn(page: Page) {
   await page.getByLabel("Work email").fill(user.email);
   await page.getByRole("textbox", { name: "Password" }).fill("e2e-password-123");
   await page.getByRole("button", { name: /sign in securely/i }).click();
-  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your messaging at a glance", exact: true })).toBeVisible();
+  await expect(page.locator('#primary-navigation [aria-current="page"]')).toHaveAttribute("aria-label", "Overview");
   await expect(page.locator(".breadcrumbs").getByText("Demo Business")).toBeVisible();
 }
 
@@ -160,8 +161,9 @@ test("public landing page loads and labels preview metrics as sample data", asyn
   expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
 });
 
-test("sign-in opens the workspace overview with the selected business account", async ({ page }) => {
+test("sign-in opens the workspace overview and clears its success notice", async ({ page }) => {
   await signIn(page);
+  await expect(page.locator(".toast").filter({ hasText: "Signed in." })).toBeHidden({ timeout: 6000 });
   await expect(page.getByText("Amina Customer")).toBeVisible();
   await expect(page.locator('#primary-navigation [aria-current="page"]')).toHaveAttribute("aria-label", "Overview");
   await openView(page, "Inbox");
@@ -196,6 +198,7 @@ test("mobile inbox switches between conversation list and chat and submits an in
   await test.step("open the customer conversation", async () => {
     await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
     await expect(page.locator(".chat-contact-heading")).toContainText("Amina Customer");
+    await expect(page.getByRole("log", { name: "Conversation messages" })).toBeVisible();
   });
 
   await test.step("add an internal note", async () => {
@@ -263,7 +266,7 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
 test("workspace navigation exposes all eight sections without losing the active business context", async ({ page }) => {
   await signIn(page);
   const sections = [
-    ["Overview", "Overview"],
+    ["Overview", "Your messaging at a glance"],
     ["Contacts", "Contacts"],
     ["Campaigns", "Campaigns"],
     ["Alerts", "Alerts"],
@@ -360,6 +363,7 @@ test("workspace alerts show provider failure details and support acknowledgement
   await navigateTo(page, "Alerts");
   await expect(page.getByRole("heading", { name: "Alerts", exact: true })).toBeVisible();
   await expect(page.getByText("1 unread alerts")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Workspace alerts" })).toBeVisible();
   await expect(page.getByText("WhatsApp delivery failed")).toBeVisible();
   await expect(page.getByText("Error code: 131026")).toBeVisible();
   await page.getByRole("button", { name: "Mark read" }).click();

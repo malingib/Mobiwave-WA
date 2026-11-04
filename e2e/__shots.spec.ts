@@ -1,4 +1,4 @@
-import { test, type Page, type Route } from "@playwright/test";
+import { test, type Page, type Route, type TestInfo } from "@playwright/test";
 
 const user = {
   id: "e2e-user-1", aud: "authenticated", role: "authenticated", email: "agent@example.com",
@@ -78,6 +78,14 @@ function messageRows() {
   return rows;
 }
 
+
+async function capture(page: Page, testInfo: TestInfo, name: string, fullPage = false) {
+  const dismiss = page.locator(".toast button[aria-label=\"Dismiss\"]");
+  if (await dismiss.isVisible()) await dismiss.click();
+  const body = await page.screenshot({ fullPage });
+  await testInfo.attach(name, { body, contentType: "image/png" });
+}
+
 async function json(route: Route, body: unknown, total = 1) {
   await route.fulfill({
     status: 200,
@@ -150,86 +158,87 @@ async function signIn(page: Page) {
   await page.getByLabel("Work email").fill(user.email);
   await page.getByRole("textbox", { name: "Password" }).fill("e2e-password-123");
   await page.getByRole("button", { name: /sign in securely/i }).click();
-  await page.getByRole("heading", { name: "Overview", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Your messaging at a glance", exact: true }).waitFor();
+  await page.locator('#primary-navigation [aria-current="page"][aria-label="Overview"]').waitFor();
   await page.waitForTimeout(1200);
 }
 
 test.beforeEach(async ({ page }) => { await mockBackend(page); });
 
-test("shots landing desktop", async ({ page }) => {
+test("shots landing desktop", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   await page.waitForTimeout(800);
-  await page.screenshot({ path: "/tmp/opencode/shots/landing-hero.png" });
+  await capture(page, testInfo, "landing-hero");
   for (let y = 700; y < 6000; y += 600) {
     await page.evaluate((top) => window.scrollTo(0, top), y);
     await page.waitForTimeout(180);
   }
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(400);
-  await page.screenshot({ path: "/tmp/opencode/shots/landing-full.png", fullPage: true });
+  await capture(page, testInfo, "landing-full", true);
 });
 
-test("shots landing mobile", async ({ page }) => {
+test("shots landing mobile", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.waitForTimeout(900);
-  await page.screenshot({ path: "/tmp/opencode/shots/landing-mobile.png" });
+  await capture(page, testInfo, "landing-mobile");
 });
 
-test("shots dashboard", async ({ page }) => {
+test("shots dashboard", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 960 });
   await signIn(page);
-  await page.screenshot({ path: "/tmp/opencode/shots/overview.png" });
+  await capture(page, testInfo, "overview");
   await page.locator("#primary-navigation").getByRole("button", { name: "Inbox", exact: true }).click();
   await page.waitForTimeout(700);
-  await page.screenshot({ path: "/tmp/opencode/shots/inbox.png" });
+  await capture(page, testInfo, "inbox");
   await page.getByRole("button", { name: /Amina Customer/ }).click();
   await page.waitForTimeout(500);
-  await page.screenshot({ path: "/tmp/opencode/shots/chat.png" });
+  await capture(page, testInfo, "chat");
   await page.locator("#primary-navigation").getByRole("button", { name: "Contacts", exact: true }).click();
   await page.waitForTimeout(500);
-  await page.screenshot({ path: "/tmp/opencode/shots/contacts.png" });
+  await capture(page, testInfo, "contacts");
   await page.locator("#primary-navigation").getByRole("button", { name: "Campaigns", exact: true }).click();
   await page.waitForTimeout(500);
-  await page.screenshot({ path: "/tmp/opencode/shots/campaigns.png" });
+  await capture(page, testInfo, "campaigns");
   await page.getByRole("button", { name: "Details" }).first().click();
   await page.waitForTimeout(600);
-  await page.screenshot({ path: "/tmp/opencode/shots/campaign-detail.png" });
+  await capture(page, testInfo, "campaign-detail");
   await page.keyboard.press("Escape");
   await page.locator("#primary-navigation").getByRole("button", { name: "Integrations", exact: true }).click();
   await page.waitForTimeout(500);
-  await page.screenshot({ path: "/tmp/opencode/shots/integrations.png" });
+  await capture(page, testInfo, "integrations");
   await page.locator("#primary-navigation").getByRole("button", { name: "Alerts", exact: true }).click();
   await page.waitForTimeout(500);
-  await page.screenshot({ path: "/tmp/opencode/shots/alerts.png" });
+  await capture(page, testInfo, "alerts");
   await page.locator("#primary-navigation").getByRole("button", { name: "Profile", exact: true }).click();
   await page.waitForTimeout(400);
-  await page.screenshot({ path: "/tmp/opencode/shots/profile.png" });
+  await capture(page, testInfo, "profile");
   await page.locator("#primary-navigation").getByRole("button", { name: "Settings", exact: true }).click();
   await page.waitForTimeout(400);
-  await page.screenshot({ path: "/tmp/opencode/shots/settings.png" });
+  await capture(page, testInfo, "settings");
 });
 
-test("shots mobile dashboard", async ({ page }) => {
+test("shots mobile dashboard", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page);
-  await page.screenshot({ path: "/tmp/opencode/shots/overview-mobile.png" });
+  await capture(page, testInfo, "overview-mobile");
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page.waitForTimeout(500);
-  await page.screenshot({ path: "/tmp/opencode/shots/nav-mobile.png" });
+  await capture(page, testInfo, "nav-mobile");
   await page.locator("#primary-navigation").getByRole("button", { name: "Campaigns", exact: true }).click();
   await page.waitForTimeout(500);
   await page.getByRole("button", { name: "Details" }).first().click();
   await page.waitForTimeout(700);
-  await page.screenshot({ path: "/tmp/opencode/shots/campaign-detail-mobile.png" });
+  await capture(page, testInfo, "campaign-detail-mobile");
 });
 
-test("shots pricing", async ({ page }) => {
+test("shots pricing", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto("/pricing");
   await page.waitForTimeout(800);
-  await page.screenshot({ path: "/tmp/opencode/shots/pricing.png", fullPage: false });
+  await capture(page, testInfo, "pricing");
 });
 
 test("shots login", async ({ page }, testInfo) => {
@@ -237,5 +246,5 @@ test("shots login", async ({ page }, testInfo) => {
   await page.getByRole("heading", { name: "Welcome back" }).waitFor();
   await page.waitForTimeout(400);
   const suffix = testInfo.project.name.includes("mobile") ? "login-mobile" : "login";
-  await page.screenshot({ path: `/tmp/opencode/shots/${suffix}.png` });
+  await capture(page, testInfo, suffix);
 });

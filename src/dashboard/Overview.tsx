@@ -113,7 +113,18 @@ export default function Overview({
   const optInShare = contacts.length ? Math.round((stats.optedIn / contacts.length) * 100) : 0;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="overview-page flex flex-col gap-5">
+      <div className="overview-intro flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-brand-600">Workspace overview</span>
+          <h1 className="font-display text-[22px] font-semibold leading-tight tracking-[-0.035em] text-text">Your messaging at a glance</h1>
+          <p className="mt-1 text-[12.5px] text-text-muted">A live view of conversations, audience readiness and WhatsApp activity.</p>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg border border-hairline bg-surface px-3 py-2 text-[11px] font-medium text-text-muted">
+          <span className={"h-1.5 w-1.5 rounded-full " + (whatsappConnected ? "bg-success" : "bg-warning")} />
+          {whatsappConnected ? "WhatsApp connected" : "WhatsApp setup required"}
+        </div>
+      </div>
       {/* KPI row */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard

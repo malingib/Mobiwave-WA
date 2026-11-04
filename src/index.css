@@ -2283,3 +2283,449 @@
     .app-shell .source-row { padding-inline: .85rem; }
   }
 }
+
+
+/* Complete workspace component pass — finance-style hierarchy and motion. */
+@layer components {
+  .app-shell .panel,
+  .app-shell .source-list,
+  .app-shell .conversation-list,
+  .app-shell .chat-panel {
+    border: 1px solid #e7e9f1;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 2px 5px rgba(25, 32, 72, .025), 0 10px 28px rgba(25, 32, 72, .025);
+    transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+  }
+  .app-shell .kpi-card {
+    min-height: 154px;
+    animation: mw-card-enter .55s cubic-bezier(.2,.8,.2,1) both;
+  }
+  .app-shell .kpi-card:nth-child(2) { animation-delay: 55ms; }
+  .app-shell .kpi-card:nth-child(3) { animation-delay: 110ms; }
+  .app-shell .kpi-card:nth-child(4) { animation-delay: 165ms; }
+  .app-shell .kpi-card:hover {
+    transform: translateY(-3px);
+    border-color: #d8d9f3;
+    box-shadow: 0 5px 12px rgba(25, 32, 72, .04), 0 16px 34px rgba(25, 32, 72, .06);
+  }
+  .app-shell .kpi-icon {
+    transition: transform .25s cubic-bezier(.2,.8,.2,1), background .2s ease;
+  }
+  .app-shell .kpi-card:hover .kpi-icon {
+    transform: translateY(-2px) scale(1.04);
+    background: #e9e9ff;
+  }
+  .app-shell .kpi-value { font-variant-numeric: tabular-nums; }
+  .app-shell .panel > header {
+    padding-top: 1.25rem;
+  }
+  .app-shell .panel > header h2 {
+    font-size: .91rem;
+    font-weight: 650;
+    letter-spacing: -.015em;
+  }
+  .app-shell .panel > header p {
+    font-size: .73rem;
+    color: #8991a2;
+  }
+  .app-shell .content > .grid,
+  .app-shell .content > .panel,
+  .app-shell .content > .source-list {
+    animation: mw-section-enter .48s cubic-bezier(.2,.8,.2,1) both;
+  }
+  .app-shell .nav-item { position: relative; overflow: hidden; }
+  .app-shell .nav-item:not(.active)::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+    background: linear-gradient(90deg, rgba(89,85,209,.055), transparent);
+    opacity: 0;
+    transition: opacity .18s ease;
+  }
+  .app-shell .nav-item:not(.active):hover::after { opacity: 1; }
+  .app-shell .topbar { box-shadow: 0 2px 12px rgba(20, 30, 60, .025); }
+  .app-shell .status-pill { letter-spacing: .005em; }
+  .app-shell .source-row { transition: background .16s ease, transform .16s ease; }
+  .app-shell .source-row:hover { background: #f8f8ff; }
+  .app-shell button:focus-visible,
+  .app-shell a:focus-visible { outline-offset: 3px; }
+  .app-shell .recharts-wrapper { font-family: var(--font-sans); }
+}
+@keyframes mw-card-enter {
+  from { opacity: 0; transform: translateY(9px) scale(.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes mw-section-enter {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .kpi-card,
+  .app-shell .content > .grid,
+  .app-shell .content > .panel,
+  .app-shell .content > .source-list { animation: none; }
+  .app-shell .panel,
+  .app-shell .kpi-icon,
+  .app-shell .source-row { transition: none; }
+}
+
+
+/* Overview composition — tighter, data-led dashboard rhythm. */
+@layer components {
+  .app-shell .overview-page { gap: 1.35rem; }
+  .app-shell .overview-intro { padding: .15rem 0 .25rem; }
+  .app-shell .overview-intro h1 { color: #182230; }
+  .app-shell .overview-intro > div:last-child { background: #fff; }
+  .app-shell .overview-page .kpi-card {
+    min-height: 146px;
+    border-radius: 11px;
+    box-shadow: 0 1px 3px rgba(22, 34, 62, .025), 0 5px 18px rgba(22, 34, 62, .025);
+  }
+  .app-shell .overview-page .kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 14px rgba(22, 34, 62, .045), 0 14px 28px rgba(22, 34, 62, .045);
+  }
+  .app-shell .overview-page .panel {
+    border-radius: 11px;
+    box-shadow: 0 1px 3px rgba(22, 34, 62, .025), 0 7px 22px rgba(22, 34, 62, .025);
+  }
+  .app-shell .overview-page .panel > header {
+    padding: 1.15rem 1.25rem .2rem;
+  }
+  .app-shell .overview-page .panel > header h2 {
+    font-size: .88rem;
+    color: #202b3d;
+  }
+  .app-shell .overview-page .panel > div:last-child { padding: .8rem 1.25rem 1.15rem; }
+  .app-shell .overview-page .recharts-cartesian-axis-tick-value {
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 500;
+  }
+  .app-shell .overview-page .recharts-tooltip-wrapper { filter: drop-shadow(0 5px 12px rgba(18, 28, 55, .08)); }
+  .app-shell .overview-page .setup-row {
+    border-radius: 8px;
+    background: #fafbfe;
+  }
+  @media (max-width: 639px) {
+    .app-shell .overview-intro { align-items: flex-start; flex-direction: column; }
+    .app-shell .overview-intro h1 { font-size: 1.25rem; }
+    .app-shell .overview-page .kpi-card { min-height: 132px; }
+    .app-shell .overview-page .panel > header { padding-inline: 1rem; }
+    .app-shell .overview-page .panel > div:last-child { padding-inline: 1rem; }
+  }
+}
+
+
+/* Workspace frame — balanced navigation rail and consistent content canvas. */
+@layer components {
+  .app-shell { min-height: 100vh; background: #f6f7fb; }
+  .app-shell > aside { width: 258px; }
+  .app-shell > aside > div:first-child { min-height: 4.7rem; padding-inline: 1.35rem; }
+  .app-shell > aside nav { padding-inline: 1rem; }
+  .app-shell .nav-item { min-height: 2.45rem; padding-inline: .8rem; gap: .7rem; }
+  .app-shell .nav-item svg { width: 16px; height: 16px; stroke-width: 1.8; }
+  .app-shell .main { min-width: 0; }
+  .app-shell .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    padding-inline: clamp(1rem, 2.2vw, 2rem);
+  }
+  .app-shell .breadcrumbs { gap: .65rem; }
+  .app-shell .breadcrumbs strong { color: #273449; font-weight: 650; }
+  .app-shell .top-actions { gap: .7rem; }
+  .app-shell .content {
+    width: 100%;
+    max-width: 100rem;
+    margin-inline: auto;
+    padding-inline: clamp(1rem, 2.2vw, 2rem);
+  }
+  .app-shell .page-heading { margin-bottom: .2rem; }
+  .app-shell .page-heading h1 { line-height: 1.2; }
+  @media (max-width: 1023px) {
+    .app-shell > aside { width: min(290px, calc(100vw - 3rem)); }
+  }
+  @media (max-width: 640px) {
+    .app-shell .top-actions { gap: .35rem; }
+    .app-shell .environment { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .app-shell .breadcrumbs { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  }
+}
+
+
+/* Operational screens: shared NexLink-inspired hierarchy without changing workflows. */
+@layer components {
+  .app-shell .content > .page-heading,
+  .app-shell .content > .inbox-page-header {
+    margin: 0 0 1.35rem;
+    padding: .2rem 0 .95rem;
+    border-bottom: 1px solid #e9edf4;
+  }
+  .app-shell .content > .page-heading h1,
+  .app-shell .inbox-page-header h1 {
+    color: #172235;
+    font-size: clamp(1.35rem, 2vw, 1.7rem);
+    font-weight: 680;
+    letter-spacing: -.045em;
+  }
+  .app-shell .content > .page-heading p,
+  .app-shell .inbox-page-header p { color: #778297; font-size: .78rem; margin-top: .35rem; }
+  .app-shell .content .panel,
+  .app-shell .content .integration-card,
+  .app-shell .content .account-banner,
+  .app-shell .content .privacy-note,
+  .app-shell .content .integration-health-card {
+    border: 1px solid #e8ecf3;
+    border-radius: 11px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(25, 40, 70, .025);
+  }
+  .app-shell .content .form-panel { padding: 1.35rem; }
+  .app-shell .content .form-panel h2,
+  .app-shell .content .panel h2,
+  .app-shell .content .section-header h2 {
+    color: #202c40;
+    font-size: .95rem;
+    font-weight: 650;
+    letter-spacing: -.02em;
+  }
+  .app-shell .content .field label {
+    color: #45536a;
+    font-size: .72rem;
+    font-weight: 620;
+    margin-bottom: .4rem;
+  }
+  .app-shell .content input:not([type="checkbox"]),
+  .app-shell .content select,
+  .app-shell .content textarea {
+    border-color: #e2e7ef;
+    border-radius: 7px;
+    background-color: #fff;
+    box-shadow: none;
+    transition: border-color .16s ease, box-shadow .16s ease;
+  }
+  .app-shell .content input:focus,
+  .app-shell .content select:focus,
+  .app-shell .content textarea:focus {
+    border-color: #8584df;
+    box-shadow: 0 0 0 3px rgba(89, 85, 209, .09);
+    outline: none;
+  }
+  .app-shell .content .primary-button {
+    border-radius: 7px;
+    box-shadow: 0 2px 5px rgba(89, 85, 209, .12);
+    font-weight: 620;
+  }
+  .app-shell .content .secondary-button { border-radius: 7px; }
+  .app-shell .content .section-toolbar,
+  .app-shell .content .section-header { margin-bottom: 1rem; }
+  .app-shell .content .source-list,
+  .app-shell .content .notification-list,
+  .app-shell .content .api-key-list,
+  .app-shell .content .settings-panel { overflow: hidden; border: 1px solid #e8ecf3; border-radius: 10px; background: #fff; }
+  .app-shell .content .source-table-head {
+    min-height: 2.65rem;
+    background: #f8f9fc;
+    color: #8791a3;
+    font-size: .62rem;
+    font-weight: 700;
+    letter-spacing: .09em;
+  }
+  .app-shell .content .source-row,
+  .app-shell .content .notification-item,
+  .app-shell .content .api-key-row,
+  .app-shell .content .setting-row {
+    border-color: #edf0f5;
+    transition: background .15s ease;
+  }
+  .app-shell .content .source-row:hover,
+  .app-shell .content .notification-item:hover,
+  .app-shell .content .api-key-row:hover { background: #fafbfe; }
+  .app-shell .content .integration-health { gap: .8rem; margin-bottom: 1.1rem; }
+  .app-shell .content .integration-health-card { padding: 1rem 1.1rem; transition: transform .18s ease, box-shadow .18s ease; }
+  .app-shell .content .integration-health-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(25,40,70,.06); }
+  .app-shell .content .integration-health-label { color: #7c8799; font-size: .67rem; font-weight: 600; }
+  .app-shell .content .integration-health-card strong { color: #202c40; font-size: 1.35rem; letter-spacing: -.04em; }
+  .app-shell .content .integration-health-card small { color: #8a94a5; font-size: .67rem; }
+  .app-shell .content .integration-head { padding-bottom: 1rem; border-bottom: 1px solid #edf0f5; }
+  .app-shell .content .checklist { padding-block: .75rem; }
+  .app-shell .content .account-banner { padding: 1.15rem 1.25rem; margin-bottom: 1rem; }
+  .app-shell .content .account-banner-avatar { background: #eeefff; color: #5955d1; font-weight: 700; }
+  .app-shell .content .setting-row { padding: 1.1rem 1.25rem; }
+  .app-shell .content .setting-icon { background: #f0f1ff; color: #5955d1; border-radius: 8px; }
+  .app-shell .inbox-layout { gap: .9rem; }
+  .app-shell .conversation-list,
+  .app-shell .chat-panel {
+    border: 1px solid #e7ebf2;
+    border-radius: 11px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(25,40,70,.025);
+  }
+  .app-shell .inbox-list-title { padding: 1rem 1.1rem .75rem; }
+  .app-shell .inbox-list-title strong { color: #202c40; font-size: .88rem; }
+  .app-shell .inbox-filters { padding: 0 1rem 1rem; border-bottom: 1px solid #edf0f5; }
+  .app-shell .conversation-item { padding: .85rem 1rem; transition: background .15s ease; }
+  .app-shell .conversation-item:hover { background: #f8f9fe; }
+  .app-shell .conversation-item.selected { background: #f1f1ff; box-shadow: inset 2px 0 #5955d1; }
+  .app-shell .conversation-avatar { background: #eeefff; color: #5955d1; font-weight: 700; }
+  .app-shell .chat-panel { overflow: hidden; }
+  .app-shell .empty-chat { color: #8791a3; }
+  .app-shell .empty-chat-icon { background: #f0f1ff; color: #5955d1; border-radius: 12px; }
+  @media (max-width: 760px) {
+    .app-shell .content .form-panel { padding: 1rem; }
+    .app-shell .content .integration-health { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .app-shell .content .setting-row { align-items: flex-start; flex-wrap: wrap; gap: .7rem; }
+    .app-shell .inbox-layout { grid-template-columns: minmax(0,1fr); }
+    .app-shell .inbox-layout.has-selection .conversation-list { display: none; }
+    .app-shell .inbox-layout:not(.has-selection) .chat-panel { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .app-shell .content * { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+  }
+}
+
+
+/* Public website and authentication — same calm indigo/neutral language. */
+@layer components {
+  .marketing-theme { background: #f7f8fc; }
+  .marketing-theme nav { border-color: #e8ecf3; }
+  .marketing-theme .btn-primary { border-radius: 7px; box-shadow: none; }
+  .marketing-theme .btn-secondary { border-radius: 7px; box-shadow: none; }
+  .marketing-theme h1,
+  .marketing-theme h2,
+  .marketing-theme h3 { letter-spacing: -.04em; }
+  .marketing-theme section { scroll-margin-top: 5rem; }
+  .marketing-theme article { border-radius: 10px; }
+  .marketing-theme .shadow-raised { box-shadow: 0 12px 30px rgba(22, 34, 62, .09); }
+  .marketing-theme .marketing-footer { border-top: 1px solid #e8ecf3; }
+  .marketing-theme a:focus-visible { outline-offset: 3px; }
+  .auth-page {
+    min-height: 100vh;
+    background: #f6f7fb;
+  }
+  .auth-back-home {
+    color: #69758a;
+    transition: color .15s ease;
+  }
+  .auth-back-home:hover { color: #5955d1; }
+  .auth-layout {
+    width: min(1120px, calc(100% - 3rem));
+    min-height: min(760px, calc(100vh - 5rem));
+    margin: 2.5rem auto;
+    overflow: hidden;
+    border: 1px solid #e7eaf1;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 18px 55px rgba(26, 37, 67, .08);
+  }
+  .auth-story {
+    background: #f0f1ff;
+    color: #202b42;
+  }
+  .auth-story h1 { color: #17233a; letter-spacing: -.05em; }
+  .auth-story h1 em { color: #5955d1; font-style: normal; }
+  .auth-story-content > p { color: #68748b; }
+  .auth-story-mark { background: #5955d1; box-shadow: none; }
+  .auth-story-footer { color: #7b8497; }
+  .auth-form-side { background: #fff; }
+  .auth-form-card { max-width: 440px; }
+  .auth-eyebrow { color: #5955d1; letter-spacing: .13em; }
+  .auth-secure {
+    color: #68758a;
+    background: #f6f7fb;
+    border: 1px solid #e9edf4;
+    border-radius: 5px;
+  }
+  .auth-form-card h2 {
+    color: #172235;
+    font-size: clamp(1.65rem, 3vw, 2rem);
+    font-weight: 680;
+    letter-spacing: -.05em;
+  }
+  .auth-form-description { color: #7a8598; }
+  .auth-form-card label { color: #48566c; font-weight: 600; }
+  .auth-input-wrap {
+    border: 1px solid #e1e6ef;
+    border-radius: 7px;
+    background: #fff;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .auth-input-wrap:focus-within {
+    border-color: #8584df;
+    box-shadow: 0 0 0 3px rgba(89, 85, 209, .09);
+  }
+  .auth-input-wrap input { background: transparent; }
+  .auth-submit {
+    border-radius: 7px;
+    background: #5955d1;
+    box-shadow: none;
+    transition: background .15s ease, transform .15s ease;
+  }
+  .auth-submit:hover { background: #4a46bd; transform: translateY(-1px); }
+  .auth-text-link { color: #5955d1; }
+  .auth-mode-prompt { border-color: #edf0f5; }
+  .auth-assurance {
+    border: 1px solid #e9edf4;
+    border-radius: 8px;
+    background: #fafbfe;
+    color: #7a8598;
+  }
+  .auth-form-legal { color: #9aa3b2; }
+  @media (max-width: 760px) {
+    .auth-layout {
+      width: min(100% - 1.5rem, 520px);
+      min-height: auto;
+      margin: 1rem auto 2rem;
+      border-radius: 11px;
+    }
+    .auth-form-side { padding: 1.5rem; }
+    .auth-form-card { width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .marketing-theme *, .auth-page * {
+      scroll-behavior: auto !important;
+      animation-duration: .01ms !important;
+      transition-duration: .01ms !important;
+    }
+  }
+}
+
+
+/* Final responsive and semantic polish for operational records. */
+@layer components {
+  .app-shell .source-text .contact-phone {
+    display: inline-block;
+    margin-top: .12rem;
+    color: #7f8a9d;
+    font-size: .75rem;
+    font-variant-numeric: tabular-nums;
+    text-decoration: none;
+  }
+  .app-shell .source-row .source-added {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    line-height: 1.45;
+  }
+  .app-shell .notification-item {
+    align-items: flex-start;
+    gap: .9rem;
+  }
+  .app-shell .notification-copy { min-width: 0; }
+  .app-shell .notification-heading strong { overflow-wrap: anywhere; }
+  .app-shell .notification-item > button { flex: none; }
+  .app-shell .contact-inline input { min-width: 0; }
+  @media (max-width: 640px) {
+    .app-shell .content .section-header { align-items: stretch; }
+    .app-shell .content .section-header .search-field { width: 100%; min-width: 0; }
+    .app-shell .content .section-header .search-field input { min-width: 0; }
+    .app-shell .content .row-actions { flex-wrap: wrap; }
+    .app-shell .content .form-actions { align-items: flex-start; flex-wrap: wrap; }
+    .app-shell .content .source-row.contact-row,
+    .app-shell .content .source-row.campaign-row { padding: .95rem; }
+    .app-shell .notification-item { align-items: flex-start; }
+    .app-shell .notification-item > button { margin-left: auto; }
+    .app-shell .content .consent-event { align-items: flex-start; flex-wrap: wrap; gap: .45rem .75rem; }
+  }
+}
