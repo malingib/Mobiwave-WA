@@ -48,7 +48,7 @@ Deno.test("same key with a different payload is rejected", async () => {
 Deno.test("idempotency keys enforce length and reject line breaks", () => {
   assert(!validIdempotencyKey("short"), "short key must be invalid");
   assert(validIdempotencyKey("request-123456"), "normal key should be valid");
-  assert(!validIdempotencyKey("request-123\\n456"), "newline must be invalid");
+  assert(!validIdempotencyKey("request-123\n456"), "newline must be invalid");
   assert(!validIdempotencyKey("x".repeat(201)), "oversized key must be invalid");
 });
 
