@@ -2691,3 +2691,41 @@
     }
   }
 }
+
+
+/* Final responsive and semantic polish for operational records. */
+@layer components {
+  .app-shell .source-text .contact-phone {
+    display: inline-block;
+    margin-top: .12rem;
+    color: #7f8a9d;
+    font-size: .75rem;
+    font-variant-numeric: tabular-nums;
+    text-decoration: none;
+  }
+  .app-shell .source-row .source-added {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    line-height: 1.45;
+  }
+  .app-shell .notification-item {
+    align-items: flex-start;
+    gap: .9rem;
+  }
+  .app-shell .notification-copy { min-width: 0; }
+  .app-shell .notification-heading strong { overflow-wrap: anywhere; }
+  .app-shell .notification-item > button { flex: none; }
+  .app-shell .contact-inline input { min-width: 0; }
+  @media (max-width: 640px) {
+    .app-shell .content .section-header { align-items: stretch; }
+    .app-shell .content .section-header .search-field { width: 100%; min-width: 0; }
+    .app-shell .content .section-header .search-field input { min-width: 0; }
+    .app-shell .content .row-actions { flex-wrap: wrap; }
+    .app-shell .content .form-actions { align-items: flex-start; flex-wrap: wrap; }
+    .app-shell .content .source-row.contact-row,
+    .app-shell .content .source-row.campaign-row { padding: .95rem; }
+    .app-shell .notification-item { align-items: flex-start; }
+    .app-shell .notification-item > button { margin-left: auto; }
+    .app-shell .content .consent-event { align-items: flex-start; flex-wrap: wrap; gap: .45rem .75rem; }
+  }
+}
