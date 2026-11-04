@@ -236,7 +236,7 @@ test("shots pricing", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto("/pricing");
   await page.waitForTimeout(800);
-  await page.screenshot({ path: "/tmp/opencode/shots/pricing.png", fullPage: false });
+  await capture(page, testInfo, "pricing");
 });
 
 test("shots login", async ({ page }, testInfo) => {
@@ -244,5 +244,5 @@ test("shots login", async ({ page }, testInfo) => {
   await page.getByRole("heading", { name: "Welcome back" }).waitFor();
   await page.waitForTimeout(400);
   const suffix = testInfo.project.name.includes("mobile") ? "login-mobile" : "login";
-  await page.screenshot({ path: `/tmp/opencode/shots/${suffix}.png` });
+  await capture(page, testInfo, suffix);
 });
