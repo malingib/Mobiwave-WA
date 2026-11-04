@@ -133,7 +133,8 @@ async function signIn(page: Page) {
   await page.getByLabel("Work email").fill(user.email);
   await page.getByRole("textbox", { name: "Password" }).fill("e2e-password-123");
   await page.getByRole("button", { name: /sign in securely/i }).click();
-  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your messaging at a glance", exact: true })).toBeVisible();
+  await expect(page.locator('#primary-navigation [aria-current="page"]')).toHaveAttribute("aria-label", "Overview");
   await expect(page.locator(".breadcrumbs").getByText("Demo Business")).toBeVisible();
 }
 
