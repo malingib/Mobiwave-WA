@@ -161,8 +161,9 @@ test("public landing page loads and labels preview metrics as sample data", asyn
   expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
 });
 
-test("sign-in opens the workspace overview with the selected business account", async ({ page }) => {
+test("sign-in opens the workspace overview and clears its success notice", async ({ page }) => {
   await signIn(page);
+  await expect(page.locator(".toast").filter({ hasText: "Signed in." })).toBeHidden({ timeout: 6000 });
   await expect(page.getByText("Amina Customer")).toBeVisible();
   await expect(page.locator('#primary-navigation [aria-current="page"]')).toHaveAttribute("aria-label", "Overview");
   await openView(page, "Inbox");
