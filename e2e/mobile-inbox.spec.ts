@@ -197,6 +197,7 @@ test("mobile inbox switches between conversation list and chat and submits an in
   await test.step("open the customer conversation", async () => {
     await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
     await expect(page.locator(".chat-contact-heading")).toContainText("Amina Customer");
+    await expect(page.getByRole("log", { name: "Conversation messages" })).toBeVisible();
   });
 
   await test.step("add an internal note", async () => {
@@ -361,6 +362,7 @@ test("workspace alerts show provider failure details and support acknowledgement
   await navigateTo(page, "Alerts");
   await expect(page.getByRole("heading", { name: "Alerts", exact: true })).toBeVisible();
   await expect(page.getByText("1 unread alerts")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Workspace alerts" })).toBeVisible();
   await expect(page.getByText("WhatsApp delivery failed")).toBeVisible();
   await expect(page.getByText("Error code: 131026")).toBeVisible();
   await page.getByRole("button", { name: "Mark read" }).click();
