@@ -80,6 +80,8 @@ function messageRows() {
 
 
 async function capture(page: Page, testInfo: TestInfo, name: string, fullPage = false) {
+  const dismiss = page.locator(".toast button[aria-label=\"Dismiss\"]");
+  if (await dismiss.isVisible()) await dismiss.click();
   const body = await page.screenshot({ fullPage });
   await testInfo.attach(name, { body, contentType: "image/png" });
 }
