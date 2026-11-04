@@ -264,7 +264,7 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
 test("workspace navigation exposes all eight sections without losing the active business context", async ({ page }) => {
   await signIn(page);
   const sections = [
-    ["Overview", "Overview"],
+    ["Overview", "Your messaging at a glance"],
     ["Contacts", "Contacts"],
     ["Campaigns", "Campaigns"],
     ["Alerts", "Alerts"],
