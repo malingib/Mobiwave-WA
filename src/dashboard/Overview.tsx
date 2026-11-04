@@ -117,7 +117,7 @@ export default function Overview({
       <div className="overview-intro flex flex-wrap items-end justify-between gap-3">
         <div>
           <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-brand-600">Workspace overview</span>
-          <h2 className="font-display text-[22px] font-semibold leading-tight tracking-[-0.035em] text-text">Your messaging at a glance</h2>
+          <h1 className="font-display text-[22px] font-semibold leading-tight tracking-[-0.035em] text-text">Your messaging at a glance</h1>
           <p className="mt-1 text-[12.5px] text-text-muted">A live view of conversations, audience readiness and WhatsApp activity.</p>
         </div>
         <div className="flex items-center gap-2 rounded-lg border border-hairline bg-surface px-3 py-2 text-[11px] font-medium text-text-muted">
