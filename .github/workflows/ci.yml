@@ -9,6 +9,20 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: mobiwave_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d mobiwave_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -48,5 +62,11 @@ jobs:
           deno-version: v2.x
       - name: Test outbound idempotency behavior
         run: deno test supabase/functions/api-send/idempotency_test.ts
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Test concurrent idempotency claims against PostgreSQL
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/mobiwave_test
+        run: bash .github/scripts/test-outbound-idempotency-postgres.sh
       - name: Type-check Supabase Edge Functions
         run: deno check supabase/functions/*/index.ts
