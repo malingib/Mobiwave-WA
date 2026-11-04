@@ -6,7 +6,7 @@ export async function hashRequest(value: string): Promise<string> {
 }
 
 export function validIdempotencyKey(value: string): boolean {
-  return value.length >= 8 && value.length <= 200 && !/[\\r\\n]/.test(value);
+  return value.length >= 8 && value.length <= 200 && !/[\r\n]/.test(value);
 }
 
 export function replayResponse(attempt: Record<string, unknown>): Response {
