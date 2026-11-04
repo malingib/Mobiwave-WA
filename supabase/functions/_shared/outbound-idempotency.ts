@@ -1,4 +1,4 @@
-import { corsHeaders, json } from "./cors.ts";
+import { json } from "./cors.ts";
 
 export async function hashRequest(value: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
