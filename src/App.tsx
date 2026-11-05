@@ -544,7 +544,7 @@ export default function App() {
     }
     await loadWorkspace();
     if (selectedCampaign?.id === campaignId) {
-      const nextStatus = !error && !data?.error && data?.status ? String(data.status) : selectedCampaign.status;
+      const nextStatus = !error && !data?.error && data?.ok === true && data?.status ? String(data.status) : selectedCampaign.status;
       const refreshed = { ...selectedCampaign, status: nextStatus };
       void openCampaign(refreshed);
     }
