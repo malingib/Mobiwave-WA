@@ -18,12 +18,17 @@ Deno.serve(async (request) => {
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
     const { data: tenant, error: tenantError } = await admin.from("tenants").insert({ name, slug }).select("id,name,slug").single();
     if (tenantError) return json({ error: tenantError.code === "23505" ? "That workspace URL is already in use." : "Could not create workspace." }, 400);
+    const rollbackWorkspace = async (reason: string) => {
+      const { error: cleanupError } = await admin.from("tenants").delete().eq("id", tenant.id);
+      if (cleanupError) throw new Error(reason + " The incomplete workspace could not be removed: " + cleanupError.message);
+      throw new Error(reason);
+    };
     const { error: memberError } = await admin.from("tenant_members").insert({ tenant_id: tenant.id, user_id: userData.user.id, role: "owner" });
-    if (memberError) throw memberError;
+    if (memberError) await rollbackWorkspace("Could not assign the workspace owner: " + memberError.message);
     const { error: settingsError } = await admin.from("tenant_settings").insert({ tenant_id: tenant.id, ai_enabled: false });
-    if (settingsError) throw settingsError;
+    if (settingsError) await rollbackWorkspace("Could not initialize workspace settings: " + settingsError.message);
     const { error: limitError } = await admin.from("tenant_usage_limits").insert({ tenant_id: tenant.id, monthly_message_limit: 0, monthly_ai_request_limit: 500 });
-    if (limitError) throw limitError;
+    if (limitError) await rollbackWorkspace("Could not initialize workspace usage limits: " + limitError.message);
     return json({ ok: true, tenant });
   } catch (error) {
     const message = errorMessage(error);

@@ -198,9 +198,10 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const noticeIsError = /(^could not\b|^failed\b|^error\b|^unable\b|^invalid\b|^not found\b|^not configured\b|^not allowed\b|\b(?:rejected|denied|unavailable|could not|cannot|not allowed|not configured|not found|invalid|permission denied|duplicate|violates|did not|was not|not confirmed|no changes|edge function returned|non-2xx|network|unauthorized|forbidden|bad request|conflict|request failed|function invocation failed|failed to|fetch error|internal server error)\b|\b[1-9]\d* failed\b)/i.test(notice);
   useEffect(() => {
     if (!notice) return;
-    const needsManualAttention = /could not|failed|error|unknown|unavailable|not available|copy|secret|token|api key|select|enter|record|consent|opted out|suppressed|retry|must|not found/i.test(notice);
+    const needsManualAttention = /could not|failed|error|unknown|unavailable|not available|copy|secret|token|api key|select|enter|record|consent|opted out|suppressed|retry|must|not found|edge function|non-2xx|unauthorized|forbidden|network|conflict/i.test(notice);
     if (needsManualAttention) return;
     const timeout = window.setTimeout(() => setNotice(""), 4500);
     return () => window.clearTimeout(timeout);
@@ -358,16 +359,29 @@ export default function App() {
     setNotificationUnread(Number(data?.unread_count ?? 0));
   }, [tenantId]);
   useEffect(() => { void loadNotifications(); }, [loadNotifications]);
+  useEffect(() => {
+    if (!supabase || !tenantId) return;
+    const client = supabase;
+    const channel = client.channel(`workspace-alerts-${tenantId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "workspace_notifications", filter: `tenant_id=eq.${tenantId}` }, () => {
+        void loadNotifications();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "workspace_notification_reads", filter: `tenant_id=eq.${tenantId}` }, () => {
+        void loadNotifications();
+      })
+      .subscribe();
+    return () => { void client.removeChannel(channel); };
+  }, [tenantId, loadNotifications]);
   async function markNotificationRead(id: string) {
     if (!supabase || !tenantId) return;
     const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "mark_read", notification_id: id } });
-    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not acknowledge alert."); return; }
+    if (error || data?.error || !Array.isArray(data?.notifications) || !Number.isFinite(Number(data?.unread_count))) { setNotice(data?.error ?? error?.message ?? "Alert acknowledgement was not confirmed. Refresh the alerts list before retrying."); return; }
     await loadNotifications();
   }
   async function markAllNotificationsRead() {
     if (!supabase || !tenantId) return;
     const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "mark_all_read" } });
-    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not acknowledge alerts."); return; }
+    if (error || data?.error || !Array.isArray(data?.notifications) || !Number.isFinite(Number(data?.unread_count))) { setNotice(data?.error ?? error?.message ?? "Bulk alert acknowledgement was not confirmed. Refresh the alerts list before retrying."); return; }
     await loadNotifications();
   }
   const loadInbox = useCallback(async () => {
@@ -452,7 +466,7 @@ export default function App() {
     setBusy(true);
     const { data, error } = await supabase.functions.invoke("create-workspace", { body: { name, slug } });
     setBusy(false);
-    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Business setup failed."); return; }
+    if (error || data?.error || data?.ok !== true || !data?.tenant?.id) { setNotice(data?.error ?? error?.message ?? "Business setup did not return a confirmed workspace. Refresh and check your accounts before retrying."); return; }
     setWorkspaceName(""); setNotice("Business account created."); await loadTenants();
   }
   async function addContact(event: FormEvent) {
@@ -470,15 +484,15 @@ export default function App() {
   }
   async function optOut(contact: Contact) {
     if (!supabase || !confirm("Suppress " + (contact.display_name || contact.phone_e164) + " from campaigns?")) return;
-    const { error } = await supabase.from("contacts").update({ consent_status: "opted_out", consent_source: "Suppressed by business account user", opted_out_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", contact.id).eq("tenant_id", tenantId);
-    setNotice(error ? error.message : "Contact opted out and suppressed from campaigns."); await loadWorkspace();
+    const { data, error } = await supabase.from("contacts").update({ consent_status: "opted_out", consent_source: "Suppressed by business account user", opted_out_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", contact.id).eq("tenant_id", tenantId).select("id").maybeSingle();
+    setNotice(error ? error.message : data ? "Contact opted out and suppressed from campaigns." : "Contact was not found in this workspace; no changes were made."); await loadWorkspace();
   }
   async function recordOptIn(contact: Contact, event: FormEvent) {
     event.preventDefault();
     if (!supabase || !tenantId || !consentRecordSource.trim()) return;
     const now = new Date().toISOString();
-    const { error } = await supabase.from("contacts").update({ consent_status: "opted_in", consent_source: consentRecordSource.trim(), consent_at: now, opted_out_at: null, updated_at: now }).eq("id", contact.id).eq("tenant_id", tenantId);
-    setNotice(error ? "Could not record consent: " + error.message : "Opt-in recorded and added to the consent history.");
+    const { data, error } = await supabase.from("contacts").update({ consent_status: "opted_in", consent_source: consentRecordSource.trim(), consent_at: now, opted_out_at: null, updated_at: now }).eq("id", contact.id).eq("tenant_id", tenantId).select("id").maybeSingle();
+    setNotice(error ? "Could not record consent: " + error.message : data ? "Opt-in recorded and added to the consent history." : "Contact was not found in this workspace; no consent change was made.");
     setConsentTarget(""); setConsentRecordSource(""); await loadWorkspace();
   }
   async function showConsentHistory(contact: Contact) {
@@ -505,19 +519,35 @@ export default function App() {
     const { data: campaign, error } = await supabase.from("campaigns").insert({ tenant_id: tenantId, name: campaignName.trim(), template_id: campaignTemplate, template_parameters: parameters, created_by: user.id, status: "draft" }).select("id").single();
     if (error) { setBusy(false); setNotice(error.message); return; }
     const { error: recipientError } = await supabase.from("campaign_recipients").insert(chosen.map((contactId) => ({ tenant_id: tenantId, campaign_id: campaign.id, contact_id: contactId, status: "queued" })));
-    setBusy(false);
-    if (recipientError) setNotice("Campaign created, but recipients could not be added: " + recipientError.message);
-    else { setCampaignName(""); setCampaignContacts([]); setCampaignVariableValues({}); setNotice("Campaign draft created with " + chosen.length + " selected contacts. Consent is checked again immediately before sending."); }
+    if (recipientError) {
+      // Do not leave a misleading, empty draft when the recipient batch failed.
+      const { error: rollbackError } = await supabase.from("campaigns").delete().eq("tenant_id", tenantId).eq("id", campaign.id);
+      setBusy(false);
+      setNotice(rollbackError
+        ? "Recipients could not be added and the incomplete draft could not be removed. Contact support before retrying: " + recipientError.message
+        : "Recipients could not be added. The incomplete campaign draft was removed: " + recipientError.message);
+    } else {
+      setBusy(false);
+      setCampaignName("");
+      setCampaignContacts([]);
+      setCampaignVariableValues({});
+      setNotice("Campaign draft created with " + chosen.length + " selected contacts. Consent is checked again immediately before sending.");
+    }
     await loadWorkspace();
   }
   async function launchCampaign(campaignId: string) {
     if (!supabase || !confirm("Send this campaign now using the selected approved Meta template?")) return;
     setBusy(true);
     const { data, error } = await supabase.functions.invoke("campaign-launch", { body: { tenant_id: tenantId, campaign_id: campaignId } });
-    setBusy(false); setNotice(error ? error.message : data?.error ?? ("Campaign batch: " + (data?.sent ?? 0) + " sent, " + (data?.skipped ?? 0) + " skipped, " + (data?.failed ?? 0) + " failed. " + (data?.remaining ?? 0) + " remain queued."));
+    setBusy(false);
+    if (error || data?.error || data?.ok !== true || !["running", "completed", "failed"].includes(String(data?.status)) || !["sent", "skipped", "failed", "remaining"].every((key) => Number.isFinite(Number(data?.[key])))) {
+      setNotice(data?.error ?? error?.message ?? "Campaign launch did not return a confirmed result. Refresh campaign details before retrying.");
+    } else {
+      setNotice("Campaign batch: " + Number(data.sent) + " sent, " + Number(data.skipped) + " skipped, " + Number(data.failed) + " failed. " + Number(data.remaining) + " remain queued.");
+    }
     await loadWorkspace();
     if (selectedCampaign?.id === campaignId) {
-      const nextStatus = !error && !data?.error && data?.status ? String(data.status) : selectedCampaign.status;
+      const nextStatus = !error && !data?.error && data?.ok === true && data?.status ? String(data.status) : selectedCampaign.status;
       const refreshed = { ...selectedCampaign, status: nextStatus };
       void openCampaign(refreshed);
     }
@@ -573,7 +603,7 @@ export default function App() {
       body: { tenant_id: tenantId, to: conversation.contacts.phone_e164, type: "text", text: messageText, idempotency_key: idempotencyKey },
     });
     setBusy(false);
-    if (error || data?.error) {
+    if (error || data?.error || data?.ok !== true || data?.status !== "accepted" || typeof data?.message_id !== "string" || !data.message_id) {
       // Preserve the key after uncertain results so retrying cannot duplicate a provider submission.
       setNotice(data?.error ?? error?.message ?? "Send outcome could not be confirmed. Retry this same message to check its recorded outcome.");
     } else {
@@ -588,13 +618,13 @@ export default function App() {
   async function resolveConversation(conversation: Conversation) {
     if (!supabase) return;
     const { data, error } = await supabase.functions.invoke("conversation-control", { body: { tenant_id: tenantId, conversation_id: conversation.id, action: "resolve" } });
-    setNotice(error ? error.message : data?.error ?? "Conversation resolved."); await loadWorkspace();
+    setNotice(error || data?.error || data?.ok !== true || data?.conversation?.status !== "resolved" ? (data?.error ?? error?.message ?? "Conversation resolution was not confirmed. Refresh the inbox and try again.") : "Conversation resolved."); await loadWorkspace();
   }
   async function assignConversation(conversation: Conversation, assignedTo: string) {
     if (!supabase) return;
     const { data, error } = await supabase.functions.invoke("conversation-control", { body: { tenant_id: tenantId, conversation_id: conversation.id, action: "assign", assigned_to: assignedTo || null } });
-    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not assign conversation."); return; }
-    setConversations((rows) => rows.map((row) => row.id === conversation.id ? { ...row, assigned_to: assignedTo || null } : row));
+    if (error || data?.error || data?.ok !== true || data?.conversation?.id !== conversation.id) { setNotice(data?.error ?? error?.message ?? "Conversation assignment was not confirmed. Refresh the inbox and try again."); return; }
+    setConversations((rows) => rows.map((row) => row.id === conversation.id ? { ...row, assigned_to: data.conversation.assigned_to ?? null } : row));
   }
   async function markConversationRead(conversationId: string) {
     if (!supabase || !user || !tenantId || !conversationId) return;
@@ -614,7 +644,7 @@ export default function App() {
     setBusy(true);
     const { data, error } = await supabase.functions.invoke("meta-webhook-config", { body: { tenant_id: tenantId, verification_token: raw } });
     setBusy(false);
-    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not configure Meta webhook verification."); return; }
+    if (error || data?.error || data?.ok !== true) { setNotice(data?.error ?? error?.message ?? "Meta webhook verification token was not saved. Try again."); return; }
     setMetaWebhookToken(raw);
     setNotice("Verification token saved securely. Copy it now and paste the same value into Meta.");
   }
@@ -622,31 +652,46 @@ export default function App() {
     event.preventDefault(); if (!supabase) return; setBusy(true);
     const { data, error } = await supabase.functions.invoke("meta-config", { body: { tenant_id: tenantId, phone_number_id: metaPhoneId.trim(), waba_id: metaWabaId.trim(), access_token: metaToken.trim() } });
     setBusy(false);
-    if (error || data?.error) setNotice(data?.error ?? error?.message ?? "Save failed.");
+    if (error || data?.error || data?.ok !== true) setNotice(data?.error ?? error?.message ?? "Meta credentials were not confirmed as saved. Try again.");
     else { setMetaToken(""); setNotice("Meta token encrypted and saved. Verify the connection next."); await loadWorkspace(); }
   }
   async function verifyMeta() {
-    if (!supabase) return; setBusy(true);
+    if (!supabase || !tenantId) return;
+    setBusy(true);
     const { data, error } = await supabase.functions.invoke("meta-verify", { body: { tenant_id: tenantId } });
-    setBusy(false); setNotice(error ? error.message : data?.error ?? "Meta connection verified."); await loadWorkspace();
+    setBusy(false);
+    if (error || data?.error || data?.ok !== true || data?.verified !== true || data?.enabled !== true) {
+      setNotice(data?.error ?? error?.message ?? "Meta did not confirm an enabled connection. Check the credentials and try again.");
+    } else {
+      setNotice("Meta connection verified and messaging enabled.");
+    }
+    await loadWorkspace();
   }
   async function syncTemplates() {
-    if (!supabase) return; setBusy(true);
+    if (!supabase || !tenantId) return;
+    setBusy(true);
     const { data, error } = await supabase.functions.invoke("meta-sync-templates", { body: { tenant_id: tenantId } });
-    setBusy(false); setNotice(error ? error.message : data?.error ?? ("Templates synced: " + data?.synced)); await loadWorkspace();
+    setBusy(false);
+    if (error || data?.error || !Number.isFinite(Number(data?.synced))) {
+      setNotice(data?.error ?? error?.message ?? "Template sync did not return a confirmed result. Check the Meta connection and try again.");
+    } else {
+      setNotice("Templates synced successfully: " + Number(data.synced) + " template(s).");
+    }
+    await loadWorkspace();
   }
   async function createWebhook(event: FormEvent) {
     event.preventDefault(); if (!supabase) return; setBusy(true); setNewWebhookSecret("");
     const { data, error } = await supabase.functions.invoke("manage-webhook", { body: { tenant_id: tenantId, action: "create", name: webhookName.trim(), endpoint_url: webhookUrl.trim(), events: webhookEvents } });
     setBusy(false);
-    if (error || data?.error) setNotice(data?.error ?? error?.message ?? "Could not create webhook.");
+    if (error || data?.error || data?.ok !== true || !data?.signing_secret || !data?.webhook?.id) setNotice(data?.error ?? error?.message ?? "Webhook creation was not confirmed. Check the webhook list before retrying.");
     else { setNewWebhookSecret(data.signing_secret); setWebhookUrl(""); setWebhookName("Support event receiver"); setNotice("Webhook created. Copy the signing secret now."); await loadWorkspace(); }
   }
   async function manageWebhook(webhook: TenantWebhook, action: "enable" | "disable" | "delete") {
     if (!supabase) return;
     if (action === "delete" && !confirm("Delete this webhook subscription and its delivery history?")) return;
     const { data, error } = await supabase.functions.invoke("manage-webhook", { body: { tenant_id: tenantId, action, webhook_id: webhook.id } });
-    setNotice(error ? error.message : data?.error ?? (action === "delete" ? "Webhook deleted." : "Webhook updated."));
+    const confirmed = action === "delete" ? data?.deleted === true : data?.enabled === (action === "enable");
+    setNotice(error || data?.error || data?.ok !== true || !confirmed ? (data?.error ?? error?.message ?? "Webhook change was not confirmed. Refresh the list before retrying.") : action === "delete" ? "Webhook deleted." : "Webhook updated.");
     await loadWorkspace();
   }
   async function testWebhook(hook: TenantWebhook) {
@@ -654,7 +699,7 @@ export default function App() {
     setBusy(true);
     const { data, error } = await supabase.functions.invoke("manage-webhook", { body: { tenant_id: tenantId, action: "test", webhook_id: hook.id } });
     setBusy(false);
-    setNotice(error ? error.message : data?.error ?? data?.message ?? "Webhook test completed.");
+    setNotice(error || data?.error || data?.ok !== true || !data?.delivery_id ? (data?.error ?? error?.message ?? "Webhook test did not return a confirmed delivery result.") : data?.message ?? "Webhook test delivered successfully.");
     await loadWorkspace();
   }
   async function retryWebhookDelivery(delivery: WebhookDelivery) {
@@ -662,7 +707,7 @@ export default function App() {
     setBusy(true);
     const { data, error } = await supabase.functions.invoke("manage-webhook", { body: { tenant_id: tenantId, action: "retry", delivery_id: delivery.id } });
     setBusy(false);
-    setNotice(error ? error.message : data?.error ?? data?.message ?? "Webhook retry completed.");
+    setNotice(error || data?.error || data?.ok !== true || !data?.delivery_id ? (data?.error ?? error?.message ?? "Webhook retry did not return a confirmed delivery result.") : data?.message ?? "Webhook delivery retry completed successfully.");
     await loadWorkspace();
   }
   async function copyWebhookSecret() {
@@ -673,13 +718,13 @@ export default function App() {
     event.preventDefault(); if (!supabase) return; setBusy(true); setNewApiKey("");
     const { data, error } = await supabase.functions.invoke("create-api-key", { body: { tenant_id: tenantId, name: apiKeyName.trim() } });
     setBusy(false);
-    if (error || data?.error) setNotice(data?.error ?? error?.message ?? "Could not create API key.");
+    if (error || data?.error || data?.ok !== true || typeof data?.api_key !== "string" || !data.api_key) setNotice(data?.error ?? error?.message ?? "API key creation was not confirmed. Check the key list before retrying.");
     else { setNewApiKey(data.api_key); setApiKeyName("Production integration"); setNotice("API key created. Copy it now; the secret will not be shown again."); await loadWorkspace(); }
   }
   async function revokeApiKey(key: ApiKey) {
     if (!supabase || !confirm("Revoke API key " + key.name + "? Requests using it will stop working.")) return;
-    const { error } = await supabase.from("tenant_api_keys").update({ revoked_at: new Date().toISOString() }).eq("id", key.id).eq("tenant_id", tenantId);
-    setNotice(error ? error.message : "API key revoked."); await loadWorkspace();
+    const { data, error } = await supabase.from("tenant_api_keys").update({ revoked_at: new Date().toISOString() }).eq("id", key.id).eq("tenant_id", tenantId).select("id").maybeSingle();
+    setNotice(error ? error.message : data ? "API key revoked." : "API key was not found in this workspace; no changes were made."); await loadWorkspace();
   }
   async function copyApiKey() {
     if (!newApiKey) return;
@@ -697,7 +742,14 @@ export default function App() {
     setNewPassword(""); setNotice("Profile updated successfully.");
     const { data } = await supabase.auth.getUser(); if (data.user) setUser(data.user);
   }
-  async function signOut() { if (supabase) await supabase.auth.signOut(); setTenants([]); setTenantId(""); setTenantLoading(false); }
+  async function signOut() {
+    if (!supabase) return;
+    const { error } = await supabase.auth.signOut();
+    if (error) { setNotice("Could not sign out: " + error.message); return; }
+    setTenants([]);
+    setTenantId("");
+    setTenantLoading(false);
+  }
   const filteredContacts = contacts;
   const visibleCampaignContacts = contacts.filter((contact) => contact.consent_status === "opted_in");
   const unreadCount = conversations.filter((conversation) => conversation.unread).length;
@@ -1044,7 +1096,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           <h2>2. Configure Meta's webhook callback</h2>
           <p className="muted small">Meta requires a callback URL and verification token. Copy both values into your Meta app's Webhooks configuration. The token is stored as a hash and shown only when generated; it cannot be retrieved after leaving this screen.</p>
           <div className="field"><label>Callback URL</label><div className="copyable-value"><code>{window.location.origin.replace(/\/$/,"")+"/api/webhooks/whatsapp"}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(window.location.origin.replace(/\/$/,"")+"/api/webhooks/whatsapp","Callback URL")}>Copy URL</button></div></div>
-          <div className="field"><label>Webhook verification token</label>{metaWebhookToken?<div className="copyable-value"><code>{metaWebhookToken}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(metaWebhookToken,"Verification token")}>Copy token</button></div>:<p className="muted small">Generate a token to configure a new callback or replace a lost token.</p>}</div>
+          <div className="field"><label>Webhook verification token</label>{metaWebhookToken?<div className="copyable-value"><code>{metaWebhookToken}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(metaWebhookToken,"Verification token")}>Copy token</button></div>:<p className="muted small">Generate this token before or after saving your Meta phone credentials. It is shown only once; copy it before leaving this screen.</p>}</div>
           {isAdmin&&<div className="form-actions"><button type="button" className="primary-button" onClick={()=>void generateMetaWebhookToken()} disabled={busy}><ShieldCheck size={15}/>{metaWebhookToken?"Generate replacement token":"Generate verification token"}</button></div>}
           <ol className="setup-steps">
             <li>Open your app in Meta for Developers and select <strong>Webhooks</strong>.</li>
@@ -1090,7 +1142,7 @@ Content-Type: application/json
           <div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Customer-service window</strong><p>Free-form replies are allowed inside Meta's 24-hour customer-service window. Outside it, use an approved template.</p></div><span className="fixed-setting">Policy</span></div>
           <div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Business account access</strong><p>Your current role is {activeTenant?.role ?? "Member"}. Administrative actions are restricted to business account owners and admins.</p></div><span className="fixed-setting">{isAdmin?"Admin access":"Member access"}</span></div><div className="setting-row"><div className="setting-icon"><LogOut size={19}/></div><div className="setting-copy"><strong>Sign out</strong><p>End this session on the current browser.</p></div><button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button></div></div><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Privacy and data separation</strong><p>Business account data is kept separate. Use Profile to update your account details; administrative actions are restricted by role.</p></div></div></section>}
       {loading&&<div className="loading-bar"><LoaderCircle className="spin" size={14}/> Loading workspace data…</div>}
-      {notice&&<div className="toast" role="status"><div className="toast-icon"><Check size={15}/></div><span>{notice}</span><button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
+      {notice&&<div className={"toast"+(noticeIsError?" is-error":"")} role={noticeIsError?"alert":"status"}><div className="toast-icon">{noticeIsError?<X size={15}/>:<Check size={15}/>}</div><span>{notice}</span><button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
       <footer className="footer"><span>© 2026 MobiWave Innovations Ltd</span><span><span className={metaStatus?.enabled ? "footer-dot is-connected" : "footer-dot"}/> {metaStatus?.enabled?"Meta API connected":"Meta not connected"}</span></footer>
     </main>
     {selectedCampaign && (() => {

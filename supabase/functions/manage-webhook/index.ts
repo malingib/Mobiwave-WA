@@ -51,19 +51,22 @@ Deno.serve(async (request) => {
       const { data: delivery, error: lookupError } = await auth.admin.from("webhook_deliveries").select("id,status").eq("tenant_id", tenantId).eq("id", deliveryId).maybeSingle();
       if (lookupError) throw lookupError;
       if (!delivery || !["failed", "dead"].includes(delivery.status)) return json({ error: "Only failed or dead deliveries can be retried." }, 409);
-      const { error: resetError } = await auth.admin.from("webhook_deliveries").update({ status: "queued", next_attempt_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), last_error: null }).eq("tenant_id", tenantId).eq("id", deliveryId);
+      const { data: reset, error: resetError } = await auth.admin.from("webhook_deliveries").update({ status: "queued", next_attempt_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), last_error: null }).eq("tenant_id", tenantId).eq("id", deliveryId).select("id").maybeSingle();
       if (resetError) throw resetError;
+      if (!reset) return json({ error: "Delivery was not found in this workspace." }, 404);
       const result = await deliverWebhook(auth.admin, deliveryId);
       return result.ok ? json({ ok: true, delivery_id: deliveryId, message: "Delivery retried successfully." }) : json({ error: result.error ?? "Retry failed.", delivery_id: deliveryId }, 502);
     }
     if (action === "disable" || action === "enable") {
-      const { error } = await auth.admin.from("tenant_webhooks").update({ enabled: action === "enable", updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", webhookId);
+      const { data, error } = await auth.admin.from("tenant_webhooks").update({ enabled: action === "enable", updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", webhookId).select("id,enabled").maybeSingle();
       if (error) throw error;
-      return json({ ok: true, enabled: action === "enable" });
+      if (!data) return json({ error: "Webhook was not found in this workspace." }, 404);
+      return json({ ok: true, enabled: data.enabled });
     }
     if (action === "delete") {
-      const { error } = await auth.admin.from("tenant_webhooks").delete().eq("tenant_id", tenantId).eq("id", webhookId);
+      const { data, error } = await auth.admin.from("tenant_webhooks").delete().eq("tenant_id", tenantId).eq("id", webhookId).select("id").maybeSingle();
       if (error) throw error;
+      if (!data) return json({ error: "Webhook was not found in this workspace." }, 404);
       return json({ ok: true, deleted: true });
     }
     return json({ error: "Unsupported action." }, 400);
