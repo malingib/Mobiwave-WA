@@ -458,6 +458,8 @@
     background-color: var(--color-brand-50);
     color: var(--color-brand-600);
   }
+  .toast.is-error { border-color: color-mix(in srgb, var(--color-danger) 38%, var(--color-hairline-strong)); }
+  .toast.is-error .toast-icon { background-color: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface)); color: var(--color-danger); }
   .toast span { flex: 1; }
   .toast button { flex: none; display: flex; border: 0; background: transparent; color: var(--color-text-faint); pointer-events: auto; }
   .toast button:hover { color: var(--color-text); }
