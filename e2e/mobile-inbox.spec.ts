@@ -271,13 +271,13 @@ test("webhook verification token is displayed after the backend confirms it is s
     if (route.request().method() === "OPTIONS") return json(route, {}, 200);
     const payload = route.request().postDataJSON() as Record<string, unknown>;
     expect(payload.tenant_id).toBe("e2e-tenant-1");
-    expect(payload.verification_token).toMatch(/^mw_verify_[a-f0-9]{32}$/);
+    expect(payload.verification_token).toMatch(/^mw_verify_[a-f0-9-]{36}$/);
     return json(route, { ok: true, message: "Webhook verification token stored as a hash." });
   });
   await signIn(page);
   await openView(page, "Integrations");
   await page.getByRole("button", { name: "Generate verification token" }).click();
-  await expect(page.getByText(/^mw_verify_[a-f0-9]{32}$/)).toBeVisible();
+  await expect(page.getByText(/^mw_verify_[a-f0-9-]{36}$/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy token" })).toBeVisible();
 });
 
