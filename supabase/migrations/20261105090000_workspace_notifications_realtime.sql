@@ -16,4 +16,6 @@ USING (
   )
 );
 
+GRANT SELECT ON public.workspace_notifications TO authenticated;
+
 ALTER PUBLICATION supabase_realtime ADD TABLE public.workspace_notifications;
