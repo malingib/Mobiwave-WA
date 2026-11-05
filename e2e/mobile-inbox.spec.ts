@@ -110,7 +110,7 @@ async function mockBackend(page: Page, role = "admin") {
     }
     if (path.endsWith("/meta-send")) {
       sentMessages.push((request.postDataJSON() ?? {}) as Record<string, unknown>);
-      return json(route, { success: true, message_id: "e2e-message-1" });
+      return json(route, { ok: true, message_id: "e2e-message-1", status: "accepted" });
     }
     if (path.endsWith("/conversation-control")) return json(route, { success: true });
     if (path.endsWith("/meta-media")) return json(route, { error: "No media in E2E fixture" }, 404);
