@@ -198,6 +198,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const noticeIsError = /(^could not\\b|^failed\\b|^error\\b|^unable\\b|^invalid\\b|^not found\\b|^not configured\\b|^not allowed\\b|\\b(?:failed|rejected|denied|unavailable|could not|cannot|not allowed|not configured|not found|invalid|permission denied)\\b)/i.test(notice);
   useEffect(() => {
     if (!notice) return;
     const needsManualAttention = /could not|failed|error|unknown|unavailable|not available|copy|secret|token|api key|select|enter|record|consent|opted out|suppressed|retry|must|not found/i.test(notice);
@@ -505,9 +506,20 @@ export default function App() {
     const { data: campaign, error } = await supabase.from("campaigns").insert({ tenant_id: tenantId, name: campaignName.trim(), template_id: campaignTemplate, template_parameters: parameters, created_by: user.id, status: "draft" }).select("id").single();
     if (error) { setBusy(false); setNotice(error.message); return; }
     const { error: recipientError } = await supabase.from("campaign_recipients").insert(chosen.map((contactId) => ({ tenant_id: tenantId, campaign_id: campaign.id, contact_id: contactId, status: "queued" })));
-    setBusy(false);
-    if (recipientError) setNotice("Campaign created, but recipients could not be added: " + recipientError.message);
-    else { setCampaignName(""); setCampaignContacts([]); setCampaignVariableValues({}); setNotice("Campaign draft created with " + chosen.length + " selected contacts. Consent is checked again immediately before sending."); }
+    if (recipientError) {
+      // Do not leave a misleading, empty draft when the recipient batch failed.
+      const { error: rollbackError } = await supabase.from("campaigns").delete().eq("tenant_id", tenantId).eq("id", campaign.id);
+      setBusy(false);
+      setNotice(rollbackError
+        ? "Recipients could not be added and the incomplete draft could not be removed. Contact support before retrying: " + recipientError.message
+        : "Recipients could not be added. The incomplete campaign draft was removed: " + recipientError.message);
+    } else {
+      setBusy(false);
+      setCampaignName("");
+      setCampaignContacts([]);
+      setCampaignVariableValues({});
+      setNotice("Campaign draft created with " + chosen.length + " selected contacts. Consent is checked again immediately before sending.");
+    }
     await loadWorkspace();
   }
   async function launchCampaign(campaignId: string) {
@@ -626,14 +638,28 @@ export default function App() {
     else { setMetaToken(""); setNotice("Meta token encrypted and saved. Verify the connection next."); await loadWorkspace(); }
   }
   async function verifyMeta() {
-    if (!supabase) return; setBusy(true);
+    if (!supabase || !tenantId) return;
+    setBusy(true);
     const { data, error } = await supabase.functions.invoke("meta-verify", { body: { tenant_id: tenantId } });
-    setBusy(false); setNotice(error ? error.message : data?.error ?? "Meta connection verified."); await loadWorkspace();
+    setBusy(false);
+    if (error || data?.error || data?.ok !== true || data?.verified !== true || data?.enabled !== true) {
+      setNotice(data?.error ?? error?.message ?? "Meta did not confirm an enabled connection. Check the credentials and try again.");
+    } else {
+      setNotice("Meta connection verified and messaging enabled.");
+    }
+    await loadWorkspace();
   }
   async function syncTemplates() {
-    if (!supabase) return; setBusy(true);
+    if (!supabase || !tenantId) return;
+    setBusy(true);
     const { data, error } = await supabase.functions.invoke("meta-sync-templates", { body: { tenant_id: tenantId } });
-    setBusy(false); setNotice(error ? error.message : data?.error ?? ("Templates synced: " + data?.synced)); await loadWorkspace();
+    setBusy(false);
+    if (error || data?.error || !Number.isFinite(Number(data?.synced))) {
+      setNotice(data?.error ?? error?.message ?? "Template sync did not return a confirmed result. Check the Meta connection and try again.");
+    } else {
+      setNotice("Templates synced successfully: " + Number(data.synced) + " template(s).");
+    }
+    await loadWorkspace();
   }
   async function createWebhook(event: FormEvent) {
     event.preventDefault(); if (!supabase) return; setBusy(true); setNewWebhookSecret("");
@@ -1090,7 +1116,7 @@ Content-Type: application/json
           <div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Customer-service window</strong><p>Free-form replies are allowed inside Meta's 24-hour customer-service window. Outside it, use an approved template.</p></div><span className="fixed-setting">Policy</span></div>
           <div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Business account access</strong><p>Your current role is {activeTenant?.role ?? "Member"}. Administrative actions are restricted to business account owners and admins.</p></div><span className="fixed-setting">{isAdmin?"Admin access":"Member access"}</span></div><div className="setting-row"><div className="setting-icon"><LogOut size={19}/></div><div className="setting-copy"><strong>Sign out</strong><p>End this session on the current browser.</p></div><button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button></div></div><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Privacy and data separation</strong><p>Business account data is kept separate. Use Profile to update your account details; administrative actions are restricted by role.</p></div></div></section>}
       {loading&&<div className="loading-bar"><LoaderCircle className="spin" size={14}/> Loading workspace data…</div>}
-      {notice&&<div className="toast" role="status"><div className="toast-icon"><Check size={15}/></div><span>{notice}</span><button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
+      {notice&&<div className={"toast"+(noticeIsError?" is-error":"")} role={noticeIsError?"alert":"status"}><div className="toast-icon">{noticeIsError?<X size={15}/>:<Check size={15}/>}</div><span>{notice}</span><button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
       <footer className="footer"><span>© 2026 MobiWave Innovations Ltd</span><span><span className={metaStatus?.enabled ? "footer-dot is-connected" : "footer-dot"}/> {metaStatus?.enabled?"Meta API connected":"Meta not connected"}</span></footer>
     </main>
     {selectedCampaign && (() => {
