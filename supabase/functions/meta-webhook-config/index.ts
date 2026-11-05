@@ -17,10 +17,14 @@ Deno.serve(async (request) => {
     const token = String(body.verification_token ?? "");
     if (!tenantId || !/^[A-Za-z0-9_-]{32,100}$/.test(token)) return json({ error: "A tenant and a valid generated verification token are required." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner", "admin"]);
-    const { data: integration, error: lookupError } = await auth.admin.from("meta_integrations").select("tenant_id").eq("tenant_id", tenantId).maybeSingle();
-    if (lookupError) throw lookupError;
-    if (!integration) return json({ error: "Save the WhatsApp Business Account credentials before configuring its webhook." }, 409);
-    const { error } = await auth.admin.from("meta_integrations").update({ webhook_verify_token_hash: await sha256(token), updated_at: new Date().toISOString() }).eq("tenant_id", tenantId);
+    // The webhook handshake can be configured before the phone credentials are saved.
+    // Upsert only the tenant ID and token hash so an existing active integration keeps
+    // its encrypted token, phone number, WABA, and verification state unchanged.
+    const { error } = await auth.admin.from("meta_integrations").upsert({
+      tenant_id: tenantId,
+      webhook_verify_token_hash: await sha256(token),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "tenant_id" });
     if (error) throw error;
     return json({ ok: true, message: "Webhook verification token stored as a hash." });
   } catch (error) {
