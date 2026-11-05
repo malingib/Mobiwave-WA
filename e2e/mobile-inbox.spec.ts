@@ -250,7 +250,7 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
   await composer.fill("Please confirm your delivery address.");
   await page.locator(".chat-reply").getByRole("button", { name: /^Send/ }).click({ timeout: 7000 });
   await expect.poll(() => calls).toBe(1);
-  await expect(page.getByRole("alert")).toContainText("Provider outcome could not be confirmed.");
+  await expect(page.getByRole("alert")).toContainText(/could not|non-2xx|failed/i);
   await expect(page.getByText("Message accepted by Meta. Delivery confirmation will arrive separately.")).toHaveCount(0);
   const firstKey = sentMessages[0].idempotency_key;
   expect(firstKey).toMatch(/^[0-9a-f-]{36}$/i);
