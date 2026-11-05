@@ -366,6 +366,9 @@ export default function App() {
       .on("postgres_changes", { event: "*", schema: "public", table: "workspace_notifications", filter: `tenant_id=eq.${tenantId}` }, () => {
         void loadNotifications();
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "workspace_notification_reads", filter: `tenant_id=eq.${tenantId}` }, () => {
+        void loadNotifications();
+      })
       .subscribe();
     return () => { void client.removeChannel(channel); };
   }, [tenantId, loadNotifications]);
