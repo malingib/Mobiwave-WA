@@ -375,13 +375,13 @@ export default function App() {
   async function markNotificationRead(id: string) {
     if (!supabase || !tenantId) return;
     const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "mark_read", notification_id: id } });
-    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not acknowledge alert."); return; }
+    if (error || data?.error || !Array.isArray(data?.notifications) || !Number.isFinite(Number(data?.unread_count))) { setNotice(data?.error ?? error?.message ?? "Alert acknowledgement was not confirmed. Refresh the alerts list before retrying."); return; }
     await loadNotifications();
   }
   async function markAllNotificationsRead() {
     if (!supabase || !tenantId) return;
     const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "mark_all_read" } });
-    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not acknowledge alerts."); return; }
+    if (error || data?.error || !Array.isArray(data?.notifications) || !Number.isFinite(Number(data?.unread_count))) { setNotice(data?.error ?? error?.message ?? "Bulk alert acknowledgement was not confirmed. Refresh the alerts list before retrying."); return; }
     await loadNotifications();
   }
   const loadInbox = useCallback(async () => {
@@ -742,7 +742,14 @@ export default function App() {
     setNewPassword(""); setNotice("Profile updated successfully.");
     const { data } = await supabase.auth.getUser(); if (data.user) setUser(data.user);
   }
-  async function signOut() { if (supabase) await supabase.auth.signOut(); setTenants([]); setTenantId(""); setTenantLoading(false); }
+  async function signOut() {
+    if (!supabase) return;
+    const { error } = await supabase.auth.signOut();
+    if (error) { setNotice("Could not sign out: " + error.message); return; }
+    setTenants([]);
+    setTenantId("");
+    setTenantLoading(false);
+  }
   const filteredContacts = contacts;
   const visibleCampaignContacts = contacts.filter((contact) => contact.consent_status === "opted_in");
   const unreadCount = conversations.filter((conversation) => conversation.unread).length;
