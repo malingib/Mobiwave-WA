@@ -250,6 +250,8 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
   await composer.fill("Please confirm your delivery address.");
   await page.locator(".chat-reply").getByRole("button", { name: /^Send/ }).click({ timeout: 7000 });
   await expect.poll(() => calls).toBe(1);
+  await expect(page.getByRole("alert")).toContainText("Provider outcome could not be confirmed.");
+  await expect(page.getByText("Message accepted by Meta. Delivery confirmation will arrive separately.")).toHaveCount(0);
   const firstKey = sentMessages[0].idempotency_key;
   expect(firstKey).toMatch(/^[0-9a-f-]{36}$/i);
   await expect(composer).toHaveValue("Please confirm your delivery address.");
@@ -261,6 +263,22 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
   await expect.poll(() => calls).toBe(2);
   expect(sentMessages[1].idempotency_key).toBe(firstKey);
   await expect(page.getByText("Message accepted by Meta. Delivery confirmation will arrive separately.")).toBeVisible({ timeout: 7000 });
+});
+
+test("webhook verification token is displayed after the backend confirms it is saved", async ({ page }) => {
+  await mockBackend(page);
+  await page.route("**/functions/v1/meta-webhook-config", async (route) => {
+    if (route.request().method() === "OPTIONS") return json(route, {}, 200);
+    const payload = route.request().postDataJSON() as Record<string, unknown>;
+    expect(payload.tenant_id).toBe("e2e-tenant-1");
+    expect(payload.verification_token).toMatch(/^mw_verify_[a-f0-9]{32}$/);
+    return json(route, { ok: true, message: "Webhook verification token stored as a hash." });
+  });
+  await signIn(page);
+  await openView(page, "Integrations");
+  await page.getByRole("button", { name: "Generate verification token" }).click();
+  await expect(page.getByText(/^mw_verify_[a-f0-9]{32}$/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy token" })).toBeVisible();
 });
 
 test("workspace navigation exposes all eight sections without losing the active business context", async ({ page }) => {
