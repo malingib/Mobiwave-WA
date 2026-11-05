@@ -359,6 +359,16 @@ export default function App() {
     setNotificationUnread(Number(data?.unread_count ?? 0));
   }, [tenantId]);
   useEffect(() => { void loadNotifications(); }, [loadNotifications]);
+  useEffect(() => {
+    if (!supabase || !tenantId) return;
+    const client = supabase;
+    const channel = client.channel(`workspace-alerts-${tenantId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "workspace_notifications", filter: `tenant_id=eq.${tenantId}` }, () => {
+        void loadNotifications();
+      })
+      .subscribe();
+    return () => { void client.removeChannel(channel); };
+  }, [tenantId, loadNotifications]);
   async function markNotificationRead(id: string) {
     if (!supabase || !tenantId) return;
     const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "mark_read", notification_id: id } });
