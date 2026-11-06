@@ -124,7 +124,7 @@ export default function TemplatesPage({ tenantId, isAdmin, onNotice }: Props) {
   }
 
   return <section className="content">
-    <div className="page-heading">
+    <div className="template-page-heading">
       <div><div className="eyebrow">WHATSAPP CONTENT</div><h1>Templates</h1><p>Create WhatsApp message templates and track Meta's review decisions from your workspace.</p></div>
       <div className="row-actions">
         <button type="button" className="secondary-button" onClick={() => void syncTemplates()} disabled={busy || !isAdmin}><RefreshCw size={15}/> Sync Meta</button>
