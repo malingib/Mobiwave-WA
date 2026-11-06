@@ -15,7 +15,7 @@ Deno.serve(async (request) => {
     const { data: integration } = await auth.admin.from("meta_integrations").select("waba_id,encrypted_access_token").eq("tenant_id", tenantId).eq("enabled", true).maybeSingle();
     if (!integration?.waba_id || !integration.encrypted_access_token) return json({ error: "Connect and verify Meta Cloud API first." }, 409);
     const token = await decryptToken(integration.encrypted_access_token);
-    let nextUrl: string | null = "https://graph.facebook.com/" + GRAPH_VERSION + "/" + integration.waba_id + "/message_templates?fields=id,name,status,category,language,components&limit=100";
+    let nextUrl: string | null = "https://graph.facebook.com/" + GRAPH_VERSION + "/" + integration.waba_id + "/message_templates?fields=id,name,status,category,language,components,rejected_reason&limit=100";
     let synced = 0, pages = 0;
     while (nextUrl && pages < 10) {
       const response: Response = await fetch(String(nextUrl), { headers: { "Authorization": "Bearer " + token }, signal: AbortSignal.timeout(12000) });
@@ -28,12 +28,20 @@ Deno.serve(async (request) => {
         const name = String(item.name ?? "");
         const language = String(item.language ?? "en");
         const category = ["MARKETING","UTILITY","AUTHENTICATION"].includes(String(item.category).toUpperCase()) ? String(item.category).toUpperCase() : "UTILITY";
-        const status = ["APPROVED","PENDING","REJECTED","PAUSED","DISABLED"].includes(String(item.status).toUpperCase()) ? String(item.status).toLowerCase() : "draft";
+        const providerStatus = String(item.status ?? "").toUpperCase();
+        const statusMap: Record<string, string> = {
+          APPROVED: "approved", REINSTATED: "approved", UNARCHIVED: "approved",
+          PENDING: "pending", IN_APPEAL: "pending", FLAGGED: "pending",
+          REJECTED: "rejected", PAUSED: "paused", DISABLED: "disabled",
+          ARCHIVED: "disabled", DELETED: "disabled", PENDING_DELETION: "disabled",
+          LOCKED: "disabled", LIMIT_EXCEEDED: "disabled",
+        };
+        const status = statusMap[providerStatus] ?? "draft";
         if (!name) continue;
         const { error } = await auth.admin.from("wa_templates").upsert({
           tenant_id: tenantId, meta_template_name: name, language_code: language, category,
           meta_status: status, components: Array.isArray(item.components) ? item.components : [],
-          meta_template_id: item.id ? String(item.id) : null, synced_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+          meta_template_id: item.id ? String(item.id) : null, rejection_reason: status === "rejected" ? String(item.rejected_reason ?? "Meta rejected this template. Check WhatsApp Manager for details.").slice(0, 1000) : null, synced_at: new Date().toISOString(), updated_at: new Date().toISOString(),
         }, { onConflict: "tenant_id,meta_template_name,language_code" });
         if (error) throw error;
         synced++;

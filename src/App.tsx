@@ -3,16 +3,17 @@ import type { Session, User } from "@supabase/supabase-js";
 import {
   Activity, ArrowLeft, ArrowUpRight, Bell, Check, ChevronDown, CircleHelp,
   LayoutDashboard, LogOut, MessageCircle, Menu, Plus, RefreshCw, Search,
-  Send, Settings2, ShieldCheck, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail,
+  Send, Settings2, ShieldCheck, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail, FileText,
 } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import LandingPage from "./LandingPage";
 import PricingPage from "./PricingPage";
 import { ErrorPage } from "./ErrorPages";
 import ContactCsvImport from "./ContactCsvImport";
+import TemplatesPage from "./TemplatesPage";
 import Overview, { type DailyMessagePoint } from "./dashboard/Overview";
 import { Brand } from "./components/ui";
-type View = "Overview" | "Inbox" | "Contacts" | "Campaigns" | "Alerts" | "Integrations" | "Profile" | "Settings";
+type View = "Overview" | "Inbox" | "Contacts" | "Templates" | "Campaigns" | "Alerts" | "Integrations" | "Profile" | "Settings";
 type Tenant = { id: string; name: string; slug: string; role: string };
 type Contact = { id: string; phone_e164: string; display_name?: string; consent_status: string; consent_source?: string; consent_at?: string; opted_out_at?: string };
 type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string; components?: any[] };
@@ -103,6 +104,7 @@ const navigation: { section: string; items: { label: View; icon: typeof MessageC
     items: [
       { label: "Inbox", icon: MessageCircle },
       { label: "Contacts", icon: Users },
+      { label: "Templates", icon: FileText },
       { label: "Campaigns", icon: Zap },
     ],
   },
@@ -1008,6 +1010,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           {notifications.length===0 ? <Empty icon={<Bell size={22}/>} title="No alerts yet" text="Provider delivery failures and send errors will appear here."/> : <div className="notification-list" role="list" aria-label="Workspace alerts">{notifications.map((item)=><article role="listitem" className={"notification-item "+(item.read_at?"is-read":"is-unread")} key={item.id}><div className={"notification-severity "+item.severity}>{item.severity}</div><div className="notification-copy"><div className="notification-heading"><strong>{item.title}</strong><time>{new Date(item.created_at).toLocaleString()}</time></div><p>{item.body}</p>{item.metadata?.error_code&&<small>Error code: {String(item.metadata.error_code)}</small>}{item.metadata?.error_title&&<small>{String(item.metadata.error_title)}</small>}{item.entity_id&&<small>Reference: {item.entity_id}</small>}</div>{!item.read_at&&<button className="secondary-button compact" onClick={()=>void markNotificationRead(item.id)}>Mark read</button>}</article>)}</div>}
         </div>
       </section>}
+      {view === "Templates" && <TemplatesPage tenantId={tenantId} isAdmin={isAdmin} metaConnected={Boolean(metaStatus?.enabled && metaStatus?.verified)} onNotice={setNotice}/>}
       {view === "Campaigns" && <section className="content"><PageHeading eyebrow="OUTBOUND MESSAGING" title="Campaigns" description="Campaigns use only Meta-approved templates and contacts with recorded opt-in consent."/>
         {isAdmin&&<form className="panel form-panel" onSubmit={createCampaign}>
           <h2>Create campaign</h2>
