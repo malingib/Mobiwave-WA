@@ -33,6 +33,7 @@ const templates = [
     language_code: "en",
     category: "UTILITY",
     meta_status: "approved",
+    meta_template_id: "meta-template-t1", rejection_reason: null, synced_at: "2026-10-30T08:00:00.000Z", created_at: "2026-10-30T08:00:00.000Z",
     components: [
       { type: "HEADER", format: "TEXT", text: "Service update" },
       { type: "BODY", text: "Hi {{1}}, your service update is ready. Reference {{2}}." },
@@ -40,8 +41,8 @@ const templates = [
       { type: "BUTTONS", buttons: [{ type: "URL", text: "View update", url: "https://example.com/updates/{{1}}" }] },
     ],
   },
-  { id: "t2", meta_template_name: "appointment_reminder", language_code: "en", category: "UTILITY", meta_status: "approved", components: [] },
-  { id: "t3", meta_template_name: "weekend_offer", language_code: "en", category: "MARKETING", meta_status: "pending", components: [] },
+  { id: "t2", meta_template_name: "appointment_reminder", language_code: "en", category: "UTILITY", meta_status: "approved", meta_template_id: "meta-template-t2", rejection_reason: null, synced_at: "2026-10-30T08:00:00.000Z", created_at: "2026-10-30T08:00:00.000Z", components: [] },
+  { id: "t3", meta_template_name: "weekend_offer", language_code: "en", category: "MARKETING", meta_status: "pending", meta_template_id: "meta-template-t3", rejection_reason: null, synced_at: "2026-10-30T08:00:00.000Z", created_at: "2026-10-30T08:00:00.000Z", components: [] },
 ];
 
 const campaigns = [
@@ -148,6 +149,8 @@ async function mockBackend(page: Page) {
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() === "OPTIONS") return json(route, {});
     if (path.endsWith("/team-members")) return json(route, { members: [{ user_id: user.id, role: "admin", name: "E2E Agent", email: user.email }] });
+    if (path.endsWith("/meta-create-template")) return json(route, { ok: true, template: { id: "t4", meta_template_name: "new_template", language_code: "en", category: "UTILITY", meta_status: "pending", meta_template_id: "meta-template-t4" } });
+    if (path.endsWith("/meta-sync-templates")) return json(route, { ok: true, synced: 3 });
     if (path.endsWith("/notification-center")) return json(route, { notifications: [{ id: "alert-1", category: "send_error", severity: "error", title: "WhatsApp delivery failed", body: "Meta could not deliver this message. Review the recipient before retrying.", metadata: { error_code: "131026", error_title: "Message undeliverable" }, entity_id: "campaign-recipient-1", created_at: "2026-10-31T10:00:00.000Z", read_at: null }], unread_count: 1 });
     return json(route, { success: true });
   });
@@ -199,6 +202,15 @@ test("shots dashboard", async ({ page }, testInfo) => {
   await page.locator("#primary-navigation").getByRole("button", { name: "Contacts", exact: true }).click();
   await page.waitForTimeout(500);
   await capture(page, testInfo, "contacts");
+  await page.locator("#primary-navigation").getByRole("button", { name: "Templates", exact: true }).click();
+  await page.getByRole("heading", { name: "Templates", exact: true }).waitFor();
+  await capture(page, testInfo, "templates");
+  await page.getByRole("button", { name: /Create template/ }).click();
+  await page.locator('input[placeholder="order_update"]').fill("delivery_notice");
+  await page.locator('textarea').first().fill("Hello {{1}}, your order is ready.");
+  await page.locator('input[placeholder="Jane, ORD-1042"]').fill("Amina");
+  await page.getByRole("button", { name: /Submit to Meta/ }).click();
+  await page.getByText("Template submitted to Meta.", { exact: false }).waitFor();
   await page.locator("#primary-navigation").getByRole("button", { name: "Campaigns", exact: true }).click();
   await page.waitForTimeout(500);
   await capture(page, testInfo, "campaigns");
