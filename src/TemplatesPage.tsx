@@ -68,15 +68,16 @@ export default function TemplatesPage({ tenantId, isAdmin, metaConnected, onNoti
   useEffect(() => { void loadTemplates(); }, [tenantId]);
 
   useEffect(() => {
-    if (!supabase || !tenantId) return;
-    const channel = supabase.channel("template-status-" + tenantId)
+    const client = supabase;
+    if (!client || !tenantId) return;
+    const channel = client.channel("template-status-" + tenantId)
       .on("postgres_changes", {
         event: "INSERT", schema: "public", table: "workspace_notifications",
         filter: "tenant_id=eq." + tenantId,
       }, (payload) => {
         if ((payload.new as { entity_type?: string }).entity_type === "template") void loadTemplates();
       }).subscribe();
-    return () => { void supabase.removeChannel(channel); };
+    return () => { void client.removeChannel(channel); };
   }, [tenantId]);
 
   const filtered = useMemo(() => templates.filter((template) => {
