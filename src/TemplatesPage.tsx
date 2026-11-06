@@ -51,6 +51,8 @@ export default function TemplatesPage({ tenantId, isAdmin, onNotice }: Props) {
   const [examples, setExamples] = useState("");
   const [footer, setFooter] = useState("");
   const [quickReply, setQuickReply] = useState("");
+  const [securityRecommendation, setSecurityRecommendation] = useState(true);
+  const [expirationMinutes, setExpirationMinutes] = useState("");
 
   const loadTemplates = async () => {
     if (!supabase || !tenantId) { setTemplates([]); setLoading(false); return; }
@@ -110,6 +112,8 @@ export default function TemplatesPage({ tenantId, isAdmin, onNotice }: Props) {
         examples: examples.split(",").map((value) => value.trim()).filter(Boolean),
         footer: footer.trim(),
         quick_reply: quickReply.trim(),
+        add_security_recommendation: securityRecommendation,
+        code_expiration_minutes: expirationMinutes,
       },
     });
     setBusy(false);
@@ -119,7 +123,7 @@ export default function TemplatesPage({ tenantId, isAdmin, onNotice }: Props) {
     }
     onNotice("Template submitted to Meta. Its status will change when Meta completes review.");
     setShowComposer(false);
-    setName(""); setCategory("UTILITY"); setLanguage("en"); setHeader(""); setBody(""); setExamples(""); setFooter(""); setQuickReply("");
+    setName(""); setCategory("UTILITY"); setLanguage("en"); setHeader(""); setBody(""); setExamples(""); setFooter(""); setQuickReply(""); setSecurityRecommendation(true); setExpirationMinutes("");
     await loadTemplates();
   }
 
@@ -145,24 +149,30 @@ export default function TemplatesPage({ tenantId, isAdmin, onNotice }: Props) {
         <div className="field"><label>Template name *</label><input required pattern="[a-z0-9_]+" maxLength={512} value={name} onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"))} placeholder="order_update"/></div>
         <div className="field"><label>Category *</label><select value={category} onChange={(e) => setCategory(e.target.value)}><option value="UTILITY">Utility</option><option value="MARKETING">Marketing</option><option value="AUTHENTICATION">Authentication</option></select></div>
         <div className="field"><label>Language code *</label><input required value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="en or en_US" pattern="[a-z]{2,3}(_[A-Z]{2})?"/></div>
-        <div className="field"><label>Header (optional)</label><input maxLength={60} value={header} onChange={(e) => setHeader(e.target.value)} placeholder="Your order update"/></div>
+        {category !== "AUTHENTICATION" && <div className="field"><label>Header (optional)</label><input maxLength={60} value={header} onChange={(e) => setHeader(e.target.value)} placeholder="Your order update"/></div>}
       </div>
+      {category === "AUTHENTICATION" ? <div className="authentication-template-options">
+        <p>Meta supplies the verification-code wording and requires an OTP copy-code button. You configure only these optional additions.</p>
+        <label className="checkbox-line"><input type="checkbox" checked={securityRecommendation} onChange={(e) => setSecurityRecommendation(e.target.checked)}/> Add the security recommendation</label>
+        <div className="field"><label>Code expiry in minutes (optional)</label><input type="number" min={1} max={90} step={1} value={expirationMinutes} onChange={(e) => setExpirationMinutes(e.target.value)} placeholder="10"/><small className="muted">Choose a value from 1 to 90 minutes.</small></div>
+      </div> : <>
       <div className="field"><label>Message body *</label><textarea required rows={5} maxLength={1024} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Hello {{1}}, your order {{2}} is ready for collection."/></div>
       <div className="field"><label>Example values for body variables</label><input value={examples} onChange={(e) => setExamples(e.target.value)} placeholder="Jane, ORD-1042"/><small className="muted">Provide one sample value for each numbered variable, in order. Example: Jane, ORD-1042.</small></div>
       <div className="form-grid">
         <div className="field"><label>Footer (optional)</label><input maxLength={60} value={footer} onChange={(e) => setFooter(e.target.value)} placeholder="Thank you for choosing us"/></div>
         <div className="field"><label>Quick reply button (optional)</label><input maxLength={25} value={quickReply} onChange={(e) => setQuickReply(e.target.value)} placeholder="Contact support"/></div>
       </div>
+      </>}
       <div className="template-preview">
         <div className="template-preview-heading"><strong>WhatsApp preview</strong><span>Preview only</span></div>
         <div className="template-preview-message">
-          {header && <strong className="block mb-2">{header}</strong>}
-          <p>{preview || "Your message will appear here."}</p>
-          {footer && <small>{footer}</small>}
-          {quickReply && <div className="template-preview-button">{quickReply}</div>}
+          {category !== "AUTHENTICATION" && header && <strong className="block mb-2">{header}</strong>}
+          <p>{category === "AUTHENTICATION" ? preview : preview || "Your message will appear here."}</p>
+          {category !== "AUTHENTICATION" && footer && <small>{footer}</small>}
+          {category === "AUTHENTICATION" ? <div className="template-preview-button">Copy code</div> : quickReply && <div className="template-preview-button">{quickReply}</div>}
         </div>
       </div>
-      <div className="form-actions"><span className="muted small">Meta review time and outcome are controlled by Meta.</span><button type="submit" className="primary-button" disabled={busy || !name.trim() || !body.trim()}>{busy ? <LoaderCircle size={15} className="spin"/> : <Plus size={15}/>} Submit to Meta</button></div>
+      <div className="form-actions"><span className="muted small">Meta review time and outcome are controlled by Meta.</span><button type="submit" className="primary-button" disabled={busy || !name.trim() || (category !== "AUTHENTICATION" && !body.trim())}>{busy ? <LoaderCircle size={15} className="spin"/> : <Plus size={15}/>} Submit to Meta</button></div>
     </form>}
 
     <div className="panel template-list-panel">
