@@ -67,6 +67,18 @@ export default function TemplatesPage({ tenantId, isAdmin, metaConnected, onNoti
 
   useEffect(() => { void loadTemplates(); }, [tenantId]);
 
+  useEffect(() => {
+    if (!supabase || !tenantId) return;
+    const channel = supabase.channel("template-status-" + tenantId)
+      .on("postgres_changes", {
+        event: "INSERT", schema: "public", table: "workspace_notifications",
+        filter: "tenant_id=eq." + tenantId,
+      }, (payload) => {
+        if ((payload.new as { entity_type?: string }).entity_type === "template") void loadTemplates();
+      }).subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [tenantId]);
+
   const filtered = useMemo(() => templates.filter((template) => {
     const matchesSearch = (template.meta_template_name + " " + template.category + " " + template.language_code).toLowerCase().includes(search.toLowerCase());
     return matchesSearch && (statusFilter === "all" || template.meta_status === statusFilter);
