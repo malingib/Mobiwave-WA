@@ -211,6 +211,12 @@ test("shots dashboard", async ({ page }, testInfo) => {
   await page.locator('input[placeholder="Jane, ORD-1042"]').fill("Amina");
   await page.getByRole("button", { name: /Submit to Meta/ }).click();
   await page.getByText("Template submitted to Meta.", { exact: false }).waitFor();
+  await page.getByRole("button", { name: /Create template/ }).click();
+  await page.locator('input[placeholder="order_update"]').fill("login_otp");
+  await page.locator(".template-composer select").first().selectOption("AUTHENTICATION");
+  await page.getByText("Meta supplies the verification-code wording", { exact: false }).waitFor();
+  await page.getByRole("button", { name: /Submit to Meta/ }).click();
+  await page.getByText("Template submitted to Meta.", { exact: false }).waitFor();
   await page.locator("#primary-navigation").getByRole("button", { name: "Campaigns", exact: true }).click();
   await page.waitForTimeout(500);
   await capture(page, testInfo, "campaigns");
