@@ -6,6 +6,19 @@ const GRAPH_VERSION = Deno.env.get("META_GRAPH_VERSION") || "v23.0";
 const allowedStatus = new Set(["APPROVED", "PENDING", "REJECTED", "PAUSED", "DISABLED"]);
 
 function buildComponents(body: Record<string, unknown>) {
+  const category = String(body.category ?? "").toUpperCase();
+  if (category === "AUTHENTICATION") {
+    const expirationRaw = body.code_expiration_minutes;
+    const expiration = expirationRaw === "" || expirationRaw == null ? null : Number(expirationRaw);
+    if (expiration !== null && (!Number.isInteger(expiration) || expiration < 1 || expiration > 90)) {
+      throw new Error("Authentication code expiry must be between 1 and 90 minutes.");
+    }
+    return [
+      { type: "BODY", add_security_recommendation: body.add_security_recommendation !== false },
+      ...(expiration === null ? [] : [{ type: "FOOTER", code_expiration_minutes: expiration }]),
+      { type: "BUTTONS", buttons: [{ type: "OTP", otp_type: "COPY_CODE", text: "Copy code" }] },
+    ];
+  }
   const text = String(body.body ?? "").trim();
   const header = String(body.header ?? "").trim();
   const footer = String(body.footer ?? "").trim();
@@ -13,25 +26,15 @@ function buildComponents(body: Record<string, unknown>) {
   const examples = Array.isArray(body.examples) ? body.examples.map((value) => String(value).trim()) : [];
   if (!text || text.length > 1024) throw new Error("Message body is required and must be 1,024 characters or fewer.");
   if (header.length > 60 || footer.length > 60 || quickReply.length > 25) throw new Error("Header/footer must be 60 characters or fewer and quick reply text must be 25 characters or fewer.");
-  const variableIndexes = [...text.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((match) => Number(match[1]));
+  const variableIndexes = [...text.matchAll(/\\{\\{\\s*(\\d+)\\s*\\}\\}/g)].map((match) => Number(match[1]));
   const unique = [...new Set(variableIndexes)].sort((a, b) => a - b);
   if (unique.some((value, index) => value !== index + 1)) throw new Error("Body variables must be numbered sequentially starting at {{1}}.");
   if (unique.length !== examples.length || examples.some((value) => !value)) throw new Error("Provide exactly one non-empty example value for each body variable.");
   const components: Record<string, unknown>[] = [];
   if (header) components.push({ type: "HEADER", format: "TEXT", text: header });
-  components.push({
-    type: "BODY",
-    text,
-    ...(unique.length ? { example: { body_text: [examples] } } : {}),
-  });
-  if (footer && String(body.category).toUpperCase() !== "AUTHENTICATION") components.push({ type: "FOOTER", text: footer });
-  if (String(body.category).toUpperCase() === "AUTHENTICATION") {
-    if (!unique.length) throw new Error("Authentication templates must include the verification-code variable {{1}}.");
-    if (header || footer || quickReply) throw new Error("Authentication templates use a dedicated copy-code button; remove the header, footer and quick reply.");
-    components.push({ type: "BUTTONS", buttons: [{ type: "OTP", otp_type: "COPY_CODE" }] });
-  } else if (quickReply) {
-    components.push({ type: "BUTTONS", buttons: [{ type: "QUICK_REPLY", text: quickReply }] });
-  }
+  components.push({ type: "BODY", text, ...(unique.length ? { example: { body_text: [examples] } } : {}) });
+  if (footer) components.push({ type: "FOOTER", text: footer });
+  if (quickReply) components.push({ type: "BUTTONS", buttons: [{ type: "QUICK_REPLY", text: quickReply }] });
   return components;
 }
 
