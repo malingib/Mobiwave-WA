@@ -1010,7 +1010,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           {notifications.length===0 ? <Empty icon={<Bell size={22}/>} title="No alerts yet" text="Provider delivery failures and send errors will appear here."/> : <div className="notification-list" role="list" aria-label="Workspace alerts">{notifications.map((item)=><article role="listitem" className={"notification-item "+(item.read_at?"is-read":"is-unread")} key={item.id}><div className={"notification-severity "+item.severity}>{item.severity}</div><div className="notification-copy"><div className="notification-heading"><strong>{item.title}</strong><time>{new Date(item.created_at).toLocaleString()}</time></div><p>{item.body}</p>{item.metadata?.error_code&&<small>Error code: {String(item.metadata.error_code)}</small>}{item.metadata?.error_title&&<small>{String(item.metadata.error_title)}</small>}{item.entity_id&&<small>Reference: {item.entity_id}</small>}</div>{!item.read_at&&<button className="secondary-button compact" onClick={()=>void markNotificationRead(item.id)}>Mark read</button>}</article>)}</div>}
         </div>
       </section>}
-      {view === "Templates" && <TemplatesPage tenantId={tenantId} isAdmin={isAdmin} onNotice={setNotice}/>}
+      {view === "Templates" && <TemplatesPage tenantId={tenantId} isAdmin={isAdmin} metaConnected={Boolean(metaStatus?.enabled && metaStatus?.verified)} onNotice={setNotice}/>}
       {view === "Campaigns" && <section className="content"><PageHeading eyebrow="OUTBOUND MESSAGING" title="Campaigns" description="Campaigns use only Meta-approved templates and contacts with recorded opt-in consent."/>
         {isAdmin&&<form className="panel form-panel" onSubmit={createCampaign}>
           <h2>Create campaign</h2>
