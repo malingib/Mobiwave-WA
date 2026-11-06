@@ -28,7 +28,7 @@ export default async function handler(request: Request): Promise<Response> {
     return reply({ error: "Method not allowed." }, 405);
   }
 
-  const backendUrl = process.env.SUPABASE_URL;
+  const backendUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   if (!backendUrl) {
     return reply({ error: "MobiWave messaging API is not configured." }, 503);
   }
