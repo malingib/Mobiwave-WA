@@ -177,6 +177,6 @@ export default function TemplatesPage({ tenantId, isAdmin, onNotice }: Props) {
         </article>)}
       </div>}
     </div>
-    <p className="muted small template-meta-note">Meta is the final authority for approval, rejection, pausing and disabling. Only approved templates are available in campaigns and outbound template messages.</p>
+    <p className="muted small template-meta-note">For automatic review updates, subscribe to <code>message_template_status_update</code> in your Meta app Webhooks configuration. Meta is the final authority for approval, rejection, pausing and disabling. Only approved templates are available in campaigns and outbound template messages.</p>
   </section>;
 }
