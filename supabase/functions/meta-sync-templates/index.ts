@@ -28,7 +28,15 @@ Deno.serve(async (request) => {
         const name = String(item.name ?? "");
         const language = String(item.language ?? "en");
         const category = ["MARKETING","UTILITY","AUTHENTICATION"].includes(String(item.category).toUpperCase()) ? String(item.category).toUpperCase() : "UTILITY";
-        const status = ["APPROVED","PENDING","REJECTED","PAUSED","DISABLED"].includes(String(item.status).toUpperCase()) ? String(item.status).toLowerCase() : "draft";
+        const providerStatus = String(item.status ?? "").toUpperCase();
+        const statusMap: Record<string, string> = {
+          APPROVED: "approved", REINSTATED: "approved", UNARCHIVED: "approved",
+          PENDING: "pending", IN_APPEAL: "pending", FLAGGED: "pending",
+          REJECTED: "rejected", PAUSED: "paused", DISABLED: "disabled",
+          ARCHIVED: "disabled", DELETED: "disabled", PENDING_DELETION: "disabled",
+          LOCKED: "disabled", LIMIT_EXCEEDED: "disabled",
+        };
+        const status = statusMap[providerStatus] ?? "draft";
         if (!name) continue;
         const { error } = await auth.admin.from("wa_templates").upsert({
           tenant_id: tenantId, meta_template_name: name, language_code: language, category,
