@@ -16,7 +16,7 @@ type Template = {
   created_at: string;
 };
 
-type Props = { tenantId: string; isAdmin: boolean; onNotice: (message: string) => void };
+type Props = { tenantId: string; isAdmin: boolean; metaConnected: boolean; onNotice: (message: string) => void };
 
 const statusLabel: Record<string, string> = {
   approved: "Approved", pending: "Pending review", rejected: "Rejected",
@@ -36,7 +36,7 @@ function StatusIcon({ status }: { status: string }) {
   return <Clock3 size={14}/>;
 }
 
-export default function TemplatesPage({ tenantId, isAdmin, onNotice }: Props) {
+export default function TemplatesPage({ tenantId, isAdmin, metaConnected, onNotice }: Props) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -131,10 +131,12 @@ export default function TemplatesPage({ tenantId, isAdmin, onNotice }: Props) {
     <div className="template-page-heading">
       <div><div className="eyebrow">WHATSAPP CONTENT</div><h1>Templates</h1><p>Create WhatsApp message templates and track Meta's review decisions from your workspace.</p></div>
       <div className="row-actions">
-        <button type="button" className="secondary-button" onClick={() => void syncTemplates()} disabled={busy || !isAdmin}><RefreshCw size={15}/> Sync Meta</button>
-        {isAdmin && <button type="button" className="primary-button" onClick={() => setShowComposer((value) => !value)}><Plus size={15}/> Create template</button>}
+        <button type="button" className="secondary-button" onClick={() => void syncTemplates()} disabled={busy || !isAdmin || !metaConnected}><RefreshCw size={15}/> Sync Meta</button>
+        {isAdmin && <button type="button" className="primary-button" onClick={() => setShowComposer((value) => !value)} disabled={!metaConnected}><Plus size={15}/> Create template</button>}
       </div>
     </div>
+
+    {!metaConnected && <div className="inline-notice template-connection-notice" role="status">Connect and verify your WhatsApp Cloud API in Integrations before creating or synchronizing templates.</div>}
 
     <div className="template-management-stats">
       <button type="button" className={statusFilter === "all" ? "template-stat active" : "template-stat"} onClick={() => setStatusFilter("all")}><strong>{counts.all}</strong><span>All templates</span></button>
@@ -172,7 +174,7 @@ export default function TemplatesPage({ tenantId, isAdmin, onNotice }: Props) {
           {category === "AUTHENTICATION" ? <div className="template-preview-button">Copy code</div> : quickReply && <div className="template-preview-button">{quickReply}</div>}
         </div>
       </div>
-      <div className="form-actions"><span className="muted small">Meta review time and outcome are controlled by Meta.</span><button type="submit" className="primary-button" disabled={busy || !name.trim() || (category !== "AUTHENTICATION" && !body.trim())}>{busy ? <LoaderCircle size={15} className="spin"/> : <Plus size={15}/>} Submit to Meta</button></div>
+      <div className="form-actions"><span className="muted small">Meta review time and outcome are controlled by Meta.</span><button type="submit" className="primary-button" disabled={busy || !metaConnected || !name.trim() || (category !== "AUTHENTICATION" && !body.trim())}>{busy ? <LoaderCircle size={15} className="spin"/> : <Plus size={15}/>} Submit to Meta</button></div>
     </form>}
 
     <div className="panel template-list-panel">
