@@ -70,6 +70,24 @@ Deno.serve(async (request) => {
                 ? await admin.from("wa_templates").update(patch).eq("tenant_id", integration.tenant_id).eq("meta_template_name", templateName).eq("language_code", language).select("id")
                 : { data: [], error: null };
             if (updateResult.error) throw updateResult.error;
+            const statusEventKey = await sha256(JSON.stringify({ wabaId, value }));
+            for (const row of updateResult.data ?? []) {
+              const reason = String(value.reason ?? value.rejection_info?.recommendation ?? value.other_info?.description ?? "");
+              const severity = nextStatus === "rejected" || nextStatus === "disabled" ? "error" : nextStatus === "paused" ? "warning" : "info";
+              const { error: notificationError } = await admin.from("workspace_notifications").insert({
+                tenant_id: integration.tenant_id,
+                recipient_user_id: null,
+                category: "system",
+                severity,
+                title: "WhatsApp template " + nextStatus,
+                body: (templateName || "A message template") + " is now " + nextStatus + (reason ? ": " + reason : "."),
+                entity_type: "template",
+                entity_id: String(row.id),
+                dedupe_key: "meta-template-status:" + statusEventKey,
+                metadata: { template_id: templateId || null, template_name: templateName || null, language, status: nextStatus, reason: reason || null },
+              });
+              if (notificationError && notificationError.code !== "23505") throw notificationError;
+            }
           }
         }
         continue;
