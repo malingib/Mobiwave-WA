@@ -37,6 +37,40 @@ Deno.serve(async (request) => {
   try {
     for (const entry of body.entry ?? []) for (const change of entry.changes ?? []) {
       const value = change.value ?? {};
+      // WhatsApp template review events are delivered against the WABA, not a phone-number ID.
+      // Keep Meta as the source of truth and update only templates owned by integrations for this WABA.
+      if (change.field === "message_template_status_update") {
+        const wabaId = String(entry.id ?? "");
+        const eventStatus = String(value.event ?? value.status ?? "").toUpperCase();
+        const mappedTemplateStatus: Record<string, string> = {
+          APPROVED: "approved", PENDING: "pending", REJECTED: "rejected",
+          PAUSED: "paused", DISABLED: "disabled",
+        };
+        const nextStatus = mappedTemplateStatus[eventStatus];
+        if (wabaId && nextStatus) {
+          const { data: integrations, error: integrationError } = await admin.from("meta_integrations")
+            .select("tenant_id").eq("waba_id", wabaId).eq("enabled", true);
+          if (integrationError) throw integrationError;
+          const templateId = String(value.message_template_id ?? "");
+          const templateName = String(value.message_template_name ?? "");
+          const language = String(value.message_template_language ?? value.language ?? "");
+          for (const integration of integrations ?? []) {
+            const patch = {
+              meta_status: nextStatus,
+              rejection_reason: nextStatus === "rejected" ? String(value.reason ?? value.rejection_reason ?? "Meta rejected this template. Check WhatsApp Manager for details.").slice(0, 1000) : null,
+              synced_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+            const updateResult = templateId
+              ? await admin.from("wa_templates").update(patch).eq("tenant_id", integration.tenant_id).eq("meta_template_id", templateId).select("id")
+              : templateName && language
+                ? await admin.from("wa_templates").update(patch).eq("tenant_id", integration.tenant_id).eq("meta_template_name", templateName).eq("language_code", language).select("id")
+                : { data: [], error: null };
+            if (updateResult.error) throw updateResult.error;
+          }
+        }
+        continue;
+      }
       const phoneNumberId = String(value.metadata?.phone_number_id ?? "");
       if (!phoneNumberId) continue;
       const { data: integration } = await admin.from("meta_integrations").select("*").eq("phone_number_id", phoneNumberId).eq("enabled", true).maybeSingle();
