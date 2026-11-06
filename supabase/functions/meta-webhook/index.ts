@@ -52,7 +52,7 @@ Deno.serve(async (request) => {
         const nextStatus = mappedTemplateStatus[eventStatus];
         if (wabaId && nextStatus) {
           const { data: integrations, error: integrationError } = await admin.from("meta_integrations")
-            .select("tenant_id").eq("waba_id", wabaId).eq("enabled", true);
+            .select("tenant_id").eq("waba_id", wabaId);
           if (integrationError) throw integrationError;
           const templateId = String(value.message_template_id ?? "");
           const templateName = String(value.message_template_name ?? "");
