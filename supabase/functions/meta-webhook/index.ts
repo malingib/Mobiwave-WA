@@ -43,8 +43,11 @@ Deno.serve(async (request) => {
         const wabaId = String(entry.id ?? "");
         const eventStatus = String(value.event ?? value.status ?? "").toUpperCase();
         const mappedTemplateStatus: Record<string, string> = {
-          APPROVED: "approved", PENDING: "pending", REJECTED: "rejected",
-          PAUSED: "paused", DISABLED: "disabled",
+          APPROVED: "approved", REINSTATED: "approved", UNARCHIVED: "approved",
+          PENDING: "pending", IN_APPEAL: "pending", FLAGGED: "pending",
+          REJECTED: "rejected", PAUSED: "paused", DISABLED: "disabled",
+          ARCHIVED: "disabled", DELETED: "disabled", PENDING_DELETION: "disabled",
+          LOCKED: "disabled", LIMIT_EXCEEDED: "disabled",
         };
         const nextStatus = mappedTemplateStatus[eventStatus];
         if (wabaId && nextStatus) {
@@ -57,7 +60,7 @@ Deno.serve(async (request) => {
           for (const integration of integrations ?? []) {
             const patch = {
               meta_status: nextStatus,
-              rejection_reason: nextStatus === "rejected" ? String(value.reason ?? value.rejection_reason ?? "Meta rejected this template. Check WhatsApp Manager for details.").slice(0, 1000) : null,
+              rejection_reason: nextStatus === "rejected" ? [value.reason, value.rejection_info?.recommendation, value.rejection_info?.reason].filter(Boolean).map(String).join(" — ").slice(0, 1000) || "Meta rejected this template. Check WhatsApp Manager for details." : null,
               synced_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             };
