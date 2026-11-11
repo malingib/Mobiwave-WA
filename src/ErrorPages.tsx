@@ -2,7 +2,7 @@ import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "
 import { AlertTriangle, ArrowUpRight, Home, RefreshCw } from "lucide-react";
 
 type ErrorPageProps = {
-  kind?: "not-found" | "error" | "unavailable";
+  kind?: "not-found" | "error" | "unavailable" | "forbidden";
   title?: string;
   description?: string;
 };
@@ -23,6 +23,11 @@ export function ErrorPage({ kind = "error", title, description }: ErrorPageProps
       code: "503",
       title: "MobiWave WA is temporarily unavailable",
       description: "We couldn’t complete your request just now. Please wait a moment and try again.",
+    },
+    forbidden: {
+      code: "403",
+      title: "Platform access only",
+      description: "This console is reserved for MobiWave platform staff. Client workspaces are available from the business dashboard.",
     },
   }[kind];
 
@@ -48,7 +53,7 @@ export function ErrorPage({ kind = "error", title, description }: ErrorPageProps
           {content.code}
           <span className="text-ink-300">·</span>
           <span className="text-ink-400">
-            {kind === "not-found" ? "Page not found" : kind === "unavailable" ? "Service unavailable" : "Unexpected error"}
+            {kind === "not-found" ? "Page not found" : kind === "unavailable" ? "Service unavailable" : kind === "forbidden" ? "Access restricted" : "Unexpected error"}
           </span>
         </p>
         <h1 className="mt-4 max-w-xl font-display text-[clamp(1.8rem,4vw,2.6rem)] font-extrabold leading-tight tracking-[-0.03em]">
@@ -56,9 +61,13 @@ export function ErrorPage({ kind = "error", title, description }: ErrorPageProps
         </h1>
         <p className="mt-4 max-w-lg text-[15.5px] leading-relaxed text-ink-500">{description ?? content.description}</p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <button className="btn btn-primary h-11 px-5" onClick={() => window.location.reload()}>
-            <RefreshCw size={16} /> Try again
-          </button>
+          {kind === "forbidden" ? (
+            <a className="btn btn-primary h-11 px-5" href="/dashboard"><Home size={16} /> Go to client workspace</a>
+          ) : (
+            <button className="btn btn-primary h-11 px-5" onClick={() => window.location.reload()}>
+              <RefreshCw size={16} /> Try again
+            </button>
+          )}
           <a className="btn btn-secondary h-11 px-5" href="/"><Home size={16} /> Back to home</a>
         </div>
         <p className="mt-8 text-[13.5px] text-ink-400">

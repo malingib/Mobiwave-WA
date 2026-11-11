@@ -12,6 +12,7 @@ import { ErrorPage } from "./ErrorPages";
 import ContactCsvImport from "./ContactCsvImport";
 import TemplatesPage from "./TemplatesPage";
 import Overview, { type DailyMessagePoint } from "./dashboard/Overview";
+import PlatformConsole from "./PlatformConsole";
 import { Brand } from "./components/ui";
 type View = "Overview" | "Inbox" | "Contacts" | "Templates" | "Campaigns" | "Alerts" | "Integrations" | "Profile" | "Settings";
 type Tenant = { id: string; name: string; slug: string; role: string };
@@ -189,6 +190,7 @@ export default function App() {
   const [tenantId, setTenantId] = useState("");
   const [tenantLoading, setTenantLoading] = useState(true);
   const [tenantError, setTenantError] = useState("");
+  const [platformRole, setPlatformRole] = useState<string | null>(null);
   const [view, setView] = useState<View>("Overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   useEffect(() => {
@@ -271,7 +273,13 @@ export default function App() {
     if (!supabase || !user) { setTenantLoading(false); return; }
     setTenantLoading(true);
     setTenantError("");
-    const { data, error } = await supabase.from("tenant_members").select("tenant_id,role,tenants(id,name,slug)").eq("user_id", user.id);
+    const [membershipResult, platformResult] = await Promise.all([
+      supabase.from("tenant_members").select("tenant_id,role,tenants(id,name,slug)").eq("user_id", user.id),
+      supabase.from("platform_admins").select("role").eq("user_id", user.id).limit(1),
+    ]);
+    if (platformResult.error) console.warn("Platform access lookup unavailable:", platformResult.error.message);
+    setPlatformRole(platformResult.data?.[0]?.role ?? null);
+    const { data, error } = membershipResult;
     if (error) {
       setTenantError(error.message);
       setNotice("Could not load business accounts: " + error.message);
@@ -279,8 +287,12 @@ export default function App() {
       return;
     }
     const mapped = (data ?? []).filter((row: any) => row.tenants).map((row: any) => ({ id: row.tenants.id, name: row.tenants.name, slug: row.tenants.slug, role: row.role })) as Tenant[];
+    const requestedTenant = new URLSearchParams(window.location.search).get("tenant");
     setTenants(mapped);
-    setTenantId((current) => mapped.some((t) => t.id === current) ? current : mapped[0]?.id ?? "");
+    setTenantId((current) => {
+      const preferred = requestedTenant && mapped.some((t) => t.id === requestedTenant) ? requestedTenant : current;
+      return mapped.some((t) => t.id === preferred) ? preferred : mapped[0]?.id ?? "";
+    });
     setTenantLoading(false);
   }, [user]);
   useEffect(() => { void loadTenants(); }, [loadTenants]);
@@ -750,6 +762,7 @@ export default function App() {
     if (error) { setNotice("Could not sign out: " + error.message); return; }
     setTenants([]);
     setTenantId("");
+    setPlatformRole(null);
     setTenantLoading(false);
   }
   const filteredContacts = contacts;
@@ -820,6 +833,15 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
     </div>;
   }
   if (tenantLoading) return <div className="auth-screen" role="status"><LoaderCircle className="spin" /><span>Loading your inbox…</span></div>;
+  const isPlatformRoute = pathname === "/admin" || pathname.startsWith("/admin/");
+  if (isPlatformRoute && !platformRole) return <ErrorPage kind="forbidden" />;
+  if (platformRole && (isPlatformRoute || !tenants.length)) return <PlatformConsole
+    user={user}
+    role={platformRole}
+    hasClientWorkspace={tenants.length > 0}
+    clientWorkspaceHref={tenants[0] ? `/dashboard?tenant=${tenants[0].id}` : undefined}
+    onSignOut={() => void signOut()}
+  />;
   if (tenantError) return <div className="auth-screen"><div className="auth-card"><Brand /><h1>Could not load your account</h1><p>We couldn’t verify your business access. Your account setup has not been changed.</p><div className="inline-notice" role="alert">{tenantError}</div><button type="button" className="primary-button full" onClick={() => void loadTenants()}>Try again</button><button type="button" className="auth-switch" onClick={() => void signOut()}>Sign out</button></div></div>;
   if (!tenants.length) return <div className="auth-screen"><form className="auth-card" onSubmit={createWorkspace}><Brand /><div className="auth-eyebrow">FIRST-TIME SETUP</div><h1>Set up your business</h1><p>Create your business account to keep contacts, WhatsApp connection, campaigns and team access separate.</p><label>Business name</label><input value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} required minLength={2} maxLength={160} placeholder="e.g. MobiWave Demo" /><button className="primary-button full" disabled={busy}>{busy ? "Setting up…" : "Set up business"}</button>{notice && <div className="inline-notice" role="status">{notice}</div>}<button type="button" className="auth-switch" onClick={signOut}>Sign out</button></form></div>;
   return <div className="app-shell">
@@ -900,6 +922,11 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
       </nav>
 
       <div className="border-t border-hairline px-4 py-3">
+        {platformRole && <a href="/admin" className="platform-console-link">
+          <ShieldCheck size={16} className="flex-none" />
+          <span className="min-w-0 flex-1"><strong>Platform console</strong><small>Service operator view</small></span>
+          <ArrowUpRight size={14} className="flex-none" />
+        </a>}
         <a
           href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md"
           className="mb-2 flex items-start gap-2.5 rounded-lg border border-hairline bg-raised p-3 transition-colors hover:bg-surface"
