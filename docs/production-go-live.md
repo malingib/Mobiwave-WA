@@ -32,7 +32,6 @@ In Supabase Dashboard → Edge Functions → Secrets, configure the following. V
 | `SUPABASE_ANON_KEY` | Legacy anon key used by request-scoped server clients where required |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only privileged database access |
 | `APP_ENCRYPTION_KEY` | 32 random bytes encoded as 64 hexadecimal characters; losing it makes saved Meta credentials undecryptable |
-| `META_APP_SECRET` | Verifies Meta webhook HMAC signatures |
 | `META_WEBHOOK_VERIFY_TOKEN` | Optional legacy verification token; new workspaces use a dashboard-generated token |
 | `META_GRAPH_VERSION` | Supported Graph API version, e.g. the version configured for the Meta app |
 | `INTERNAL_FUNCTION_TOKEN` | High-entropy random secret used to authorize internal worker calls |
@@ -41,17 +40,31 @@ Generate the encryption and internal tokens in a trusted password manager or loc
 
 After secrets are saved, verify that all deployed functions use the expected runtime variables. Rotate any credential that has been accidentally exposed.
 
-## 3. Apply the latest database and Edge Function changes
+## 3. Provision platform access, then apply the latest database and Edge Function changes
 
-Before testing the updated dashboard, apply the migration `20261024110000_inbox_collaboration_and_send_safety.sql` and deploy `campaign-launch`, `conversation-control`, `team-members`, `meta-webhook`, `meta-media`, `meta-send`, `api-send`, and `create-workspace`. This migration enables Realtime for inbox tables and adds consent history, per-agent read markers, private notes, unlimited-by-default message usage, and atomic campaign recipient claims.
+Each client connects its own Meta app and saves that app's secret in its business account under Integrations. The app secret is encrypted per tenant with `APP_ENCRYPTION_KEY`; it is never entered in the platform console or returned to the browser.
+
+Platform-console access is separate from client workspace membership and client `owner` roles. Only provision a dedicated MobiWave platform operator if cross-tenant operations access is needed. Do not grant that role to a client account. Run this from the Supabase SQL editor after the operator's account exists:
+
+```sql
+insert into public.platform_admins (user_id, role)
+select id, 'owner'
+from auth.users
+where lower(email) = lower('DEDICATED_PLATFORM_OWNER_EMAIL')
+on conflict (user_id) do update set role = 'owner';
+```
+
+Platform owner access grants the aggregate `/admin` console only; client workspace owner/admin roles remain tenant-scoped.
+
+Before testing the updated dashboard, apply `20261024110000_inbox_collaboration_and_send_safety.sql`, `20261102090000_platform_admins.sql`, and `20261111170000_tenant_meta_app_secrets.sql`. Deploy the updated `meta-webhook`, `meta-config`, and `meta-verify` functions along with `campaign-launch`, `conversation-control`, `team-members`, `meta-media`, `meta-send`, `api-send`, and `create-workspace`. The inbox migration enables Realtime and adds consent history, per-agent read markers, private notes, unlimited-by-default message usage, and atomic campaign recipient claims.
 
 ## 4. Official Meta WhatsApp Cloud API
 
 1. In Meta for Developers, select the correct app and add/configure the WhatsApp product.
 2. Use the intended WhatsApp Business Account (WABA), phone number ID, and a long-lived/system-user access token with only the required permissions.
-3. In Webhooks, configure the callback URL above and the workspace verification token shown in Integrations. Subscribe to WhatsApp `messages` events (this includes message status updates).
-4. In the dashboard → Integrations, enter the phone number ID, WABA ID, and access token. Verify the connection and sync templates.
-5. Test only with a Meta-authorized test recipient first. Confirm inbound messages, outbound template sends, and delivered/read/failed status updates.
+3. In the Meta app's Webhooks product, configure the callback URL above and the workspace verification token shown in Integrations. Subscribe to WhatsApp `messages` events (and `message_template_status_update` if template review updates are needed).
+4. In each client's dashboard → Integrations, enter its phone number ID, WABA ID, access token, and Meta app secret. Verify the connection; MobiWave checks the phone number and subscribes the app to that WABA through `POST /{WABA-ID}/subscribed_apps`. The access token must have the required WhatsApp Business Management permission.
+5. Test only with a Meta-authorized recipient by sending a WhatsApp message to the connected Cloud API business number. Confirm the inbound message appears in Inbox, then verify outbound template sends and delivered/read/failed status updates.
 
 Do not run campaigns until the Meta credentials, webhook signature verification, approved templates, and consent records have all been checked.
 

@@ -19,7 +19,6 @@ Configure server-side secrets in the Supabase project dashboard:
 - `SUPABASE_ANON_KEY` — legacy anon key, needed for request-scoped user clients.
 - `SUPABASE_SERVICE_ROLE_KEY` — server-side only.
 - `APP_ENCRYPTION_KEY` — 32 cryptographically random bytes encoded as 64 hex characters. Keep backups secure; losing it makes saved Meta credentials undecryptable.
-- `META_APP_SECRET` — used to verify `X-Hub-Signature-256`.
 - `META_WEBHOOK_VERIFY_TOKEN` — optional legacy verification token. New workspaces generate and store their own webhook verification token from Integrations.
 - `META_GRAPH_VERSION` — supported Graph API version for the connected Meta app.
 - `INTERNAL_FUNCTION_TOKEN` — high-entropy internal token used by server-to-server worker calls.
@@ -37,9 +36,9 @@ In Supabase Dashboard → Authentication → URL Configuration:
 ## Meta webhook and message delivery
 
 - Callback: `https://wap.mobiwave.co.ke/api/webhooks/whatsapp`
-- Configure the callback in the Meta app, use the workspace verification token generated in Integrations, and subscribe to WhatsApp message events.
+- Configure the callback in each client's Meta app, use that workspace's verification token generated in Integrations, and subscribe the app to the WhatsApp `messages` field. Connection verification also subscribes that app to the client's WABA through `POST /{WABA-ID}/subscribed_apps`; the access token needs WhatsApp Business Management permission.
 - The webhook POST handler independently verifies Meta's HMAC signature before processing. Keep platform JWT verification disabled only for `meta-webhook`, `webhook-worker`, and `api-send` as configured; the latter two apply their own internal/API-key authorization.
-- Configure the WhatsApp Business Account, phone number ID, and appropriate long-lived/system-user token in the dashboard's Integrations view. Verify the connection and sync templates.
+- Configure the WhatsApp Business Account, phone number ID, access token, and that client's Meta app secret in the dashboard's Integrations view. The app secret is encrypted per business account and used for HMAC verification. Configure the Meta callback and `messages` field first, then verify the connection and sync templates.
 
 ## Scheduled customer webhook retries
 

@@ -9,7 +9,7 @@ The dashboard and backend foundation are merged into `main`. The existing Vercel
 - React/Vite dashboard with Supabase Auth UI and workspace selector.
 - Messaging-first dashboard with no AI-provider dependency.
 - Contacts, consent and opt-out state, shared inbox, agent replies, and conversation handoff.
-- Official Meta WhatsApp Cloud API integration, encrypted stored credentials, template sync, signed inbound webhook handling, and message status ingestion.
+- Tenant-scoped Meta WhatsApp Cloud API access tokens and app secrets, encrypted storage, template sync, signed inbound webhook handling, and message status ingestion.
 - Campaign drafts and consent-checked, approved-template sending batches.
 - Atomic campaign-recipient claims, unknown-send outcome protection, and no fixed monthly platform-message cap by default.
 - Realtime shared inbox with per-agent unread state, assignments, filters, internal notes, paginated contact search, consent history, and guarded Meta media previews.
@@ -31,7 +31,7 @@ The dashboard and backend foundation are merged into `main`. The existing Vercel
 - Supabase Auth leaked-password protection is disabled per Security Advisor and must be enabled by an authorized project owner in Auth → Settings → Password Security.
 - Supabase Edge Function secrets must be entered securely in Supabase; this integration does not expose a secret-management operation.
 - GitHub Actions repository secrets must be added securely in GitHub; this integration does not expose an Actions-secret write operation.
-- Meta app/WABA/phone number/access token/webhook configuration must be completed in Meta and verified against an authorized test number.
+- Each client's Meta app/WABA/phone number/access token/app secret/webhook configuration must be completed in Meta and verified against an authorized test number.
 - A controlled end-to-end delivery test against a dedicated HTTPS test receiver is still required; do not use a live customer endpoint.
 - A Meta-authorized test recipient and active WABA integration are required to verify a real inbound message and outbound delivery/status lifecycle.
 - No live end-to-end WhatsApp test has been confirmed in this work session.

@@ -9,6 +9,9 @@ create table if not exists public.platform_admins (
 );
 
 alter table public.platform_admins enable row level security;
+revoke all on public.platform_admins from public, anon;
+grant select on public.platform_admins to authenticated;
+revoke insert, update, delete on public.platform_admins from authenticated;
 
 drop policy if exists "platform admins can read their own access" on public.platform_admins;
 create policy "platform admins can read their own access"

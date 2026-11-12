@@ -3,8 +3,7 @@ export function hexToBytes(hex: string): Uint8Array {
   return new Uint8Array(hex.match(/.{2}/g)!.map((part) => parseInt(part, 16)));
 }
 
-export async function verifyMetaSignature(rawBody: string, signature: string | null): Promise<boolean> {
-  const secret = Deno.env.get("META_APP_SECRET");
+export async function verifyMetaSignature(rawBody: string, signature: string | null, secret: string | undefined): Promise<boolean> {
   if (!secret || !signature?.startsWith("sha256=")) return false;
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const digest = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody)));

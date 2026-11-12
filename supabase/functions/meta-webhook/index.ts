@@ -12,6 +12,39 @@ async function sha256(value: string) {
 }
 const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
+async function hasValidClientSignature(rawBody: string, signature: string | null, body: any): Promise<boolean> {
+  const phoneNumberIds = new Set<string>();
+  const wabaIds = new Set<string>();
+  for (const entry of body.entry ?? []) {
+    const wabaId = String(entry.id ?? "");
+    if (/^\d{5,30}$/.test(wabaId)) wabaIds.add(wabaId);
+    for (const change of entry.changes ?? []) {
+      const phoneNumberId = String(change.value?.metadata?.phone_number_id ?? "");
+      if (/^\d{5,30}$/.test(phoneNumberId)) phoneNumberIds.add(phoneNumberId);
+    }
+  }
+
+  const lookups = await Promise.all([
+    phoneNumberIds.size
+      ? admin.from("meta_integrations").select("encrypted_app_secret").in("phone_number_id", [...phoneNumberIds])
+      : Promise.resolve({ data: [], error: null }),
+    wabaIds.size
+      ? admin.from("meta_integrations").select("encrypted_app_secret").in("waba_id", [...wabaIds])
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  for (const result of lookups) if (result.error) throw result.error;
+
+  const encryptedSecrets = new Set<string>();
+  for (const result of lookups) for (const row of result.data ?? []) {
+    if (row.encrypted_app_secret) encryptedSecrets.add(String(row.encrypted_app_secret));
+  }
+  for (const encryptedSecret of encryptedSecrets) {
+    const secret = await decryptToken(encryptedSecret);
+    if (await verifyMetaSignature(rawBody, signature, secret)) return true;
+  }
+  return false;
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method === "GET") {
@@ -27,12 +60,21 @@ Deno.serve(async (request) => {
   }
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   const rawBody = await request.text();
-  const replaySecret = Deno.env.get("INTERNAL_FUNCTION_TOKEN");
-  const isTrustedReplay = Boolean(replaySecret && request.headers.get("X-Internal-Replay-Token") === replaySecret);
-  if (!isTrustedReplay && !(await verifyMetaSignature(rawBody, request.headers.get("x-hub-signature-256")))) return json({ error: "Invalid Meta webhook signature." }, 401);
   let body: any;
   try { body = JSON.parse(rawBody); } catch { return json({ error: "Invalid JSON." }, 400); }
   if (body.object !== "whatsapp_business_account") return json({ received: true, ignored: true });
+  const replaySecret = Deno.env.get("INTERNAL_FUNCTION_TOKEN");
+  const isTrustedReplay = Boolean(replaySecret && request.headers.get("X-Internal-Replay-Token") === replaySecret);
+  if (!isTrustedReplay) {
+    try {
+      if (!(await hasValidClientSignature(rawBody, request.headers.get("x-hub-signature-256"), body))) {
+        return json({ error: "Invalid Meta webhook signature." }, 401);
+      }
+    } catch {
+      console.error("Meta webhook signature verification failed while loading a client integration secret.");
+      return json({ error: "Webhook signature verification is unavailable." }, 500);
+    }
+  }
   const requestEventIds: string[] = [];
   try {
     for (const entry of body.entry ?? []) for (const change of entry.changes ?? []) {

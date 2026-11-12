@@ -20,7 +20,7 @@ The frontend has been deployed to the existing Vercel project and the Supabase d
 - Paginated server-side contact search and a consent-change audit history, including inbound opt-out signals.
 - Guided Meta template-variable preview for campaign body/header fields and URL buttons; media-header templates are clearly blocked until upload support exists.
 - Campaign recipients are claimed atomically; unknown provider outcomes are held for review instead of retried, with no fixed monthly message cap by default.
-- Official Meta Cloud API credential encryption, verification, template sync, signed webhooks, inbound message ingestion and delivery status updates.
+- Tenant-scoped Meta Cloud API access tokens and app secrets, encrypted verification, template sync, signed webhooks, inbound message ingestion and delivery status updates.
 - Contacts and consent state, shared inbox, human replies, approved-template campaign drafts and bounded sending batches.
 - Row-level security policies, explicit authenticated Data API grants, tenant API keys, usage metering and signed customer webhooks with retryable deliveries.
 - GitHub Actions build/type-check workflow and a scheduled customer-webhook retry workflow (requires repository secrets).
@@ -44,4 +44,4 @@ No Docker dependency is required for frontend development.
 
 ## Security notes
 
-Never commit service-role credentials, Meta tokens, app secrets, webhook tokens or real contact lists. The Meta access token is encrypted server-side with AES-GCM. Supabase service-role credentials must remain server-side.
+Never commit service-role credentials, Meta tokens, app secrets, webhook tokens or real contact lists. Each tenant's Meta access token and app secret are encrypted server-side with AES-GCM. Supabase service-role credentials must remain server-side.

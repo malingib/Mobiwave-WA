@@ -248,6 +248,8 @@ export default function App() {
   const [metaPhoneId, setMetaPhoneId] = useState("");
   const [metaWabaId, setMetaWabaId] = useState("");
   const [metaToken, setMetaToken] = useState("");
+  const [metaAppSecret, setMetaAppSecret] = useState("");
+  const [metaAppSecretSaved, setMetaAppSecretSaved] = useState(false);
   const [metaStatus, setMetaStatus] = useState<any>(null);
   const [metaWebhookToken, setMetaWebhookToken] = useState("");
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
@@ -297,7 +299,7 @@ export default function App() {
   }, [user]);
   useEffect(() => { void loadTenants(); }, [loadTenants]);
   useEffect(() => { setProfileName(String(user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "")); }, [user]);
-  useEffect(() => { setNewApiKey(""); setNewWebhookSecret(""); setMetaWebhookToken(""); setContactPage(0); setSearch(""); setConsentTarget(""); setSearchContactHistory(null); setSelectedConversation(""); setDailyMessages([]); setSelectedCampaign(null); setCampaignCounts(null); setCampaignFailures([]); }, [tenantId]);
+  useEffect(() => { setNewApiKey(""); setNewWebhookSecret(""); setMetaWebhookToken(""); setMetaAppSecret(""); setMetaAppSecretSaved(false); setContactPage(0); setSearch(""); setConsentTarget(""); setSearchContactHistory(null); setSelectedConversation(""); setDailyMessages([]); setSelectedCampaign(null); setCampaignCounts(null); setCampaignFailures([]); }, [tenantId]);
   const activeTenant = tenants.find((t) => t.id === tenantId);
   const isAdmin = activeTenant ? ["owner", "admin"].includes(activeTenant.role) : false;
   const canAgent = activeTenant ? ["owner", "admin", "agent"].includes(activeTenant.role) : false;
@@ -365,6 +367,14 @@ export default function App() {
     setLoading(false);
   }, [tenantId, user, loadContacts]);
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
+  useEffect(() => {
+    if (!supabase || !tenantId || !isAdmin) { setMetaAppSecretSaved(false); return; }
+    let active = true;
+    supabase.functions.invoke("meta-config", { body: { tenant_id: tenantId, action: "status" } }).then(({ data, error }) => {
+      if (active && !error && data?.ok === true) setMetaAppSecretSaved(data.app_secret_configured === true);
+    });
+    return () => { active = false; };
+  }, [tenantId, isAdmin]);
   const loadNotifications = useCallback(async () => {
     if (!supabase || !tenantId) { setNotifications([]); setNotificationUnread(0); return; }
     const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "list", limit: 50 } });
@@ -664,10 +674,10 @@ export default function App() {
   }
   async function saveMeta(event: FormEvent) {
     event.preventDefault(); if (!supabase) return; setBusy(true);
-    const { data, error } = await supabase.functions.invoke("meta-config", { body: { tenant_id: tenantId, phone_number_id: metaPhoneId.trim(), waba_id: metaWabaId.trim(), access_token: metaToken.trim() } });
+    const { data, error } = await supabase.functions.invoke("meta-config", { body: { tenant_id: tenantId, phone_number_id: metaPhoneId.trim(), waba_id: metaWabaId.trim(), access_token: metaToken.trim(), app_secret: metaAppSecret.trim() } });
     setBusy(false);
     if (error || data?.error || data?.ok !== true) setNotice(data?.error ?? error?.message ?? "Meta credentials were not confirmed as saved. Try again.");
-    else { setMetaToken(""); setNotice("Meta token encrypted and saved. Verify the connection next."); await loadWorkspace(); }
+    else { setMetaToken(""); setMetaAppSecret(""); setMetaAppSecretSaved(true); setNotice("Client Meta credentials encrypted and saved. Verify the connection next."); await loadWorkspace(); }
   }
   async function verifyMeta() {
     if (!supabase || !tenantId) return;
@@ -1110,21 +1120,24 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           <div className="integration-head"><div className="integration-logo"><MessageCircle size={24}/></div><div><strong>WhatsApp Business Platform</strong><p>Official Meta Cloud API</p></div><Status status={metaStatus?.enabled&&metaStatus?.verified?"connected":metaStatus?.verified?"verified":"not connected"}/></div>
           <div className="checklist">
             <SetupRow done={Boolean(metaStatus?.phone_number_id)} label="Business number details saved" detail="Phone Number ID and WABA ID are stored for this business account."/>
+            <SetupRow done={metaAppSecretSaved} label="This account's Meta app secret saved" detail="Used to verify signed webhooks for this client's Meta app."/>
             <SetupRow done={Boolean(metaStatus?.verified)} label="Credentials verified" detail="MobiWave successfully checked the number with Meta Graph API."/>
-            <SetupRow done={Boolean(metaStatus?.enabled&&metaStatus?.verified)} label="Messaging enabled" detail="Messaging is enabled only after credentials are verified."/>
+            <SetupRow done={Boolean(metaStatus?.enabled&&metaStatus?.verified)} label="Meta app subscribed to this WABA" detail="Connection verification subscribes this app to the saved WhatsApp Business Account for webhook events."/>
+            <SetupRow done={Boolean(metaStatus?.enabled&&metaStatus?.verified)} label="Messaging enabled" detail="Messaging is enabled after credentials are verified and WABA event delivery is subscribed."/>
           </div>
-          <p className="muted small">Access tokens are encrypted server-side and never returned to the browser. Saving credentials does not itself verify or enable the connection.</p>
+          <p className="muted small">This business account's Meta access token and app secret are encrypted server-side and never returned to the browser. Saving credentials does not itself verify or enable the connection.</p>
           {isAdmin&&<form onSubmit={saveMeta} className="integration-form">
             <h2>1. Connect your WhatsApp number</h2>
             <div className="form-grid"><div className="field"><label>Phone Number ID *</label><input value={metaPhoneId} onChange={(e)=>setMetaPhoneId(e.target.value)} required pattern="[0-9]{5,30}" placeholder="Numeric ID from Meta"/></div><div className="field"><label>WhatsApp Business Account ID *</label><input value={metaWabaId} onChange={(e)=>setMetaWabaId(e.target.value)} required pattern="[0-9]{5,30}" placeholder="Numeric WABA ID"/></div></div>
             <div className="field"><label>Meta access token *</label><input type="password" value={metaToken} onChange={(e)=>setMetaToken(e.target.value)} required minLength={40} autoComplete="off" placeholder="Paste Meta access token"/></div>
+            <div className="field"><label htmlFor="client-meta-app-secret">This client's Meta app secret{metaAppSecretSaved ? "" : " *"}</label><input id="client-meta-app-secret" type="password" value={metaAppSecret} onChange={(e)=>setMetaAppSecret(e.target.value)} required={!metaAppSecretSaved} minLength={metaAppSecret ? 32 : undefined} maxLength={32} pattern="[A-Fa-f0-9]{32}" autoComplete="new-password" spellCheck={false} placeholder="32-character secret from this client's Meta app"/><small>{metaAppSecretSaved ? "A secret is saved for this business. Leave blank to keep it, or enter a replacement." : "Enter the app secret from the Meta Developer app connected to this business. It is required for first setup."} The saved value is never shown again.</small></div>
             <div className="form-actions"><button className="primary-button" disabled={busy}>{busy?"Saving…":"Encrypt and save credentials"}</button><button type="button" className="secondary-button" onClick={()=>void verifyMeta()} disabled={busy}><ShieldCheck size={15}/> Verify connection</button><button type="button" className="secondary-button" onClick={()=>void syncTemplates()} disabled={busy}><RefreshCw size={15}/> Sync templates</button></div>
           </form>}
           {metaStatus?.display_phone_number&&<div className="connected-detail"><Check size={15}/> Connected number: {metaStatus.display_phone_number}{metaStatus.verified_name?" · "+metaStatus.verified_name:""}</div>}
         </div>
         <div className="panel form-panel" id="integration-webhook">
           <h2>2. Configure Meta's webhook callback</h2>
-          <p className="muted small">Meta requires a callback URL and verification token. Copy both values into your Meta app's Webhooks configuration. The token is stored as a hash and shown only when generated; it cannot be retrieved after leaving this screen.</p>
+          <p className="muted small">Meta requires a callback URL and verification token. Configure these in your Meta app and subscribe to the messages field before verifying the connection. The token is stored as a hash and shown only when generated; it cannot be retrieved after leaving this screen.</p>
           <div className="field"><label>Callback URL</label><div className="copyable-value"><code>{window.location.origin.replace(/\/$/,"")+"/api/webhooks/whatsapp"}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(window.location.origin.replace(/\/$/,"")+"/api/webhooks/whatsapp","Callback URL")}>Copy URL</button></div></div>
           <div className="field"><label>Webhook verification token</label>{metaWebhookToken?<div className="copyable-value"><code>{metaWebhookToken}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(metaWebhookToken,"Verification token")}>Copy token</button></div>:<p className="muted small">Generate this token before or after saving your Meta phone credentials. It is shown only once; copy it before leaving this screen.</p>}</div>
           {isAdmin&&<div className="form-actions"><button type="button" className="primary-button" onClick={()=>void generateMetaWebhookToken()} disabled={busy}><ShieldCheck size={15}/>{metaWebhookToken?"Generate replacement token":"Generate verification token"}</button></div>}
@@ -1132,9 +1145,10 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
             <li>Open your app in Meta for Developers and select <strong>Webhooks</strong>.</li>
             <li>Choose the WhatsApp Business Account object, then paste the callback URL and verification token above.</li>
             <li>Verify and save the callback, then subscribe to the <code>messages</code> field and <code>message_template_status_update</code> where available.</li>
-            <li>Subscribe the app to your WhatsApp Business Account and send a test message to confirm it appears in Inbox.</li>
+            <li>After configuring the callback and subscribing to the <code>messages</code> field, verify the connection above. MobiWave will subscribe this Meta app to the saved WhatsApp Business Account automatically.</li>
+            <li>Send a WhatsApp message to the connected Cloud API business number and confirm it appears in Inbox.</li>
           </ol>
-          <p className="muted small">Webhook verification is separate from access-token verification. The platform's Meta App Secret must be configured in the server environment as <code>META_APP_SECRET</code> to validate POST signatures.</p>
+          <p className="muted small">Webhook verification uses the Meta App Secret saved in this business account's WhatsApp connection. Each client account keeps its own app secret alongside its own access token and webhook verification token.</p>
         </div>
         <div className="panel form-panel" id="integration-api">
           <h2>Developer API</h2><p className="muted small">Use business-account-scoped keys for server-to-server integrations. Never put API keys in browser code or public repositories.</p>
