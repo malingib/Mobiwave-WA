@@ -8,7 +8,7 @@ MobiWave WhatsApp is a multi-tenant WhatsApp messaging and automation platform f
 - Repository: https://github.com/malingib/Mobiwave-WA
 - Supabase project ref: `jyjgvsljcmvbhovzevaz`
 
-The frontend has been deployed to the existing Vercel project and the Supabase database migrations and Edge Functions are present in the connected project. A READY deployment and passing CI confirm deployment/build status, not full live behavior. Auth URL configuration, server-side secrets, Meta webhook registration and an end-to-end test with an authorized Meta test number remain required before sending real campaigns.
+The frontend is deployed to the existing Vercel project. This checkout has not verified that the connected Supabase project contains the latest migrations and Edge Functions; apply and confirm them before using these changes. A successful static deployment or CI build does not verify full live behavior. Auth URL configuration, server-side secrets, Meta webhook registration and an end-to-end test with an authorized Meta test number remain required before sending real campaigns.
 
 **Start with [Production go-live checklist](docs/production-go-live.md)** for exact Auth URLs, server secrets, Meta configuration and the scheduled retry worker. Also see [Environment and deployment](docs/environment-and-deployment.md) and [Implementation status](docs/implementation-status.md).
 
@@ -23,7 +23,7 @@ The frontend has been deployed to the existing Vercel project and the Supabase d
 - Tenant-scoped Meta Cloud API access tokens and app secrets, encrypted verification, template sync, signed webhooks, inbound message ingestion and delivery status updates.
 - Contacts and consent state, shared inbox, human replies, approved-template campaign drafts and bounded sending batches.
 - Row-level security policies, explicit authenticated Data API grants, tenant API keys, usage metering and signed customer webhooks with retryable deliveries.
-- GitHub Actions build/type-check workflow and a scheduled customer-webhook retry workflow (requires repository secrets).
+- GitHub Actions build/type-check workflow. Supabase Cron schedules the customer and Meta webhook retry workers; it requires Supabase Vault and Edge Function secrets, not GitHub Actions secrets.
 
 ## Fixed product decisions
 

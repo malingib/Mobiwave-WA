@@ -1,5 +1,5 @@
 import { requireUser, requireTenantRole } from "../_shared/auth.ts";
-import { corsHeaders, json, errorMessage } from "../_shared/cors.ts";
+import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 
 function base64url(bytes: Uint8Array) {
   let binary = "";
@@ -15,7 +15,7 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   try {
     const auth = await requireUser(request);
-    const body = await request.json();
+    const body = await readRequestJson(request);
     const tenantId = String(body.tenant_id ?? ""), name = String(body.name ?? "").trim();
     if (!tenantId || name.length < 2 || name.length > 120) return json({ error: "tenant_id and an API key name of 2–120 characters are required." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner", "admin"]);

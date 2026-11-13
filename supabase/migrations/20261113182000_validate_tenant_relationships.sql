@@ -1,0 +1,22 @@
+-- Historical cross-tenant reference checks returned zero mismatches on the
+-- production database before this migration was applied. Validate the
+-- NOT VALID constraints so existing rows receive the same guarantees as new
+-- writes.
+alter table public.campaigns validate constraint campaigns_template_same_tenant_fk;
+alter table public.campaign_recipients validate constraint campaign_recipients_campaign_same_tenant_fk;
+alter table public.campaign_recipients validate constraint campaign_recipients_contact_same_tenant_fk;
+alter table public.conversations validate constraint conversations_contact_same_tenant_fk;
+alter table public.conversations validate constraint conversations_assignee_same_tenant_fk;
+alter table public.messages validate constraint messages_conversation_same_tenant_fk;
+alter table public.messages validate constraint messages_reply_same_tenant_fk;
+alter table public.conversation_reads validate constraint conversation_reads_same_tenant_fk;
+alter table public.conversation_reads validate constraint conversation_reads_member_same_tenant_fk;
+alter table public.conversation_notes validate constraint conversation_notes_same_tenant_fk;
+alter table public.contact_consent_events validate constraint consent_events_contact_same_tenant_fk;
+alter table public.webhook_deliveries validate constraint webhook_deliveries_hook_same_tenant_fk;
+alter table public.outbound_send_attempts validate constraint outbound_attempt_contact_same_tenant_fk;
+alter table public.outbound_send_attempts validate constraint outbound_attempt_conversation_same_tenant_fk;
+alter table public.outbound_send_attempts validate constraint outbound_attempt_message_same_tenant_fk;
+alter table public.knowledge_documents validate constraint knowledge_documents_source_same_tenant_fk;
+alter table public.knowledge_chunks validate constraint knowledge_chunks_document_same_tenant_fk;
+alter table public.source_ingestion_runs validate constraint ingestion_runs_source_same_tenant_fk;

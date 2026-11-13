@@ -3,17 +3,20 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  ArrowUpRight, Inbox, MessageCircle, Radio, Users,
+  ArrowUpRight, Inbox, MessageCircle, Users, Zap,
 } from "lucide-react";
 import { KpiCard, SetupRow, Status, WidgetCard } from "../components/ui";
 
 type Conversation = { id: string; status: string; unread?: boolean; last_message_at?: string; contacts?: { display_name?: string; phone_e164: string } };
-type Contact = { consent_status: string };
-type Campaign = { id: string; name: string; status: string; created_at: string };
-type Template = { meta_status: string };
 type MetaStatus = { enabled?: boolean; verified?: boolean; display_phone_number?: string; phone_number_id?: string } | null;
 
 export type DailyMessagePoint = { date: string; label: string; inbound: number; outbound: number };
+export type OverviewMetrics = {
+  contacts: { total: number; opted_in: number; opted_out: number };
+  conversations: { total: number; open: number; pending: number; resolved: number; unread: number };
+  unfinished_campaigns: number;
+  approved_templates: number;
+};
 
 /* Recharts needs concrete values, so these mirror the light token set. */
 const SERIES_1 = "#5955d1";
@@ -59,19 +62,17 @@ function Sparkline({ data, dataKey, color }: { data: DailyMessagePoint[]; dataKe
 
 export default function Overview({
   conversations,
-  contacts,
-  campaigns,
-  templates,
   dailyMessages,
+  metrics,
+  metricsError,
   metaStatus,
   onNavigate,
   onOpenConversation,
 }: {
   conversations: Conversation[];
-  contacts: Contact[];
-  campaigns: Campaign[];
-  templates: Template[];
   dailyMessages: DailyMessagePoint[];
+  metrics: OverviewMetrics | null;
+  metricsError: string;
   metaStatus: MetaStatus;
   onNavigate: (view: string) => void;
   onOpenConversation: (conversationId: string) => void;
@@ -79,21 +80,21 @@ export default function Overview({
   const [range, setRange] = useState<7 | 14>(14);
 
   const stats = useMemo(() => {
-    const open = conversations.filter((c) => c.status === "open").length;
-    const unread = conversations.filter((c) => c.unread).length;
-    const pending = conversations.filter((c) => c.status === "pending").length;
-    const resolved = conversations.filter((c) => c.status === "resolved").length;
-    const optedIn = contacts.filter((c) => c.consent_status === "opted_in").length;
-    const optedOut = contacts.filter((c) => c.consent_status === "opted_out").length;
-    const unknown = contacts.length - optedIn - optedOut;
+    const open = metrics?.conversations.open ?? 0;
+    const unread = metrics?.conversations.unread ?? 0;
+    const pending = metrics?.conversations.pending ?? 0;
+    const resolved = metrics?.conversations.resolved ?? 0;
+    const optedIn = metrics?.contacts.opted_in ?? 0;
+    const optedOut = metrics?.contacts.opted_out ?? 0;
+    const unknown = Math.max(0, (metrics?.contacts.total ?? 0) - optedIn - optedOut);
     const inbound = dailyMessages.reduce((sum, day) => sum + day.inbound, 0);
     const outbound = dailyMessages.reduce((sum, day) => sum + day.outbound, 0);
-    const activeCampaigns = campaigns.filter((c) => ["running", "draft", "paused"].includes(c.status)).length;
-    const approvedTemplates = templates.filter((t) => t.meta_status === "approved").length;
+    const unfinishedCampaigns = metrics?.unfinished_campaigns ?? 0;
+    const approvedTemplates = metrics?.approved_templates ?? 0;
     return {
       open, unread, pending, resolved, optedIn, optedOut, unknown, inbound, outbound,
       messages14d: inbound + outbound,
-      activeCampaigns, approvedTemplates,
+      unfinishedCampaigns, approvedTemplates,
       consentMix: [
         { name: "Opted in", value: optedIn, fill: "#009966" },
         { name: "Opted out", value: optedOut, fill: "#f83636" },
@@ -105,12 +106,14 @@ export default function Overview({
         { name: "Resolved", value: resolved, fill: STATUS_COLORS.resolved },
       ],
     };
-  }, [conversations, contacts, campaigns, dailyMessages, templates]);
+  }, [conversations, metrics, dailyMessages]);
 
   const visibleMessages = useMemo(() => dailyMessages.slice(-range), [dailyMessages, range]);
   const recent = useMemo(() => [...conversations].slice(0, 6), [conversations]);
   const whatsappConnected = Boolean(metaStatus?.enabled && metaStatus?.verified);
-  const optInShare = contacts.length ? Math.round((stats.optedIn / contacts.length) * 100) : 0;
+  const contactTotal = metrics?.contacts.total ?? 0;
+  const conversationTotal = metrics?.conversations.total ?? 0;
+  const optInShare = contactTotal ? Math.round((stats.optedIn / contactTotal) * 100) : 0;
 
   return (
     <div className="overview-page flex flex-col gap-5">
@@ -129,17 +132,17 @@ export default function Overview({
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Messages · last 14 days"
-          value={stats.messages14d.toLocaleString()}
-          hint={`${stats.inbound} inbound · ${stats.outbound} outbound`}
+          value={metrics ? stats.messages14d.toLocaleString() : "—"}
+          hint={metrics ? `${stats.inbound} inbound · ${stats.outbound} outbound` : "Workspace metrics unavailable"}
           icon={<MessageCircle size={13} />}
           trend={<Sparkline data={dailyMessages} dataKey="inbound" color={SERIES_1} />}
         />
         <KpiCard
           label="Open conversations"
-          value={String(stats.open)}
+          value={metrics ? String(stats.open) : "—"}
           delta={stats.unread ? `${stats.unread} unread` : "All read"}
           deltaTone={stats.unread ? "negative" : "positive"}
-          hint={`${stats.pending} pending · ${stats.resolved} resolved`}
+          hint={metrics ? `${stats.pending} pending · ${stats.resolved} resolved` : "Workspace metrics unavailable"}
           icon={<Inbox size={13} />}
         >
           <button className="text-[11.5px] font-medium text-brand-700 hover:text-brand-800" onClick={() => onNavigate("Inbox")}>
@@ -148,8 +151,8 @@ export default function Overview({
         </KpiCard>
         <KpiCard
           label="Opted-in contacts"
-          value={stats.optedIn.toLocaleString()}
-          hint={`${optInShare}% of ${contacts.length} contact(s)`}
+          value={metrics ? stats.optedIn.toLocaleString() : "—"}
+          hint={metrics ? `${optInShare}% of ${contactTotal} contact(s)` : "Workspace metrics unavailable"}
           icon={<Users size={13} />}
         >
           <div className="h-1.5 w-20 overflow-hidden rounded-full bg-text-faint" aria-hidden>
@@ -157,15 +160,13 @@ export default function Overview({
           </div>
         </KpiCard>
         <KpiCard
-          label="WhatsApp connection"
-          value={whatsappConnected ? "Live" : "Setup"}
-          delta={whatsappConnected ? "Connected" : "Pending"}
-          deltaTone={whatsappConnected ? "positive" : "negative"}
-          hint={metaStatus?.display_phone_number || "Connect a number to start"}
-          icon={<Radio size={13} />}
+          label="Unfinished campaigns"
+          value={metrics ? stats.unfinishedCampaigns.toLocaleString() : "—"}
+          hint={metrics ? "Draft, scheduled, queued, running or paused" : "Workspace metrics unavailable"}
+          icon={<Zap size={13} />}
         >
-          <button className="text-[11.5px] font-medium text-brand-700 hover:text-brand-800" onClick={() => onNavigate("Integrations")}>
-            Manage
+          <button className="text-[11.5px] font-medium text-brand-700 hover:text-brand-800" onClick={() => onNavigate("Campaigns")}>
+            Open campaigns
           </button>
         </KpiCard>
       </div>
@@ -200,7 +201,12 @@ export default function Overview({
             </div>
           }
         >
-          {stats.messages14d === 0 ? (
+          {!metrics ? (
+            <div className="flex h-[236px] flex-col items-center justify-center gap-2 text-center">
+              <MessageCircle size={20} className="text-text-faint" />
+              <p className="text-[12.5px] font-medium text-text-muted">{metricsError || "Loading workspace metrics…"}</p>
+            </div>
+          ) : stats.messages14d === 0 ? (
             <div className="flex h-[236px] flex-col items-center justify-center gap-2 text-center">
               <MessageCircle size={20} className="text-text-faint" />
               <p className="text-[12.5px] font-medium text-text-muted">No messages in the last 14 days</p>
@@ -237,8 +243,10 @@ export default function Overview({
           </div>
         </WidgetCard>
 
-        <WidgetCard title="Conversations by status" subtitle={`${conversations.length} in this workspace`}>
-          {conversations.length === 0 ? (
+        <WidgetCard title="Conversations by status" subtitle={metrics ? `${conversationTotal} in this workspace` : "Workspace metrics unavailable"}>
+          {!metrics ? (
+            <div className="flex h-[236px] items-center justify-center text-center text-[11.5px] text-text-muted">{metricsError || "Loading workspace metrics…"}</div>
+          ) : conversationTotal === 0 ? (
             <div className="flex h-[236px] flex-col items-center justify-center gap-2 text-center text-text-muted">
               <Inbox size={18} />
               <p className="text-[11.5px]">No conversations yet.</p>
@@ -255,7 +263,7 @@ export default function Overview({
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                  <strong className="font-display text-[22px] font-semibold leading-none text-text">{conversations.length}</strong>
+                  <strong className="font-display text-[22px] font-semibold leading-none text-text">{conversationTotal}</strong>
                   <span className="mt-1 text-[10.5px] text-text-faint">total</span>
                 </div>
                 </div>
@@ -324,7 +332,9 @@ export default function Overview({
 
         <div className="flex flex-col gap-3">
           <WidgetCard title="Consent mix" subtitle="Campaign eligibility source of truth">
-            {contacts.length === 0 ? (
+            {!metrics ? (
+              <p className="rounded-lg border border-dashed border-hairline-strong bg-raised/60 p-4 text-[12px] text-text-muted">{metricsError || "Loading workspace metrics…"}</p>
+            ) : contactTotal === 0 ? (
               <p className="rounded-lg border border-dashed border-hairline-strong bg-raised/60 p-4 text-[12px] text-text-muted">
                 Add contacts to see your consent breakdown.
               </p>

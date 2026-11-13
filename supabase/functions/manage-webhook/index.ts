@@ -1,7 +1,7 @@
 import { requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { encryptToken } from "../_shared/meta.ts";
 import { validateWebhookUrl, deliverWebhook } from "../_shared/customer-webhooks.ts";
-import { corsHeaders, json, errorMessage } from "../_shared/cors.ts";
+import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 
 const allowedEvents = new Set(["message.inbound","message.status","message.outbound","conversation.updated","campaign.completed","knowledge.indexed"]);
 function secretToken(bytes: Uint8Array) {
@@ -13,7 +13,7 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   try {
     const auth = await requireUser(request);
-    const body = await request.json();
+    const body = await readRequestJson(request);
     const tenantId = String(body.tenant_id ?? ""), action = String(body.action ?? "create");
     if (!tenantId) return json({ error: "tenant_id is required." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner","admin"]);
@@ -39,7 +39,7 @@ Deno.serve(async (request) => {
       const { data: delivery, error: insertError } = await auth.admin.from("webhook_deliveries").insert({
         tenant_id: tenantId, webhook_id: webhookId, event_type: "webhook.test",
         payload: { test: true, message: "MobiWave webhook test event", tenant_id: tenantId, sent_at: new Date().toISOString() },
-        status: "queued", attempt_count: 0, next_attempt_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        status: "queued", attempt_count: 0, next_attempt_at: new Date().toISOString(),
       }).select("id").single();
       if (insertError) throw insertError;
       const result = await deliverWebhook(auth.admin, delivery.id);
@@ -51,7 +51,7 @@ Deno.serve(async (request) => {
       const { data: delivery, error: lookupError } = await auth.admin.from("webhook_deliveries").select("id,status").eq("tenant_id", tenantId).eq("id", deliveryId).maybeSingle();
       if (lookupError) throw lookupError;
       if (!delivery || !["failed", "dead"].includes(delivery.status)) return json({ error: "Only failed or dead deliveries can be retried." }, 409);
-      const { data: reset, error: resetError } = await auth.admin.from("webhook_deliveries").update({ status: "queued", next_attempt_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), last_error: null }).eq("tenant_id", tenantId).eq("id", deliveryId).select("id").maybeSingle();
+      const { data: reset, error: resetError } = await auth.admin.from("webhook_deliveries").update({ status: "queued", attempt_count: 0, next_attempt_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", deliveryId).select("id").maybeSingle();
       if (resetError) throw resetError;
       if (!reset) return json({ error: "Delivery was not found in this workspace." }, 404);
       const result = await deliverWebhook(auth.admin, deliveryId);

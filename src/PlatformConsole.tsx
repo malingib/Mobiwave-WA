@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Building2,
+  CircleDollarSign,
   LoaderCircle,
   LogOut,
   Menu,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import { Brand, Empty, KpiCard } from "./components/ui";
+import PlatformBilling from "./PlatformBilling";
 
 type PlatformTenant = {
   tenant_id: string;
@@ -94,6 +96,7 @@ export default function PlatformConsole({ user, role, hasClientWorkspace, client
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<PlatformTenant | null>(null);
   const [navOpen, setNavOpen] = useState(false);
+  const [section, setSection] = useState<"clients" | "billing">("clients");
 
   const load = useCallback(async () => {
     if (!supabase) {
@@ -197,10 +200,14 @@ export default function PlatformConsole({ user, role, hasClientWorkspace, client
 
         <nav className="platform-nav" aria-label="Platform sections">
           <div className="platform-nav-label">Platform</div>
-          <a className="platform-nav-item active" href="/admin" aria-current="page" onClick={() => setNavOpen(false)}>
+          <button type="button" className={"platform-nav-item " + (section === "clients" ? "active" : "")} aria-current={section === "clients" ? "page" : undefined} onClick={() => { setSection("clients"); setNavOpen(false); }}>
             <Building2 size={18} />
             <span>Client workspaces</span>
-          </a>
+          </button>
+          <button type="button" className={"platform-nav-item " + (section === "billing" ? "active" : "")} aria-current={section === "billing" ? "page" : undefined} disabled={role !== "owner"} title={role === "owner" ? "Manage billing and client accounts" : "Billing is restricted to platform owners"} onClick={() => { setSection("billing"); setNavOpen(false); }}>
+            <CircleDollarSign size={18} />
+            <span>Billing &amp; accounts</span>
+          </button>
           <div className="platform-nav-label">Account</div>
           {hasClientWorkspace && (
             <a className="platform-nav-item" href={clientWorkspaceHref ?? "/dashboard"} onClick={() => setNavOpen(false)}>
@@ -239,7 +246,7 @@ export default function PlatformConsole({ user, role, hasClientWorkspace, client
           <div className="platform-breadcrumbs">
             <span>MobiWave Platform</span>
             <span className="crumb-sep">/</span>
-            <strong>Client workspaces</strong>
+              <strong>{section === "billing" ? "Billing & accounts" : "Client workspaces"}</strong>
           </div>
           <div className="platform-top-actions">
             <span className="platform-pill"><ShieldCheck size={13} /> {roleLabel(role)}</span>
@@ -251,6 +258,7 @@ export default function PlatformConsole({ user, role, hasClientWorkspace, client
         </header>
 
         <section className="platform-content">
+          {section === "billing" ? <PlatformBilling /> : <>
           <div className="platform-heading">
             <div>
               <div className="eyebrow"><Activity size={12} /> PLATFORM OPERATIONS</div>
@@ -287,7 +295,7 @@ export default function PlatformConsole({ user, role, hasClientWorkspace, client
               <p>{tenants.length ? `${connected} of ${tenants.length} client workspaces have a verified, enabled WhatsApp connection.` : "No client workspaces have been created yet."}</p>
             </div>
             <div className="platform-health-meter">
-              <div className="platform-health-bar"><span style={{ width: `${healthPercent}%` }} /></div>
+              <div className="platform-health-bar"><span style={{ transform: `scaleX(${healthPercent / 100})` }} /></div>
               <strong>{healthPercent}%</strong>
             </div>
           </div>
@@ -357,8 +365,9 @@ export default function PlatformConsole({ user, role, hasClientWorkspace, client
 
           <p className="platform-footnote">
             <ShieldCheck size={14} />
-            Platform access is read-only. Opening a client workspace requires an explicit membership in that workspace.
+            Client message content and provider credentials stay workspace-scoped. Opening a client workspace requires explicit membership.
           </p>
+          </>}
         </section>
 
         <footer className="footer platform-footer">

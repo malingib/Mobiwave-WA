@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import { decryptToken, verifyMetaSignature } from "../_shared/meta.ts";
 import { emitWebhook } from "../_shared/customer-webhooks.ts";
-import { corsHeaders, json } from "../_shared/cors.ts";
+import { corsHeaders, json, readRequestText } from "../_shared/cors.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_VERSION") || "v23.0";
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -59,7 +59,8 @@ Deno.serve(async (request) => {
     return new Response("Forbidden", { status: 403 });
   }
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
-  const rawBody = await request.text();
+  const rawBody = await readRequestText(request, 1_048_576);
+  if (rawBody === null) return json({ error: "Webhook payload exceeds the 1 MiB limit." }, 413);
   let body: any;
   try { body = JSON.parse(rawBody); } catch { return json({ error: "Invalid JSON." }, 400); }
   if (body.object !== "whatsapp_business_account") return json({ received: true, ignored: true });
@@ -136,7 +137,8 @@ Deno.serve(async (request) => {
       }
       const phoneNumberId = String(value.metadata?.phone_number_id ?? "");
       if (!phoneNumberId) continue;
-      const { data: integration } = await admin.from("meta_integrations").select("*").eq("phone_number_id", phoneNumberId).eq("enabled", true).maybeSingle();
+      const { data: integration, error: integrationLookupError } = await admin.from("meta_integrations").select("*").eq("phone_number_id", phoneNumberId).eq("enabled", true).maybeSingle();
+      if (integrationLookupError) throw integrationLookupError;
       if (!integration) continue;
       const tenantId = integration.tenant_id;
       const eventKey = await sha256(JSON.stringify({ entry_id: entry.id ?? null, field: change.field ?? null, value }));
@@ -154,9 +156,21 @@ Deno.serve(async (request) => {
         const phone = "+" + from;
         const metaId = String(message.id ?? "");
         if (!metaId) continue;
-        const { data: existing } = await admin.from("messages").select("id").eq("tenant_id", tenantId).eq("meta_message_id", metaId).maybeSingle();
-        if (existing) continue;
         const profile = (value.contacts ?? []).find((c: any) => c.wa_id === from);
+        const messageType = ["text", "image", "audio", "video", "document", "interactive"].includes(String(message.type)) ? String(message.type) : "unknown";
+        const media = ["image", "audio", "video", "document"].includes(messageType) ? message[messageType] ?? {} : {};
+        const text = messageType === "text" ? String(message.text?.body ?? "") : String(media.caption ?? "") || "[" + String(message.type ?? "unknown") + " message]";
+        const { data: existing } = await admin.from("messages").select("id,conversation_id").eq("tenant_id", tenantId).eq("meta_message_id", metaId).maybeSingle();
+        if (existing) {
+          // A prior attempt may have saved the message but failed before its
+          // customer-webhook outbox insert. Stable event keys make replay safe.
+          await emitWebhook(admin, tenantId, "message.inbound", {
+            message_id: metaId, conversation_id: existing.conversation_id,
+            contact: { phone_e164: phone, display_name: profile?.profile?.name ?? null },
+            message: { type: message.type, text: text.slice(0, 3000), timestamp: message.timestamp },
+          }, false, true);
+          continue;
+        }
         const { data: oldContact } = await admin.from("contacts").select("id,consent_status").eq("tenant_id", tenantId).eq("phone_e164", phone).maybeSingle();
         let contact: any;
         if (oldContact) {
@@ -167,12 +181,10 @@ Deno.serve(async (request) => {
           if (error) throw error;
           contact = data;
         }
-        const messageType = ["text", "image", "audio", "video", "document", "interactive"].includes(String(message.type)) ? String(message.type) : "unknown";
-        const media = ["image", "audio", "video", "document"].includes(messageType) ? message[messageType] ?? {} : {};
-        const text = messageType === "text" ? String(message.text?.body ?? "") : String(media.caption ?? "") || "[" + String(message.type ?? "unknown") + " message]";
         const normalized = text.trim().toLowerCase().replace(/[.!?,]+$/g, "").replace(/\s+/g, " ");
         if (/^(stop|stop all|unsubscribe( me)?|opt ?out|cancel|end|quit|remove me|do not (message|text) me|don't (message|text) me)$/.test(normalized)) {
-          await admin.from("contacts").update({ consent_status: "opted_out", consent_source: "WhatsApp opt-out keyword: " + text.trim().slice(0, 80), opted_out_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", contact.id).eq("tenant_id", tenantId);
+          const { error: optOutError } = await admin.from("contacts").update({ consent_status: "opted_out", consent_source: "WhatsApp opt-out keyword: " + text.trim().slice(0, 80), opted_out_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", contact.id).eq("tenant_id", tenantId);
+          if (optOutError) throw optOutError;
           contact.consent_status = "opted_out";
         }
         const { data: conversation, error: convError } = await admin.from("conversations").upsert({
@@ -188,7 +200,7 @@ Deno.serve(async (request) => {
         await emitWebhook(admin, tenantId, "message.inbound", {
           message_id: metaId, conversation_id: conversation.id, contact: { phone_e164: phone, display_name: profile?.profile?.name ?? null },
           message: { type: message.type, text: text.slice(0, 3000), timestamp: message.timestamp },
-        }, false);
+        }, false, true);
         await admin.from("conversations").update({ last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", conversation.id);
       }
       for (const status of value.statuses ?? []) {
@@ -208,16 +220,16 @@ Deno.serve(async (request) => {
           event_key: statusEventKey, payload: status,
         }, { onConflict: "event_key", ignoreDuplicates: true });
         if (historyError) throw historyError;
-        const statusRank: Record<string, number> = { accepted: 0, sent: 1, delivered: 2, read: 3, failed: 4 };
-        const { data: currentMessage } = await admin.from("messages").select("id,status").eq("tenant_id", tenantId).eq("meta_message_id", metaId).maybeSingle();
-        const shouldAdvance = !currentMessage || (statusRank[mapped] ?? 0) >= (statusRank[String(currentMessage.status)] ?? -1);
-        if (currentMessage && shouldAdvance) {
-          const { error: updateError } = await admin.from("messages").update({
-            status: mapped,
-            metadata: { status_timestamp: status.timestamp, errors: status.errors ?? [], provider_status: mapped },
-          }).eq("tenant_id", tenantId).eq("meta_message_id", metaId);
-          if (updateError) throw updateError;
-        }
+        // Apply status in one database statement so concurrent, out-of-order
+        // provider events cannot move persisted delivery state backward.
+        const { error: applyStatusError } = await admin.rpc("apply_meta_message_status", {
+          p_tenant_id: tenantId,
+          p_meta_message_id: metaId,
+          p_status: mapped,
+          p_provider_timestamp: providerTimestamp,
+          p_metadata: { status_timestamp: status.timestamp, errors: status.errors ?? [], provider_status: mapped },
+        });
+        if (applyStatusError) throw applyStatusError;
         if (mapped === "failed") {
           const detail = String(firstError?.message ?? firstError?.title ?? "Meta reported that the WhatsApp message failed.");
           const { error: notificationError } = await admin.from("workspace_notifications").insert({
@@ -229,13 +241,7 @@ Deno.serve(async (request) => {
           if (notificationError && notificationError.code !== "23505") throw notificationError;
         }
         
-        await emitWebhook(admin, tenantId, "message.status", { message_id: metaId, status: mapped, timestamp: status.timestamp, errors: status.errors ?? [] }, false);
-        const campaignPatch: Record<string, unknown> = { status: mapped, updated_at: new Date().toISOString() };
-        if (mapped === "sent") campaignPatch.sent_at = providerTimestamp ?? new Date().toISOString();
-        if (mapped === "delivered") campaignPatch.delivered_at = providerTimestamp ?? new Date().toISOString();
-        if (mapped === "read") campaignPatch.read_at = providerTimestamp ?? new Date().toISOString();
-        const { error: campaignStatusError } = await admin.from("campaign_recipients").update(campaignPatch).eq("tenant_id", tenantId).eq("meta_message_id", metaId);
-        if (campaignStatusError) throw campaignStatusError;
+        await emitWebhook(admin, tenantId, "message.status", { message_id: metaId, status: mapped, timestamp: status.timestamp, errors: status.errors ?? [] }, false, true);
       }
       // Finalize each change independently so a later failure does not replay completed side effects.
       if (inboxEvent?.id) {

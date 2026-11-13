@@ -20,7 +20,11 @@ In Supabase Dashboard → Authentication → URL Configuration, set:
 - Redirect URL allowlist: `https://wap.mobiwave.co.ke/**`
 - For local development only, add `http://localhost:5173/**` if needed.
 
+Team invitations use Supabase Auth `inviteUserByEmail`. Configure a production SMTP provider and confirm the invitation email template is enabled. Keep `https://wap.mobiwave.co.ke/login` on the redirect allowlist, then send an invitation to a controlled test address and verify that accepting it returns to the dashboard with the invited workspace available. The Supabase default email service is not suitable for dependable production delivery.
+
 Save, then test email/password sign-up and sign-in on the production dashboard. Do not add broad wildcard domains.
+
+Live config was updated on 2026-11-13 to use `https://wap.mobiwave.co.ke` as both Site URL and the only redirect pattern, matching the active CORS origin and invitation callback. Email confirmation is required. Leaked-password protection remains disabled: the Management API returned HTTP 402 when enabling it, so revisit it if the project plan/configuration changes. Invitation SMTP and acceptance still need a controlled test.
 
 ## 2. Supabase Edge Function secrets
 
@@ -54,9 +58,13 @@ where lower(email) = lower('DEDICATED_PLATFORM_OWNER_EMAIL')
 on conflict (user_id) do update set role = 'owner';
 ```
 
-Platform owner access grants the aggregate `/admin` console only; client workspace owner/admin roles remain tenant-scoped.
+Platform owner access grants the aggregate `/admin` console and the owner-only billing ledger; client workspace owner/admin roles remain tenant-scoped. Billing tools cover customer records and manual invoicing/payment reconciliation, not automatic charging or product entitlement enforcement.
 
-Before testing the updated dashboard, apply `20261024110000_inbox_collaboration_and_send_safety.sql`, `20261102090000_platform_admins.sql`, and `20261111170000_tenant_meta_app_secrets.sql`. Deploy the updated `meta-webhook`, `meta-config`, and `meta-verify` functions along with `campaign-launch`, `conversation-control`, `team-members`, `meta-media`, `meta-send`, `api-send`, and `create-workspace`. The inbox migration enables Realtime and adds consent history, per-agent read markers, private notes, unlimited-by-default message usage, and atomic campaign recipient claims.
+As of 2026-11-13, production has the `platform_admins`, `tenant_meta_app_secrets`, `monotonic_message_status`, `campaign_controls`, `tenant_overview_metrics`, `validate_tenant_relationships`, `security_performance_hardening`, `reduce_select_policy_overlap`, `platform_billing_management`, and `platform_billing_fk_indexes` migrations applied. All 19 local Edge Functions are active. The 18 tenant-matching constraints were validated after their historical mismatch checks returned zero. The migrations were applied through the token-authenticated Supabase Management API; the ledger uses execution-time versions that differ from several local migration filenames. Do not use `supabase db push` until migration history has been reconciled; replaying old local migrations could damage production.
+
+The inbox migration enables Realtime and adds consent history, per-agent read markers, private notes, unlimited-by-default message usage, and atomic campaign recipient claims. The status migration makes message and campaign delivery-state updates atomic and monotonic under concurrent webhook events, serializes monthly quota claims across parallel dashboard, API, and campaign sends, and adds tenant-matching foreign keys for related records. The campaign-controls migration gates claims on campaign state and makes pause/cancel releases atomic. The overview migration adds exact tenant-authorized dashboard aggregates and a supporting message timestamp index. The validation migration confirms historical relationships match tenant IDs; the hardening migration adds foreign-key support indexes and explicitly revokes anonymous execution of the platform overview RPC. The policy migration separates writes from member reads to remove duplicate SELECT-policy evaluations while preserving the existing tenant-role predicates.
+
+The 18 tenant-matching foreign keys are now validated in production (`pg_constraint.convalidated = true` for each). Their historical cross-tenant mismatch checks returned zero before validation. The assignee constraint clears assignments when a workspace membership is deleted; conversation read markers are removed with their membership. Recheck the constraints after future data migrations that change these relationships.
 
 ## 4. Official Meta WhatsApp Cloud API
 
@@ -70,7 +78,7 @@ Do not run campaigns until the Meta credentials, webhook signature verification,
 
 ## 5. Scheduled customer webhook delivery worker
 
-Supabase Cron is the sole scheduler for both webhook workers. Both jobs are active on a one-minute schedule:
+Supabase Cron is configured as the scheduler for both webhook workers. The last recorded production check found both jobs active on a one-minute schedule on 2026-11-03; verify current job status before launch:
 
 - `mobiwave-webhook-worker` → `/functions/v1/webhook-worker`
 - `mobiwave-meta-webhook-worker` → `/functions/v1/meta-webhook-worker`
@@ -79,16 +87,18 @@ The worker endpoints authenticate internal calls with `INTERNAL_FUNCTION_TOKEN`.
 
 Customer webhook delivery uses a database-side atomic claim and a two-minute lease. The immediate-send and scheduled-worker paths share the same claim operation, use stable idempotency keys, and apply bounded retries with a terminal dead-letter state. External HTTP delivery remains at-least-once; receivers should deduplicate using the supplied idempotency key because exactly-once delivery cannot be guaranteed across network timeouts.
 
-The production Cron history was checked on 2026-11-03: both jobs succeeded every minute from 09:03 through 09:10 UTC. The corresponding pg_net responses at 09:08, 09:09 and 09:10 were HTTP 200 with valid worker JSON responses. Queue counts were zero, so this verifies worker invocation and idle-queue handling, not successful delivery to a customer's external endpoint.
+The production Cron history snapshot from 2026-11-03 shows both jobs succeeded every minute from 09:03 through 09:10 UTC. The corresponding pg_net responses at 09:08, 09:09 and 09:10 were HTTP 200 with valid worker JSON responses. Queue counts were zero, so this verifies worker invocation and idle-queue handling at that time, not current job health or successful delivery to a customer's external endpoint.
 
 Database acceptance tests on 2026-11-03 verified customer-delivery first claim, concurrent duplicate suppression (two simultaneous RPC calls produced one claim and one empty result), expired-lease reclaim, and dead-lettering at the eight-attempt limit. A separate simultaneous-claim test of `claim_meta_webhook_events` likewise produced one claim and one empty result. All synthetic tenant, webhook, delivery and Meta event fixtures were deleted after the tests; no outbound HTTP request or Meta side effect was triggered.
 
 ## 6. Controlled pilot checklist
 
 - [ ] Auth: sign up, confirm email if enabled, sign in, sign out.
+- [ ] Team access: invite a new email and an existing account, confirm role limits (only owners can invite admins), accept the email invitation, and verify the workspace is available after sign-in.
 - [ ] Tenant isolation: create two test workspaces/accounts and verify neither can access the other's records.
 - [ ] Consent: confirm contacts without recorded opt-in and opted-out contacts cannot enter a marketing send.
 - [ ] Templates: sync and select a Meta-approved template only.
+- [ ] Campaign controls: pause and resume a multi-batch campaign, cancel a campaign with queued recipients, and confirm the active Meta request may finish while later sends stop.
 - [ ] WhatsApp: send one authorized test template; receive a reply; check inbox and message status.
 - [ ] Inbox: confirm new messages arrive in real time; assign a conversation, add a private note, and verify unread state is per agent.
 - [ ] Media: open an inbound attachment as an authorized workspace agent and verify unauthorized or cross-tenant requests fail.
@@ -97,7 +107,8 @@ Database acceptance tests on 2026-11-03 verified customer-delivery first claim, 
 
 ## Known scope limits
 
-- Campaign launcher is intentionally bounded per invocation; run subsequent batches until the queue is drained.
-- Campaign sends process at most ten recipients per invocation; unknown Meta send outcomes require manual review and must not be retried automatically.
+- Campaigns do not auto-launch at a scheduled time or drain their queue in the background; an operator resumes each bounded batch. A batch processes at most ten recipients and yields after 90 seconds to stay below the Edge Function request timeout.
+- Unknown Meta send outcomes require manual review and must not be retried automatically.
 - Media previews are limited to 8 MB per attachment.
+- Pricing cards open an email enquiry and remain indicative. The platform-owner console now supports configurable KES/USD tiers, client billing profiles, manually recorded agreements, invoices that can be printed/saved as PDF, external payment records with audited reversals, and voiding unpaid invoices. There is no payment gateway, invoice-email delivery, automated renewal, tax calculation, customer billing portal or plan-entitlement enforcement. Agreement status does not suspend or unlock a workspace; confirm contract prices and tax treatment before issuing invoices.
 - This remains an MVP foundation. Before broad production rollout, complete load and penetration tests, privacy/compliance review, alerting, and a review of usage limits and billing.

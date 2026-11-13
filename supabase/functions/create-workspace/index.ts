@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
-import { corsHeaders, json, errorMessage } from "../_shared/cors.ts";
+import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -11,7 +11,7 @@ Deno.serve(async (request) => {
     const userClient = createClient(url, anon, { global: { headers: { Authorization: authHeader } }, auth: { persistSession: false, autoRefreshToken: false } });
     const { data: userData, error: userError } = await userClient.auth.getUser(authHeader.slice(7));
     if (userError || !userData.user) throw new Error("Session is invalid or expired.");
-    const body = await request.json();
+    const body = await readRequestJson(request);
     const name = String(body.name ?? "").trim();
     const slug = String(body.slug ?? "").trim().toLowerCase();
     if (name.length < 2 || name.length > 160 || !/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(slug)) return json({ error: "Workspace name must be 2–160 characters; slug must be 3–64 lowercase letters, numbers or hyphens." }, 400);

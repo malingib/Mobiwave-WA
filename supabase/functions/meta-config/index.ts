@@ -1,13 +1,13 @@
 import { requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { encryptToken } from "../_shared/meta.ts";
-import { corsHeaders, json, errorMessage } from "../_shared/cors.ts";
+import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   try {
     const auth = await requireUser(request);
-    const body = await request.json();
+    const body = await readRequestJson(request);
     const tenantId = String(body.tenant_id ?? "");
     if (!tenantId) return json({ error: "tenant_id is required." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner", "admin"]);

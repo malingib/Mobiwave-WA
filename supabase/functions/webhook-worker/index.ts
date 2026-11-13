@@ -12,10 +12,13 @@ Deno.serve(async (request) => {
  const now = new Date().toISOString();
  const { data, error } = await admin.from("webhook_deliveries").select("id").or("and(status.in.(queued,failed),next_attempt_at.lte." + now + ",attempt_count.lt.8),and(status.eq.processing,lease_expires_at.lte." + now + ")").order("next_attempt_at", { ascending: true }).limit(20);
  if (error) return json({ error: "Could not load due webhook deliveries." }, 500);
- let delivered = 0, retrying = 0, dead = 0, skipped = 0;
+ const invocationStartedAt = Date.now();
+ let processed = 0, delivered = 0, retrying = 0, dead = 0, skipped = 0;
  for (const row of data ?? []) {
+  if (Date.now() - invocationStartedAt >= 90_000) break;
+  processed++;
   const result = await deliverWebhook(admin, row.id);
   if (result.ok) delivered++; else if (result.retrying) retrying++; else if (result.skipped) skipped++; else dead++;
  }
- return json({ ok: true, processed: (data ?? []).length, delivered, retrying, dead, skipped });
+ return json({ ok: true, scanned: (data ?? []).length, processed, delivered, retrying, dead, skipped });
 });

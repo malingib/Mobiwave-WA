@@ -1,7 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import { decryptToken } from "../_shared/meta.ts";
 import { emitWebhook } from "../_shared/customer-webhooks.ts";
-import { corsHeaders, json } from "../_shared/cors.ts";
+import { mostAdvancedMetaStatus } from "../_shared/meta-status.ts";
+import { corsHeaders, json, readRequestText } from "../_shared/cors.ts";
 import { hashRequest, validIdempotencyKey, resolveExistingAttempt } from "../_shared/outbound-idempotency.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_VERSION") || "v23.0";
@@ -28,7 +29,9 @@ Deno.serve(async (request) => {
     }
 
     const tenantId = apiKey.tenant_id;
-    const body = await request.json();
+    const rawBody = await readRequestText(request, 131_072);
+    if (rawBody === null) return json({ error: "Request body exceeds the 128 KiB limit." }, 413);
+    const body = JSON.parse(rawBody);
     const to = String(body.to ?? "");
     const templateName = String(body.template_name ?? "");
     const language = String(body.language_code ?? "en");
@@ -98,21 +101,22 @@ Deno.serve(async (request) => {
       return resolveExistingAttempt(existing, requestHash) ?? json({ error: "The original request state could not be verified." }, 503);
     }
 
-    const { data: limits } = await admin.from("tenant_usage_limits").select("monthly_message_limit").eq("tenant_id", tenantId).maybeSingle();
     const monthStart = new Date();
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
-    const { count: used } = await admin.from("usage_events").select("id", { count: "exact", head: true })
-      .eq("tenant_id", tenantId).eq("event_type", "message_submitted").gte("occurred_at", monthStart.toISOString());
-    const monthlyLimit = limits?.monthly_message_limit ?? 0;
-    if (monthlyLimit > 0 && (used ?? 0) >= monthlyLimit) {
+    const { data: quotaAllowed, error: quotaError } = await admin.rpc("claim_monthly_message_quota", {
+      p_tenant_id: tenantId, p_attempt_id: claimed.id, p_month_start: monthStart.toISOString().slice(0, 10),
+    });
+    if (quotaError || quotaAllowed !== true) {
+      const limited = !quotaError;
       await admin.from("outbound_send_attempts").update({
         status: "rejected",
-        error_code: "monthly_limit_reached",
-        error_detail: "Workspace monthly message limit reached before provider submission.",
+        error_code: limited ? "monthly_limit_reached" : "usage_check_unavailable",
+        error_detail: limited ? "Workspace monthly message limit reached before provider submission." : "Usage limits could not be verified; provider submission was not attempted.",
         updated_at: new Date().toISOString(),
       }).eq("id", claimed.id).eq("status", "submitting");
-      return json({ error: "This workspace has reached its configured monthly message limit.", status: "rejected" }, 429);
+      if (quotaError) console.error("Atomic monthly quota check failed:", quotaError.code);
+      return json({ error: limited ? "This workspace has reached its configured monthly message limit." : "Usage limits could not be verified. No message was submitted; retry with the same idempotency key.", status: limited ? "rejected" : "not_submitted" }, limited ? 429 : 503);
     }
 
     let response: Response;
@@ -186,7 +190,7 @@ Deno.serve(async (request) => {
     }
 
     const acceptedAt = new Date().toISOString();
-    await admin.from("outbound_send_attempts").update({
+    const { error: finalizeAttemptError } = await admin.from("outbound_send_attempts").update({
       status: "accepted",
       meta_message_id: metaMessageId,
       accepted_at: acceptedAt,
@@ -194,6 +198,41 @@ Deno.serve(async (request) => {
       error_code: null,
       error_detail: null,
     }).eq("id", claimed.id).eq("status", "submitting");
+    if (finalizeAttemptError) {
+      const { data: recordedAttempt, error: attemptReadError } = await admin.from("outbound_send_attempts")
+        .select("status,meta_message_id")
+        .eq("id", claimed.id)
+        .maybeSingle();
+      if (attemptReadError || recordedAttempt?.status !== "accepted" || recordedAttempt.meta_message_id !== metaMessageId) {
+        await admin.from("outbound_send_attempts").update({
+          status: "outcome_unknown",
+          meta_message_id: metaMessageId,
+          error_code: "attempt_finalization_failed",
+          error_detail: "Meta accepted the message, but the durable attempt could not be finalized. Reconcile before any retry.",
+          updated_at: new Date().toISOString(),
+        }).eq("id", claimed.id).eq("status", "submitting");
+        console.error("Meta accepted API send but attempt finalization failed:", finalizeAttemptError.code);
+        return json({ error: "Meta accepted the message, but its send record needs reconciliation. Do not resend this request key.", status: "outcome_unknown", message_id: metaMessageId }, 500);
+      }
+    }
+
+    const acceptedEventKey = await hashRequest(JSON.stringify({ tenantId, metaMessageId, status: "accepted" }));
+    const { error: acceptedHistoryError } = await admin.from("message_status_events").upsert({
+      tenant_id: tenantId,
+      meta_message_id: metaMessageId,
+      status: "accepted",
+      provider_timestamp: acceptedAt,
+      event_key: acceptedEventKey,
+      payload: { source: "api-send" },
+    }, { onConflict: "event_key", ignoreDuplicates: true });
+    if (acceptedHistoryError) console.error("Could not append Meta acceptance history:", acceptedHistoryError.code);
+    const { data: providerStatuses, error: providerStatusError } = await admin.from("message_status_events")
+      .select("status")
+      .eq("tenant_id", tenantId)
+      .eq("meta_message_id", metaMessageId)
+      .limit(20);
+    if (providerStatusError) console.error("Could not reconcile early provider status:", providerStatusError.code);
+    const initialStatus = mostAdvancedMetaStatus(providerStatuses ?? [])?.status ?? "accepted";
 
     let conversationId: string | null = null;
     const { data: conversation, error: conversationError } = await admin.from("conversations")
@@ -220,8 +259,9 @@ Deno.serve(async (request) => {
         actor_type: "agent",
         message_type: "template",
         body: "[Template: " + templateName + "]",
-        status: "sent",
+        status: initialStatus,
         meta_message_id: metaMessageId,
+        metadata: { meta_status: initialStatus, outbound_attempt_id: claimed.id },
       }).select("id").single();
 
       if (messageError) {
@@ -237,10 +277,24 @@ Deno.serve(async (request) => {
       updated_at: new Date().toISOString(),
     }).eq("id", claimed.id).eq("status", "accepted");
 
-    await admin.from("usage_events").insert([
+    const { error: usageEventError } = await admin.from("usage_events").insert([
       { tenant_id: tenantId, event_type: "message_submitted", quantity: 1, reference_id: metaMessageId, metadata: { channel: "api" } },
       { tenant_id: tenantId, event_type: "api_request", quantity: 1, reference_id: apiKey.id, metadata: { outcome: "sent_to_meta" } },
     ]);
+    const persistenceWarning = !messageId || Boolean(usageEventError);
+    if (persistenceWarning) {
+      const warnings = [!messageId ? "message_history" : null, usageEventError ? "usage_event" : null].filter(Boolean);
+      console.error("Accepted API send has persistence warnings:", claimed.id, warnings.join(","));
+      const { error: warningError } = await admin.from("workspace_notifications").insert({
+        tenant_id: tenantId, recipient_user_id: null, category: "send_error", severity: "error",
+        title: "API-accepted message needs a persistence check",
+        body: "Meta accepted a message, but MobiWave could not confirm every history or usage write. Review the provider message ID and usage record; do not resend.",
+        entity_type: "outbound_send_attempt", entity_id: claimed.id,
+        dedupe_key: "api-send-persistence-warning:" + claimed.id,
+        metadata: { error_code: "send_persistence_warning", meta_message_id: metaMessageId, warnings },
+      });
+      if (warningError) console.error("Could not save API send persistence warning:", warningError.code);
+    }
     await admin.from("tenant_api_keys").update({ last_used_at: acceptedAt }).eq("id", apiKey.id);
     await emitWebhook(admin, tenantId, "message.outbound", {
       message_id: metaMessageId,
@@ -254,7 +308,7 @@ Deno.serve(async (request) => {
       message_id: metaMessageId,
       status: "sent_to_meta",
       idempotent_replay: false,
-      persistence_warning: !messageId,
+      persistence_warning: persistenceWarning,
     });
   } catch (error) {
     console.error("Public API send error:", error instanceof Error ? error.message : "unknown");

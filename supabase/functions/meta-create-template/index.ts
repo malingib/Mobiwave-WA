@@ -1,6 +1,6 @@
 import { requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { decryptToken } from "../_shared/meta.ts";
-import { corsHeaders, json, errorMessage } from "../_shared/cors.ts";
+import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_VERSION") || "v23.0";
 const allowedStatus = new Set(["APPROVED", "PENDING", "REJECTED", "PAUSED", "DISABLED"]);
@@ -43,7 +43,7 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   try {
     const auth = await requireUser(request);
-    const body = await request.json();
+    const body = await readRequestJson(request);
     const tenantId = String(body.tenant_id ?? "");
     const name = String(body.name ?? "").trim().toLowerCase();
     const category = String(body.category ?? "").trim().toUpperCase();

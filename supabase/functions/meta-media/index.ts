@@ -1,6 +1,6 @@
 import { requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { decryptToken } from "../_shared/meta.ts";
-import { corsHeaders, json, errorMessage } from "../_shared/cors.ts";
+import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_VERSION") || "v23.0";
 const maxBytes = 8 * 1024 * 1024;
@@ -10,7 +10,7 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   try {
     const auth = await requireUser(request);
-    const body = await request.json();
+    const body = await readRequestJson(request);
     const tenantId = String(body.tenant_id ?? "");
     const mediaId = String(body.media_id ?? "");
     if (!tenantId || !/^\d{5,80}$/.test(mediaId)) return json({ error: "A tenant and valid media id are required." }, 400);

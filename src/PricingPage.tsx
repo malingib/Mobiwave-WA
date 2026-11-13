@@ -3,10 +3,10 @@ import { FinalCTA, Kicker, MarketingFooter, MarketingNav, SectionHeading } from 
 import { Reveal } from "./components/ui";
 
 const plans = [
-  { name: "Starter", price: "2,000", setup: "2,000", users: "2 users", intro: "A clear starting point for small teams", featured: false, api: false, webhooks: false },
-  { name: "Basic", price: "4,000", setup: "4,000", users: "4 users", intro: "More room for a growing customer team", featured: false, api: true, webhooks: true },
-  { name: "Pro", price: "8,000", setup: "8,000", users: "10 users", intro: "Connected workflows for growing teams", featured: true, api: true, webhooks: true },
-  { name: "Enterprise", price: "20,000", setup: "30,000", users: "Unlimited users", intro: "For larger teams and custom requirements", featured: false, api: true, webhooks: true },
+  { name: "Starter", price: "2,000", setup: "2,000", users: "2 users", intro: "A clear starting point for small teams", featured: false },
+  { name: "Basic", price: "4,000", setup: "4,000", users: "4 users", intro: "More room for a growing customer team", featured: false },
+  { name: "Pro", price: "8,000", setup: "8,000", users: "10 users", intro: "Connected workflows for growing teams", featured: true },
+  { name: "Enterprise", price: "20,000", setup: "30,000", users: "Custom team size", intro: "For larger teams and custom requirements", featured: false },
 ];
 
 function Feature({ label, enabled, onDark = false }: { label: string; enabled: boolean; onDark?: boolean }) {
@@ -44,12 +44,12 @@ export default function PricingPage() {
           <div aria-hidden className="pointer-events-none absolute -right-40 -top-40 h-96 w-96 rounded-full bg-brand-100 blur-3xl" />
           <div className="mx-auto max-w-[1240px] px-5 py-16 text-center lg:px-8 lg:py-20">
             <Reveal>
-              <div className="flex justify-center"><Kicker>Straightforward subscriptions</Kicker></div>
+              <div className="flex justify-center"><Kicker>Plans and pricing</Kicker></div>
               <h1 className="mx-auto mt-5 max-w-2xl font-display text-[clamp(2.3rem,4.5vw,3.4rem)] font-extrabold leading-[1.05] tracking-[-0.035em]">
-                Choose a plan that fits <span className="text-brand-600">your team.</span>
+                Find the right setup for <span className="text-brand-600">your team.</span>
               </h1>
               <p className="mx-auto mt-5 max-w-2xl text-[16.5px] leading-relaxed text-ink-500">
-                Manage WhatsApp conversations, contacts and campaigns in one business account. Upgrade when you need more team access and developer integrations.
+                Manage WhatsApp conversations, contacts and campaigns in one business account. Compare indicative plan pricing and confirm availability with our team.
               </p>
               <div className="mt-7 flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5 text-[13.5px] font-medium text-ink-600">
                 <span className="flex items-center gap-2"><ShieldCheck size={15} className="text-brand-600" /> Official Meta Cloud API</span>
@@ -60,7 +60,13 @@ export default function PricingPage() {
         </section>
 
         {/* Plans --------------------------------------------------------- */}
-        <section className="mx-auto max-w-[1240px] px-5 py-16 lg:px-8" aria-label="WhatsApp subscription plans">
+        <section className="mx-auto max-w-[1240px] px-5 pb-0 lg:px-8" aria-label="Plan and checkout information">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-[13.5px] leading-relaxed text-amber-950">
+            <strong>Plan selection is not checkout.</strong> MobiWave WA does not currently create a subscription or activate plan entitlements automatically. Contact our team to confirm pricing, included access and billing arrangements before relying on a plan.
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-[1240px] px-5 py-12 lg:px-8" aria-label="Indicative MobiWave WA plans">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {plans.map((plan, index) => (
               <Reveal key={plan.name} delay={index * 60}>
@@ -84,33 +90,32 @@ export default function PricingPage() {
                   <div className="mt-6 flex items-baseline gap-1.5">
                     <span className={"text-[13px] font-bold " + (plan.featured ? "text-brand-200" : "text-ink-400")}>KES</span>
                     <strong className="font-display text-[34px] font-extrabold leading-none tracking-tight">{plan.price}</strong>
-                    <span className={"text-[13px] " + (plan.featured ? "text-brand-200" : "text-ink-400")}>/ month</span>
+                    <span className={"text-[13px] " + (plan.featured ? "text-brand-200" : "text-ink-400")}>/ month*</span>
                   </div>
                   <p className={"mt-2 text-[12.5px] " + (plan.featured ? "text-brand-100/85" : "text-ink-500")}>
-                    Optional one-time setup: <strong className={plan.featured ? "text-white" : "text-ink-800"}>KES {plan.setup}</strong>
+                    Optional setup: <strong className={plan.featured ? "text-white" : "text-ink-800"}>KES {plan.setup}</strong>
                   </p>
                   <a
                     className={
                       "btn mt-5 h-10 w-full " +
                       (plan.featured ? "bg-white !text-brand-800 hover:bg-brand-50 hover:shadow-none" : "btn-secondary")
                     }
-                    href={"/login?mode=signup&plan=" + plan.name.toLowerCase()}
+                    href={`mailto:info@mobiwave.co.ke?subject=${encodeURIComponent(`Plan enquiry: ${plan.name}`)}&body=${encodeURIComponent(`Hello MobiWave team,\n\nI would like to discuss the ${plan.name} plan. Please confirm current pricing, access and billing arrangements.\n`)}`}
                   >
-                    Choose {plan.name} <ArrowRight size={15} />
+                    Ask about {plan.name} <ArrowRight size={15} />
                   </a>
 
                   <div className={"my-5 border-t " + (plan.featured ? "border-white/15" : "border-ink-100")} />
                   <h3 className={"mb-3 text-[12px] font-extrabold uppercase tracking-[0.1em] " + (plan.featured ? "text-brand-200" : "text-ink-400")}>
-                    Plan features
+                    Product capabilities
                   </h3>
                   <ul className="flex flex-col gap-2.5">
                     <Feature onDark={plan.featured} label="Official WhatsApp Business API" enabled />
                     <Feature onDark={plan.featured} label="Contacts" enabled />
                     <Feature onDark={plan.featured} label="Campaigns" enabled />
                     <Feature onDark={plan.featured} label="Platform messages: no fixed plan cap" enabled />
-                    <Feature onDark={plan.featured} label={plan.users} enabled />
-                    <Feature onDark={plan.featured} label="Developer API access" enabled={plan.api} />
-                    <Feature onDark={plan.featured} label="Customer webhooks" enabled={plan.webhooks} />
+                    <Feature onDark={plan.featured} label={`Suggested team size: ${plan.users}`} enabled />
+                    <Feature onDark={plan.featured} label="API and webhook availability confirmed per workspace" enabled />
                   </ul>
                 </article>
               </Reveal>
@@ -122,9 +127,9 @@ export default function PricingPage() {
         <section className="border-y border-ink-100 bg-canvas">
           <div className="mx-auto grid max-w-[1240px] gap-8 px-5 py-16 md:grid-cols-3 lg:px-8">
             {[
-              ["Know what you’ll pay for", "Your subscription covers access to MobiWave WA and the features shown for your plan. Setup is optional and charged once if you request onboarding assistance."],
-              ["Meta messaging charges are separate", "Meta charges separately from your MobiWave subscription. Since 1 July 2025, template pricing is based on each delivered message and its category, not a flat conversation fee. Current rates and rules below reflect the Meta rate card effective 1 October 2026."],
-              ["No fixed plan caps", "Contacts, campaigns and platform messaging have no fixed subscription caps. Fair-use safeguards, Meta policies, consent requirements and technical protections still apply."],
+              ["Confirm your plan first", "Displayed plan amounts are indicative. Confirm the current price, enabled access and billing arrangements with our team before onboarding. Setup is optional and quoted separately."],
+              ["Meta messaging charges are separate", "Meta charges separately from MobiWave WA plan fees. Since 1 July 2025, template pricing is based on each delivered message and its category, not a flat conversation fee. Current rates and rules below reflect the Meta rate card effective 1 October 2026."],
+              ["No fixed plan caps", "The application does not currently enforce plan-based caps for contacts, campaigns or platform messaging. Fair-use safeguards, Meta policies, consent requirements and technical protections still apply."],
             ].map(([title, text]) => (
               <div key={title}>
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-700 ring-1 ring-brand-100">
@@ -144,7 +149,7 @@ export default function PricingPage() {
               id="wa-meta-pricing-title"
               kicker="Meta WhatsApp Business Platform"
               title={<>Message charges, <span className="text-brand-600">explained.</span></>}
-              description="These are Meta’s published base rates for recipients in Kenya, which uses Meta’s “Rest of Africa” rate group. They are separate from MobiWave WA subscription and optional setup fees."
+              description="These are Meta’s published base rates for recipients in Kenya, which uses Meta’s “Rest of Africa” rate group. They are separate from MobiWave WA plan pricing and optional setup fees."
             />
           </Reveal>
 
@@ -183,7 +188,7 @@ export default function PricingPage() {
           <div className="mt-8 grid gap-4 md:grid-cols-2">
             {[
               ["How Meta calculates charges", ["Only delivered messages are charged.", "The recipient’s country calling code determines the market rate.", "Template category determines the applicable rate.", "Eligible utility and authentication traffic can qualify for volume-tier discounts."]],
-              ["What is not included in these rates?", ["MobiWave WA monthly subscription and optional setup.", "Any separately agreed provider or onboarding fees.", "Applicable taxes, foreign-exchange conversion or payment-provider fees."]],
+              ["What is not included in these rates?", ["MobiWave WA plan pricing and optional setup.", "Any separately agreed provider or onboarding fees.", "Applicable taxes, foreign-exchange conversion or payment-provider fees."]],
             ].map(([title, items]) => (
               <div key={title as string} className="rounded-xl border border-ink-200 bg-surface p-6">
                 <h3 className="text-[15.5px] font-bold">{title}</h3>
@@ -226,11 +231,11 @@ export default function PricingPage() {
             </Reveal>
             <div className="mx-auto mt-10 max-w-3xl">
               {[
-                ["Are setup fees compulsory?", "No. Setup fees are optional one-time charges if you want MobiWave to assist with onboarding. Your monthly subscription is billed separately."],
+                ["Are setup fees compulsory?", "No. Setup is optional. Ask our team for the current setup quote and billing arrangements before onboarding."],
                 ["Are Meta WhatsApp charges included?", "No. Meta bills separately for eligible delivered messages. Kenya is in Meta’s Rest of Africa rate group; current base rates and the October 2026 service-message changes are listed above. Rates, billing currency, discounts and taxes may vary."],
-                ["Are contacts, campaigns or messages capped?", "There are no fixed subscription caps for contacts, campaigns or platform messaging. Acceptable-use safeguards and Meta's rules continue to apply."],
+                ["Are contacts, campaigns or messages capped?", "The application does not currently enforce plan-based caps. Fair-use safeguards, technical limits, consent requirements and Meta's rules still apply."],
                 ["How are campaigns controlled?", "Outbound campaigns use approved Meta templates and recorded customer opt-in. Teams choose recipients and initiate sends, and opted-out contacts must be suppressed."],
-                ["Which plans include API access?", "Developer API access and customer webhooks are available on Basic, Pro and Enterprise. Starter does not include customer API or webhook access."],
+                ["Which plans include API access?", "API and customer webhook availability is confirmed per workspace. The application does not currently enforce tier-based access."],
               ].map(([question, answer], index) => (
                 <details key={question} className="group border-b border-ink-200 first:border-t" open={index === 0}>
                   <summary className="flex items-center justify-between gap-6 py-5 text-[15.5px] font-semibold text-ink-900 transition-colors hover:text-brand-700">
@@ -248,8 +253,10 @@ export default function PricingPage() {
 
         <FinalCTA
           kicker="Ready when you are"
-          title="Start with the essentials."
-          description="Create your business account and connect your eligible WhatsApp Business account."
+          title="Talk to us about getting started."
+          description="We’ll confirm your workspace setup, pricing and access before you begin. Meta messaging charges are separate."
+          cta="Contact our team"
+          ctaHref="mailto:info@mobiwave.co.ke?subject=MobiWave%20WA%20plan%20enquiry"
         />
       </main>
 

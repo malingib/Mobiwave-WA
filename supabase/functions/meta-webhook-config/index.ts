@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import { requireUser, requireTenantRole } from "../_shared/auth.ts";
-import { corsHeaders, json, errorMessage } from "../_shared/cors.ts";
+import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 
 async function sha256(value: string) {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
@@ -12,7 +12,7 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   try {
     const auth = await requireUser(request);
-    const body = await request.json();
+    const body = await readRequestJson(request);
     const tenantId = String(body.tenant_id ?? "");
     const token = String(body.verification_token ?? "");
     if (!tenantId || !/^[A-Za-z0-9_-]{32,100}$/.test(token)) return json({ error: "A tenant and a valid generated verification token are required." }, 400);

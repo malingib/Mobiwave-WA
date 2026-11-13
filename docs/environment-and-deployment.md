@@ -40,20 +40,14 @@ In Supabase Dashboard → Authentication → URL Configuration:
 - The webhook POST handler independently verifies Meta's HMAC signature before processing. Keep platform JWT verification disabled only for `meta-webhook`, `webhook-worker`, and `api-send` as configured; the latter two apply their own internal/API-key authorization.
 - Configure the WhatsApp Business Account, phone number ID, access token, and that client's Meta app secret in the dashboard's Integrations view. The app secret is encrypted per business account and used for HMAC verification. Configure the Meta callback and `messages` field first, then verify the connection and sync templates.
 
-## Scheduled customer webhook retries
+## Scheduled webhook retries
 
-The workflow `.github/workflows/webhook-worker.yml` invokes the Supabase `webhook-worker` every five minutes and supports manual dispatch. Add these repository Actions secrets in GitHub → Settings → Secrets and variables → Actions:
-
-- `SUPABASE_URL`
-- `SUPABASE_PUBLISHABLE_KEY`
-- `INTERNAL_FUNCTION_TOKEN` (must match the Supabase Edge Function secret exactly)
-
-The GitHub schedule can be delayed. This worker is for bounded retry processing and does not promise a real-time SLA.
+Supabase Cron is the intended scheduler for the customer webhook and Meta webhook workers. The last documented production check found both jobs running every minute on 2026-11-03; confirm they remain active and that `INTERNAL_FUNCTION_TOKEN` matches Supabase Vault and Edge Function secrets before launch. GitHub Actions does not schedule or invoke these workers. See the production go-live checklist for worker behavior and the limits of the recorded health checks.
 
 ## Safe pilot
 
-Before production campaigns, apply the latest migrations and deploy the matching Edge Functions. Test sign-up/sign-in, workspace creation and tenant isolation; verify consent suppression and approved-template enforcement; send/receive a Meta-authorized test message; confirm delivery statuses; test conversation assignment, notes, unread markers, and media access; and test customer webhook signing/retries.
+Before production campaigns, apply the latest migrations and deploy the matching Edge Functions. Test sign-up/sign-in, workspace creation and tenant isolation; verify consent suppression and approved-template enforcement; send/receive a Meta-authorized test message; confirm delivery statuses; test conversation assignment, notes, unread markers, and media access; test campaign pause/resume/cancel while a batch is running; and test customer webhook signing/retries.
 
 ## Scope limits
 
-Campaign sends process at most ten recipients per invocation. A recipient whose send outcome is ambiguous is held for manual review rather than automatically retried. Message limits default to zero (no fixed cap); a positive workspace override enforces a monthly limit.
+Campaign sends process at most ten recipients per invocation and return unsent recipients to the queue after a 90-second safety budget. Campaigns require an operator to resume each batch; no scheduled campaign runner is configured. Pause/cancel stops the worker before its next recipient; a recipient already submitted to Meta may still complete. A recipient whose send outcome is ambiguous is held for manual review rather than automatically retried. The customer-webhook worker also stops starting deliveries after 90 seconds; remaining candidates are left unclaimed for the next scheduled run. Message limits default to zero (no fixed cap); a positive workspace override enforces a monthly limit.

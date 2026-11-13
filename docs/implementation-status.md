@@ -10,8 +10,9 @@ The dashboard and backend foundation are merged into `main`. The existing Vercel
 - Messaging-first dashboard with no AI-provider dependency.
 - Contacts, consent and opt-out state, shared inbox, agent replies, and conversation handoff.
 - Tenant-scoped Meta WhatsApp Cloud API access tokens and app secrets, encrypted storage, template sync, signed inbound webhook handling, and message status ingestion.
-- Campaign drafts and consent-checked, approved-template sending batches.
+- Campaign drafts and consent-checked, approved-template sending batches with server-guarded pause, resume, and cancel controls.
 - Atomic campaign-recipient claims, unknown-send outcome protection, and no fixed monthly platform-message cap by default.
+- Campaign state transitions are serialized with recipient claims; paused/cancelled states are preserved by batch finalization, queued recipients are skipped on cancellation, and claimed recipients are released safely when a worker observes a control action.
 - Realtime shared inbox with per-agent unread state, assignments, filters, internal notes, paginated contact search, consent history, and guarded Meta media previews.
 - Guided template-variable preview for text body/header and URL-button parameters.
 - Tenant API keys, usage events, customer webhooks, and retryable webhook delivery worker.
@@ -20,7 +21,14 @@ The dashboard and backend foundation are merged into `main`. The existing Vercel
 ## Added production-readiness work
 
 - Customer webhook delivery is concurrency-safe through a database atomic claim and two-minute lease shared by immediate and scheduled delivery paths.
-- Supabase Cron is the sole scheduler for the customer and Meta webhook workers; both are active every minute. The GitHub Actions webhook-worker schedule has been removed.
+- Manual webhook test and retry actions are due immediately before claiming; the scheduled delivery worker stops selecting new work after a 90-second safety budget, leaving unclaimed deliveries for the next run.
+- Meta webhook and public message API request bodies are bounded during streaming reads before parsing.
+- Inbound opt-out words are acknowledged only after the tenant contact suppression update succeeds; failures leave the durable Meta event retryable.
+- Customer webhook configuration lookup failures now use delivery retry/backoff instead of being misclassified as a deleted subscription.
+- Manually retrying a failed/dead customer webhook starts a new bounded attempt cycle, so dead-letter deliveries are actually claimable again.
+- Meta webhook tenant-lookup failures now trigger provider retry, and inbound/status customer-webhook queue writes must persist before the durable Meta event is finalized.
+- Accepted sends that lose message-history or usage persistence remain reported as Meta-accepted, create a workspace alert when possible, and surface a warning in dashboard/API/campaign responses.
+- Supabase Cron is the configured scheduler for the customer and Meta webhook workers; the last documented production check on 2026-11-03 found both active every minute. Reconfirm current status before launch. The GitHub Actions webhook-worker schedule has been removed.
 - Worker authentication uses the internal function token stored in Supabase Vault and Edge Function secrets.
 - The latest production Cron history was verified on 2026-11-03: both jobs succeeded every minute through 09:10 UTC; pg_net returned HTTP 200 for both workers. The queues were empty, so no customer/Meta delivery was exercised.
 - Concurrent database tests verified that customer webhook and Meta event claims are exclusive under two simultaneous RPC calls. Customer retry/lease recovery and terminal dead-letter behavior were also tested. All synthetic rows were removed; no external HTTP or Meta side effect was triggered.

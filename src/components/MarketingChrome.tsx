@@ -135,11 +135,13 @@ export function FinalCTA({
   title,
   description,
   cta = "Get started",
+  ctaHref = "/login?mode=signup",
 }: {
   kicker: string;
   title: string;
   description: string;
   cta?: string;
+  ctaHref?: string;
 }) {
   return (
     <section className="mx-auto max-w-[1180px] px-5 pb-20 lg:px-8">
@@ -161,7 +163,7 @@ export function FinalCTA({
           </h2>
           <p className="mt-3 text-[14px] leading-relaxed text-white/60">{description}</p>
           <div className="mt-7 flex flex-wrap gap-2.5">
-            <a className="btn btn-primary" href="/login?mode=signup">
+            <a className="btn btn-primary" href={ctaHref}>
               {cta} <ArrowRight size={15} />
             </a>
             <a className="btn border border-white/15 bg-white/5 text-white hover:bg-white/10" href="/pricing">

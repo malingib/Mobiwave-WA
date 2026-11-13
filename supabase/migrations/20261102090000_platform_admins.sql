@@ -77,5 +77,5 @@ as $$
   order by t.created_at desc;
 $$;
 
-revoke all on function public.platform_tenant_overview() from public;
+revoke all on function public.platform_tenant_overview() from public, anon;
 grant execute on function public.platform_tenant_overview() to authenticated;
