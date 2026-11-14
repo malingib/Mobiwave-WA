@@ -1,0 +1,2 @@
+-- Production-only: scheduled jobs call the production Edge Functions and read
+-- the production Vault token. Keep the job definition in docs/production-go-live.md.

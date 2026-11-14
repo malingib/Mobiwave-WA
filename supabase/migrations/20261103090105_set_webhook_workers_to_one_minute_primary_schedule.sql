@@ -1,0 +1,2 @@
+-- Production-only: cron.alter_job targets production scheduler jobs. Keep the
+-- schedule in docs/production-go-live.md instead of mutating local cron jobs.
