@@ -1,13 +1,18 @@
+import { useEffect, useState } from "react";
 import { ArrowRight, ArrowUpRight, Check, ShieldCheck, X } from "lucide-react";
+import { supabase } from "./lib/supabase";
 import { FinalCTA, Kicker, MarketingFooter, MarketingNav, SectionHeading } from "./components/MarketingChrome";
 import { Reveal } from "./components/ui";
 
-const plans = [
-  { name: "Starter", price: "2,000", setup: "2,000", users: "2 users", intro: "A clear starting point for small teams", featured: false },
-  { name: "Basic", price: "4,000", setup: "4,000", users: "4 users", intro: "More room for a growing customer team", featured: false },
-  { name: "Pro", price: "8,000", setup: "8,000", users: "10 users", intro: "Connected workflows for growing teams", featured: true },
-  { name: "Enterprise", price: "20,000", setup: "30,000", users: "Custom team size", intro: "For larger teams and custom requirements", featured: false },
-];
+type Plan = {
+  id: string; slug: string; name: string; description: string; currency: string;
+  monthly_price_minor: number; setup_fee_minor: number; featured: boolean;
+  max_team_members: number; monthly_message_limit: number; feature_flags: Record<string, boolean>;
+  feature_highlights: string[];
+};
+const formatMoney = (minor: number, currency: string) => new Intl.NumberFormat("en-KE", {
+  style: "currency", currency, maximumFractionDigits: 2,
+}).format(Number(minor) / 100);
 
 function Feature({ label, enabled, onDark = false }: { label: string; enabled: boolean; onDark?: boolean }) {
   const text = onDark
@@ -34,6 +39,17 @@ const rateRows: [string, string, string, string][] = [
 ];
 
 export default function PricingPage() {
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [plansError, setPlansError] = useState("");
+  useEffect(() => {
+    if (!supabase) { setPlansError("Plan pricing is temporarily unavailable."); setPlansLoading(false); return; }
+    supabase.rpc("platform_public_tiers").then(({ data, error }) => {
+      if (error) setPlansError("Plan pricing is temporarily unavailable.");
+      else setPlans((data ?? []) as Plan[]);
+      setPlansLoading(false);
+    });
+  }, []);
   return (
     <div className="marketing-theme min-h-screen bg-canvas font-sans text-ink-900">
       <MarketingNav items={[{ label: "Features", href: "/#features" }, { label: "Pricing", href: "/pricing" }, { label: "FAQs", href: "/#faq" }]} current="Pricing" />
@@ -53,7 +69,7 @@ export default function PricingPage() {
               </p>
               <div className="mt-7 flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5 text-[13.5px] font-medium text-ink-600">
                 <span className="flex items-center gap-2"><ShieldCheck size={15} className="text-brand-600" /> Official Meta Cloud API</span>
-                <span className="flex items-center gap-2"><Check size={15} className="text-brand-600" /> No fixed contact, campaign or platform-message caps</span>
+                <span className="flex items-center gap-2"><Check size={15} className="text-brand-600" /> Plan limits are shown with each tier</span>
               </div>
             </Reveal>
           </div>
@@ -66,7 +82,7 @@ export default function PricingPage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-[1240px] px-5 py-12 lg:px-8" aria-label="Indicative MobiWave WA plans">
+        <section className="mx-auto max-w-[1240px] px-5 py-12 lg:px-8" aria-label="MobiWave WA plans">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {plans.map((plan, index) => (
               <Reveal key={plan.name} delay={index * 60}>
@@ -85,15 +101,14 @@ export default function PricingPage() {
                   )}
                   <div>
                     <h2 className={"text-[17px] font-bold " + (plan.featured ? "text-white" : "")}>{plan.name}</h2>
-                    <p className={"mt-1 text-[13px] leading-relaxed " + (plan.featured ? "text-brand-100/85" : "text-ink-500")}>{plan.intro}</p>
+                    <p className={"mt-1 text-[13px] leading-relaxed " + (plan.featured ? "text-brand-100/85" : "text-ink-500")}>{plan.description}</p>
                   </div>
                   <div className="mt-6 flex items-baseline gap-1.5">
-                    <span className={"text-[13px] font-bold " + (plan.featured ? "text-brand-200" : "text-ink-400")}>KES</span>
-                    <strong className="font-display text-[34px] font-extrabold leading-none tracking-tight">{plan.price}</strong>
+                    <strong className="font-display text-[34px] font-extrabold leading-none tracking-tight">{formatMoney(plan.monthly_price_minor, plan.currency)}</strong>
                     <span className={"text-[13px] " + (plan.featured ? "text-brand-200" : "text-ink-400")}>/ month*</span>
                   </div>
                   <p className={"mt-2 text-[12.5px] " + (plan.featured ? "text-brand-100/85" : "text-ink-500")}>
-                    Optional setup: <strong className={plan.featured ? "text-white" : "text-ink-800"}>KES {plan.setup}</strong>
+                    Optional setup: <strong className={plan.featured ? "text-white" : "text-ink-800"}>{formatMoney(plan.setup_fee_minor, plan.currency)}</strong>
                   </p>
                   <a
                     className={
@@ -111,16 +126,18 @@ export default function PricingPage() {
                   </h3>
                   <ul className="flex flex-col gap-2.5">
                     <Feature onDark={plan.featured} label="Official WhatsApp Business API" enabled />
-                    <Feature onDark={plan.featured} label="Contacts" enabled />
-                    <Feature onDark={plan.featured} label="Campaigns" enabled />
-                    <Feature onDark={plan.featured} label="Platform messages: no fixed plan cap" enabled />
-                    <Feature onDark={plan.featured} label={`Suggested team size: ${plan.users}`} enabled />
-                    <Feature onDark={plan.featured} label="API and webhook availability confirmed per workspace" enabled />
+                    {[["inbox", "Shared inbox"], ["contacts", "Contacts"], ["templates", "Templates"], ["campaigns", "Campaigns"], ["api", "Developer API"], ["webhooks", "Customer webhooks"]].map(([key, label]) => <Feature key={key} onDark={plan.featured} label={label} enabled={plan.feature_flags?.[key] ?? false} />)}
+                    <Feature onDark={plan.featured} label={plan.max_team_members > 0 ? `Maximum team size: ${plan.max_team_members} users` : "No fixed team size cap"} enabled />
+                    <Feature onDark={plan.featured} label={plan.monthly_message_limit > 0 ? `Up to ${new Intl.NumberFormat("en-KE").format(plan.monthly_message_limit)} platform messages / month` : "No fixed platform message cap"} enabled />
+                    {plan.feature_highlights.map((feature) => <Feature key={feature} onDark={plan.featured} label={feature} enabled />)}
                   </ul>
                 </article>
               </Reveal>
             ))}
           </div>
+          {plansLoading && <p className="py-12 text-center text-sm text-ink-500" role="status">Loading current plans…</p>}
+          {plansError && <p className="py-12 text-center text-sm text-ink-500" role="status">{plansError} Please contact our team for current options.</p>}
+          {!plansLoading && !plansError && plans.length === 0 && <p className="py-12 text-center text-sm text-ink-500">No public plans are available right now. Please contact our team.</p>}
         </section>
 
         {/* Notes --------------------------------------------------------- */}
@@ -129,7 +146,7 @@ export default function PricingPage() {
             {[
               ["Confirm your plan first", "Displayed plan amounts are indicative. Confirm the current price, enabled access and billing arrangements with our team before onboarding. Setup is optional and quoted separately."],
               ["Meta messaging charges are separate", "Meta charges separately from MobiWave WA plan fees. Since 1 July 2025, template pricing is based on each delivered message and its category, not a flat conversation fee. Current rates and rules below reflect the Meta rate card effective 1 October 2026."],
-              ["No fixed plan caps", "The application does not currently enforce plan-based caps for contacts, campaigns or platform messaging. Fair-use safeguards, Meta policies, consent requirements and technical protections still apply."],
+              ["Know what your plan includes", "Included capabilities and any configured team or usage limits are listed on each plan. Meta messaging charges remain separate."],
             ].map(([title, text]) => (
               <div key={title}>
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-700 ring-1 ring-brand-100">
@@ -233,9 +250,9 @@ export default function PricingPage() {
               {[
                 ["Are setup fees compulsory?", "No. Setup is optional. Ask our team for the current setup quote and billing arrangements before onboarding."],
                 ["Are Meta WhatsApp charges included?", "No. Meta bills separately for eligible delivered messages. Kenya is in Meta’s Rest of Africa rate group; current base rates and the October 2026 service-message changes are listed above. Rates, billing currency, discounts and taxes may vary."],
-                ["Are contacts, campaigns or messages capped?", "The application does not currently enforce plan-based caps. Fair-use safeguards, technical limits, consent requirements and Meta's rules still apply."],
+                ["Are contacts, campaigns or messages capped?", "Any configured team or usage limits are shown on the selected plan. Contact our team to confirm how those limits are applied to your workspace."],
                 ["How are campaigns controlled?", "Outbound campaigns use approved Meta templates and recorded customer opt-in. Teams choose recipients and initiate sends, and opted-out contacts must be suppressed."],
-                ["Which plans include API access?", "API and customer webhook availability is confirmed per workspace. The application does not currently enforce tier-based access."],
+                ["Which plans include API access?", "Developer API message sending follows the published tier access. API keys and customer webhook setup are still confirmed per workspace."],
               ].map(([question, answer], index) => (
                 <details key={question} className="group border-b border-ink-200 first:border-t" open={index === 0}>
                   <summary className="flex items-center justify-between gap-6 py-5 text-[15.5px] font-semibold text-ink-900 transition-colors hover:text-brand-700">

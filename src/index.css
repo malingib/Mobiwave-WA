@@ -1734,6 +1734,11 @@
     border-bottom: 1px solid var(--color-hairline);
   }
   .setting-row:last-child { border-bottom: 0; }
+  .tenant-plan-highlights { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; margin-top: 0.55rem; padding: 0; list-style: none; color: var(--color-text-muted); font-size: 0.72rem; }
+  .tenant-plan-highlights li::before { content: "✓"; margin-right: 0.35rem; color: var(--color-brand-600); font-weight: 700; }
+  .tenant-plan-highlights .is-unavailable { color: var(--color-text-faint); }
+  .tenant-plan-highlights .is-unavailable::before { content: "×"; color: var(--color-text-faint); }
+  .tenant-plan-note { margin-top: 0.5rem; color: var(--color-text-muted); font-size: 0.72rem; line-height: 1.5; }
   .setting-icon {
     display: flex;
     align-items: center;
@@ -2475,6 +2480,8 @@
   .billing-tier-top { display: flex; align-items: center; justify-content: space-between; }
   .billing-tier-card h3 { margin-top: 0.25rem; color: var(--color-text); font-size: 1rem; font-weight: 700; }
   .billing-tier-card > p { flex: 1; color: var(--color-text-muted); font-size: 0.75rem; line-height: 1.5; }
+  .billing-tier-highlights { display: flex; flex-direction: column; gap: 0.3rem; margin: 0.25rem 0 0; padding: 0; list-style: none; color: var(--color-text-muted); font-size: 0.7rem; line-height: 1.4; }
+  .billing-tier-highlights li::before { content: "✓"; margin-right: 0.35rem; color: var(--color-brand-600); font-weight: 700; }
   .billing-tier-price { color: var(--color-text); font-size: 1.25rem; font-variant-numeric: tabular-nums; }
   .billing-tier-price small { color: var(--color-text-faint); font-size: 0.72rem; font-weight: 500; }
   .billing-tier-setup { color: var(--color-text-muted); font-size: 0.72rem; }

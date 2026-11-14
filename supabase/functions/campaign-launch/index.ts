@@ -13,6 +13,13 @@ Deno.serve(async (request) => {
     const tenantId = String(body.tenant_id ?? ""), campaignId = String(body.campaign_id ?? "");
     if (!tenantId || !campaignId) return json({ error: "tenant_id and campaign_id are required." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner", "admin"]);
+    const { data: plan, error: planError } = await auth.admin.from("platform_customer_subscriptions")
+      .select("status,tier:platform_billing_tiers(feature_flags)").eq("tenant_id", tenantId).maybeSingle();
+    if (planError) return json({ error: "Plan access could not be verified. No campaign messages were submitted." }, 503);
+    const tier = Array.isArray(plan?.tier) ? plan.tier[0] : plan?.tier;
+    if (plan?.status === "active" && tier?.feature_flags?.campaigns === false) {
+      return json({ error: "Campaign sending is not included in this workspace plan." }, 403);
+    }
     const { data: campaign } = await auth.admin.from("campaigns").select("id,name,status,template_id,template_parameters").eq("tenant_id", tenantId).eq("id", campaignId).maybeSingle();
     if (!campaign) return json({ error: "Campaign not found." }, 404);
     if (!["draft","paused","running"].includes(campaign.status)) return json({ error: "Campaign cannot be launched from its current state." }, 409);

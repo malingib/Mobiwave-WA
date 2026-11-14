@@ -29,6 +29,16 @@ Deno.serve(async (request) => {
     }
 
     const tenantId = apiKey.tenant_id;
+    const { data: plan, error: planError } = await admin.from("platform_customer_subscriptions")
+      .select("status,tier:platform_billing_tiers(feature_flags)").eq("tenant_id", tenantId).maybeSingle();
+    if (planError) {
+      console.error("Could not verify API plan access:", planError.code);
+      return json({ error: "Plan access could not be verified. No message was submitted." }, 503);
+    }
+    const tier = Array.isArray(plan?.tier) ? plan.tier[0] : plan?.tier;
+    if (plan?.status === "active" && tier?.feature_flags?.api === false) {
+      return json({ error: "Developer API sending is not included in this workspace plan." }, 403);
+    }
     const rawBody = await readRequestText(request, 131_072);
     if (rawBody === null) return json({ error: "Request body exceeds the 128 KiB limit." }, 413);
     const body = JSON.parse(rawBody);

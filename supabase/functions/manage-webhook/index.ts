@@ -18,6 +18,13 @@ Deno.serve(async (request) => {
     if (!tenantId) return json({ error: "tenant_id is required." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner","admin"]);
     if (action === "create") {
+      const { data: plan, error: planError } = await auth.admin.from("platform_customer_subscriptions")
+        .select("status,tier:platform_billing_tiers(feature_flags)").eq("tenant_id", tenantId).maybeSingle();
+      if (planError) return json({ error: "Plan access could not be verified. No webhook was created." }, 503);
+      const tier = Array.isArray(plan?.tier) ? plan.tier[0] : plan?.tier;
+      if (plan?.status === "active" && tier?.feature_flags?.webhooks === false) {
+        return json({ error: "Customer webhooks are not included in this workspace plan." }, 403);
+      }
       const name = String(body.name ?? "").trim(), endpoint = String(body.endpoint_url ?? "").trim();
       const events = Array.isArray(body.events) ? body.events.filter((event: unknown) => typeof event === "string" && allowedEvents.has(event)) : [];
       if (name.length < 2 || name.length > 120 || !events.length) return json({ error: "Provide a webhook name and at least one supported event." }, 400);

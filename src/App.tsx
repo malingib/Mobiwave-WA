@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import {
-  Activity, ArrowLeft, ArrowUpRight, Bell, Check, ChevronDown, CircleHelp,
+  Activity, ArrowLeft, ArrowUpRight, Bell, Check, ChevronDown, CircleHelp, CreditCard,
   LayoutDashboard, LogOut, MessageCircle, Menu, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail, FileText,
 } from "lucide-react";
@@ -18,6 +18,17 @@ const ContactCsvImport = lazy(() => import("./ContactCsvImport"));
 import { Brand } from "./components/ui";
 type View = "Overview" | "Inbox" | "Contacts" | "Templates" | "Campaigns" | "Alerts" | "Integrations" | "Profile" | "Settings";
 type Tenant = { id: string; name: string; slug: string; role: string };
+type TenantPlan = {
+  subscription_status: string | null;
+  currency?: string;
+  monthly_price_minor?: number;
+  monthly_messages_used?: number;
+  starts_on?: string;
+  tier: null | {
+    name: string; description: string; feature_highlights: string[];
+    feature_flags: Record<string, boolean>; max_team_members: number; monthly_message_limit: number;
+  };
+};
 type Contact = { id: string; phone_e164: string; display_name?: string; consent_status: string; consent_source?: string; consent_at?: string; opted_out_at?: string };
 type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string; components?: any[] };
 type Campaign = { id: string; name: string; status: string; created_at: string; template_id?: string; template_parameters?: Array<{ type: string; parameters?: Array<{ type: string; text?: string }> }> };
@@ -166,6 +177,8 @@ export default function App() {
   const [tenantId, setTenantId] = useState("");
   const [tenantLoading, setTenantLoading] = useState(true);
   const [tenantError, setTenantError] = useState("");
+  const [tenantPlan, setTenantPlan] = useState<TenantPlan | null>(null);
+  const [tenantPlanLoading, setTenantPlanLoading] = useState(false);
   const [platformRole, setPlatformRole] = useState<string | null>(null);
   const [view, setView] = useState<View>("Overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -295,6 +308,17 @@ export default function App() {
   useEffect(() => { void loadTenants(); }, [loadTenants]);
   useEffect(() => { setProfileName(String(user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "")); }, [user]);
   useEffect(() => { setNewApiKey(""); setNewWebhookSecret(""); setMetaWebhookToken(""); setMetaAppSecret(""); setMetaAppSecretSaved(false); setContactPage(0); setSearch(""); setConsentTarget(""); setSearchContactHistory(null); setSelectedConversation(""); setConversationLimit(100); setConversationHasMore(false); setConversations([]); setMessages([]); setDailyMessages([]); setSelectedCampaign(null); setCampaignCounts(null); setCampaignFailures([]); }, [tenantId]);
+  useEffect(() => {
+    let current = true;
+    if (!supabase || !tenantId) { setTenantPlan(null); return; }
+    setTenantPlanLoading(true);
+    supabase.rpc("platform_tenant_plan", { p_tenant_id: tenantId }).then(({ data, error }) => {
+      if (!current) return;
+      setTenantPlan(error ? null : data as TenantPlan);
+      setTenantPlanLoading(false);
+    });
+    return () => { current = false; };
+  }, [tenantId]);
   const activeTenant = tenants.find((t) => t.id === tenantId);
   const isAdmin = activeTenant ? ["owner", "admin"].includes(activeTenant.role) : false;
   const canAgent = activeTenant ? ["owner", "admin", "agent"].includes(activeTenant.role) : false;
@@ -1325,7 +1349,9 @@ Content-Type: application/json
           <button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button>
         </div>
         <form className="panel form-panel profile-form" onSubmit={saveProfile}><h2>Personal details</h2><div className="field"><label>Full name</label><input value={profileName} onChange={(e)=>setProfileName(e.target.value)} maxLength={120} placeholder="Your name"/></div><div className="field"><label>Email address</label><input value={user.email ?? ""} readOnly aria-readonly="true"/><small className="muted small">Your sign-in email is managed by your authentication account.</small></div><div className="field"><label>New password <span className="muted small">(optional)</span></label><input type="password" value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} minLength={8} autoComplete="new-password" placeholder="At least 8 characters"/></div><div className="form-actions"><span className="muted small">Leave the password blank to keep it unchanged.</span><button className="primary-button" disabled={busy}>{busy?"Saving…":"Save profile"}</button></div></form><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Account security</strong><p>Use a unique password. Your profile is stored with your authenticated account and does not change workspace permissions.</p></div></div></section>}
-      {view === "Settings" && <section className="content"><PageHeading eyebrow="PREFERENCES" title="Settings" description="Review your business account and account access."/><div className="panel settings-panel"><div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Active business account</strong><p>{activeTenant?.name ?? "No business account selected"} · Account ID and role are managed by business account membership.</p></div><span className="fixed-setting">{activeTenant?.role ?? "Member"}</span></div><div className="setting-row"><div className="setting-icon"><MessageCircle size={19}/></div><div className="setting-copy"><strong>WhatsApp connection</strong><p>{metaStatus?.enabled ? "Meta Cloud API is enabled for this business account." : "Meta Cloud API is not enabled yet. Open Integrations to configure and verify it."}</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Integrations")}>Open integrations</button></div>
+      {view === "Settings" && <section className="content"><PageHeading eyebrow="PREFERENCES" title="Settings" description="Review your business account, plan and account access."/><div className="panel settings-panel"><div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Active business account</strong><p>{activeTenant?.name ?? "No business account selected"} · Account ID and role are managed by business account membership.</p></div><span className="fixed-setting">{activeTenant?.role ?? "Member"}</span></div>
+          <div className="setting-row"><div className="setting-icon"><CreditCard size={19}/></div><div className="setting-copy"><strong>{tenantPlanLoading ? "Loading plan…" : tenantPlan?.tier?.name ?? "No plan assigned"}</strong><p>{tenantPlan?.tier ? `${tenantPlan.subscription_status ?? "Agreement"} · ${tenantPlan.tier.description || "Plan details"}${tenantPlan.monthly_price_minor !== undefined ? ` · ${new Intl.NumberFormat("en-KE", { style: "currency", currency: tenantPlan.currency ?? "KES", maximumFractionDigits: 2 }).format(tenantPlan.monthly_price_minor / 100)} / month` : ""}` : "Your platform owner can confirm or update your workspace plan."}</p>{tenantPlan?.tier && <><ul className="tenant-plan-highlights">{Object.entries({ inbox: "Shared inbox", contacts: "Contacts", templates: "WhatsApp templates", campaigns: "Campaigns", api: "Developer API", webhooks: "Customer webhooks" }).map(([key, label]) => <li key={key} className={tenantPlan.tier?.feature_flags?.[key] ? "" : "is-unavailable"}>{label}{tenantPlan.tier?.feature_flags?.[key] ? " included" : " not included"}</li>)}</ul><p className="tenant-plan-note">{tenantPlan.tier.monthly_message_limit > 0 ? `${new Intl.NumberFormat("en-KE").format(tenantPlan.monthly_messages_used ?? 0)} / ${new Intl.NumberFormat("en-KE").format(tenantPlan.tier.monthly_message_limit)} platform messages used this month` : `${new Intl.NumberFormat("en-KE").format(tenantPlan.monthly_messages_used ?? 0)} platform messages this month · no fixed cap`} · {tenantPlan.tier.max_team_members > 0 ? `Maximum ${tenantPlan.tier.max_team_members} team members` : "No fixed team size cap"}. Meta message charges are separate.</p></>}</div><a className="secondary-button compact" href="/pricing">View available plans</a></div>
+          <div className="setting-row"><div className="setting-icon"><MessageCircle size={19}/></div><div className="setting-copy"><strong>WhatsApp connection</strong><p>{metaStatus?.enabled ? "Meta Cloud API is enabled for this business account." : "Meta Cloud API is not enabled yet. Open Integrations to configure and verify it."}</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Integrations")}>Open integrations</button></div>
           <div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Team access</strong><p>{teamMembers.length} member(s) can access this business account. Owners and admins can invite teammates.</p></div><span className="fixed-setting">{teamMembers.length} members</span></div>
           <div className="setting-row"><div className="setting-icon"><Zap size={19}/></div><div className="setting-copy"><strong>Messaging readiness</strong><p>{approvedTemplates.length} approved template(s) · {webhooks.filter((webhook)=>webhook.enabled).length} customer webhook(s) enabled.</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Campaigns")}>Open campaigns</button></div>
           <div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Customer-service window</strong><p>Free-form replies are allowed inside Meta's 24-hour customer-service window. Outside it, use an approved template.</p></div><span className="fixed-setting">Policy</span></div>

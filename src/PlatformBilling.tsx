@@ -6,6 +6,9 @@ import { Empty, KpiCard } from "./components/ui";
 type Tier = {
   id: string; name: string; description: string; currency: string;
   monthly_price_minor: number; setup_fee_minor: number; active: boolean;
+  slug: string; is_public: boolean; display_order: number; featured: boolean;
+  feature_highlights: string[]; feature_flags: Record<string, boolean>;
+  max_team_members: number; monthly_message_limit: number; monthly_ai_request_limit: number;
 };
 type Customer = {
   tenant_id: string; name: string; slug: string; billing_name: string; billing_email: string;
@@ -22,7 +25,12 @@ type Invoice = {
   status: string; notes: string; issued_at: string; paid_minor: number; items: InvoiceItem[]; payments: Payment[];
 };
 type BillingData = { tiers: Tier[]; customers: Customer[]; invoices: Invoice[] };
-type TierForm = { id?: string; name: string; description: string; currency: string; monthly: string; setup: string; active: boolean };
+type TierForm = {
+  id?: string; name: string; slug: string; description: string; currency: string;
+  monthly: string; setup: string; active: boolean; isPublic: boolean; displayOrder: string;
+  featured: boolean; highlights: string; featureFlags: Record<string, boolean>;
+  maxTeamMembers: string; monthlyMessageLimit: string; monthlyAiRequestLimit: string;
+};
 type LineForm = { description: string; quantity: string; amount: string };
 
 const emptyData: BillingData = { tiers: [], customers: [], invoices: [] };
@@ -86,10 +94,14 @@ export default function PlatformBilling() {
   const saveTier = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!tierForm) return;
-    const ok = await finishMutation("platform_billing_save_tier", {
-      p_id: tierForm.id ?? null, p_name: tierForm.name.trim(), p_description: tierForm.description.trim(),
+    const ok = await finishMutation("platform_billing_save_tier_catalog", {
+      p_id: tierForm.id ?? null, p_name: tierForm.name.trim(), p_slug: tierForm.slug.trim(), p_description: tierForm.description.trim(),
       p_currency: tierForm.currency, p_monthly_price_minor: minor(tierForm.monthly),
       p_setup_fee_minor: minor(tierForm.setup), p_active: tierForm.active,
+      p_is_public: tierForm.isPublic, p_display_order: Number(tierForm.displayOrder), p_featured: tierForm.featured,
+      p_feature_highlights: tierForm.highlights.split("\n").map((line) => line.trim()).filter(Boolean),
+      p_feature_flags: tierForm.featureFlags, p_max_team_members: Number(tierForm.maxTeamMembers),
+      p_monthly_message_limit: Number(tierForm.monthlyMessageLimit), p_monthly_ai_request_limit: Number(tierForm.monthlyAiRequestLimit),
     }, "Tier saved.");
     if (ok) setTierForm(null);
   };
@@ -204,18 +216,20 @@ export default function PlatformBilling() {
               </tr>)}
               {customers.length === 0 && <tr><td colSpan={6}><Empty icon={<Building2 size={22} />} title={search ? "No client matches" : "No client accounts"} text={search ? "Try another client or billing contact." : "Client workspaces will appear here when they are created."} /></td></tr>}
             </tbody></table></div>
-            <p className="billing-footnote"><ShieldCheck size={14} /> Tier assignment records a commercial agreement. It does not change client feature access or enforce usage caps.</p>
+            <p className="billing-footnote"><ShieldCheck size={14} /> Active tier assignments apply configured message and team limits and gate campaign/API sending. Billing status does not automatically suspend a workspace.</p>
           </section>}
 
           {view === "tiers" && <section className="billing-section">
-            <div className="platform-toolbar"><div><h2>Billing tiers</h2><p>Set recurring price and optional setup fee for future invoices.</p></div><button type="button" className="btn btn-primary" onClick={() => setTierForm({ name: "", description: "", currency: "KES", monthly: "", setup: "0", active: true })}><Plus size={15} /> New tier</button></div>
+            <div className="platform-toolbar"><div><h2>Plans &amp; tiers</h2><p>Published plan details also power the public pricing page and workspace plan view.</p></div><button type="button" className="btn btn-primary" onClick={() => setTierForm({ name: "", slug: "", description: "", currency: "KES", monthly: "", setup: "0", active: true, isPublic: false, displayOrder: "100", featured: false, highlights: "", featureFlags: { inbox: true, contacts: true, templates: true, campaigns: true, api: true, webhooks: true }, maxTeamMembers: "0", monthlyMessageLimit: "0", monthlyAiRequestLimit: "0" })}><Plus size={15} /> New tier</button></div>
             {data.tiers.length === 0 ? <div className="panel"><Empty icon={<CreditCard size={22} />} title="No tiers configured" text="Create a tier after confirming its name, currency, price and terms." /></div> : <div className="billing-tier-grid">
               {data.tiers.map((tier) => <article className="panel billing-tier-card" key={tier.id}>
-                <div className="billing-tier-top"><span className={tier.active ? "billing-status is-active" : "billing-status"}>{tier.active ? "Active" : "Archived"}</span><button type="button" className="icon-btn" aria-label={`Edit ${tier.name}`} onClick={() => setTierForm({ id: tier.id, name: tier.name, description: tier.description, currency: tier.currency, monthly: (tier.monthly_price_minor / 100).toFixed(2), setup: (tier.setup_fee_minor / 100).toFixed(2), active: tier.active })}><Pencil size={15} /></button></div>
+                <div className="billing-tier-top"><span className={tier.active ? "billing-status is-active" : "billing-status"}>{tier.active ? "Active" : "Archived"}</span><button type="button" className="icon-btn" aria-label={`Edit ${tier.name}`} onClick={() => setTierForm({ id: tier.id, name: tier.name, slug: tier.slug, description: tier.description, currency: tier.currency, monthly: (tier.monthly_price_minor / 100).toFixed(2), setup: (tier.setup_fee_minor / 100).toFixed(2), active: tier.active, isPublic: tier.is_public, displayOrder: String(tier.display_order), featured: tier.featured, highlights: (tier.feature_highlights ?? []).join("\n"), featureFlags: tier.feature_flags, maxTeamMembers: String(tier.max_team_members), monthlyMessageLimit: String(tier.monthly_message_limit), monthlyAiRequestLimit: String(tier.monthly_ai_request_limit) })}><Pencil size={15} /></button></div>
                 <h3>{tier.name}</h3><p>{tier.description || "No description"}</p><strong className="billing-tier-price">{money(tier.monthly_price_minor, tier.currency)} <small>/ month</small></strong><div className="billing-tier-setup">Setup fee: {money(tier.setup_fee_minor, tier.currency)}</div>
+                <div className="billing-tier-setup">{tier.is_public && tier.active ? "Published on pricing page" : "Hidden from pricing page"} · {tier.max_team_members > 0 ? `${tier.max_team_members} team members` : "No team cap"} · {tier.monthly_message_limit > 0 ? `${new Intl.NumberFormat("en-KE").format(tier.monthly_message_limit)} messages / month` : "No message cap"}</div>
+                <ul className="billing-tier-highlights">{(tier.feature_highlights ?? []).map((feature) => <li key={feature}>{feature}</li>)}</ul>
               </article>)}
             </div>}
-            <p className="billing-footnote"><ShieldCheck size={14} /> Prices are operator-managed contract data. Publishing, checkout, auto-renewal and plan enforcement are not enabled.</p>
+            <p className="billing-footnote"><ShieldCheck size={14} /> Publishing updates the public and client-facing catalog. Checkout, automatic renewals and automatic suspension are not enabled.</p>
           </section>}
 
           {view === "invoices" && <section className="panel billing-section">
@@ -262,11 +276,14 @@ export default function PlatformBilling() {
       {tierForm && <div className="modal-backdrop" role="presentation" onClick={() => setTierForm(null)}><div className="modal-panel billing-modal" role="dialog" aria-modal="true" aria-labelledby="billing-tier-title" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head"><div className="modal-head-copy"><div className="eyebrow"><CreditCard size={12} /> BILLING CATALOG</div><h2 id="billing-tier-title">{tierForm.id ? "Edit tier" : "Create tier"}</h2><p>Define the commercial amount used for client agreements and invoices.</p></div><button type="button" className="icon-btn" aria-label="Close" onClick={() => setTierForm(null)}><X size={17} /></button></div>
         <form className="billing-form" onSubmit={saveTier}>
-          <div className="field"><label htmlFor="tier-name">Tier name *</label><input id="tier-name" value={tierForm.name} onChange={(event) => setTierForm({ ...tierForm, name: event.target.value })} required maxLength={80} /></div>
+          <div className="form-grid"><div className="field"><label htmlFor="tier-name">Plan name *</label><input id="tier-name" value={tierForm.name} onChange={(event) => setTierForm({ ...tierForm, name: event.target.value, slug: tierForm.id ? tierForm.slug : event.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") })} required maxLength={80} /></div><div className="field"><label htmlFor="tier-slug">Plan URL key *</label><input id="tier-slug" value={tierForm.slug} onChange={(event) => setTierForm({ ...tierForm, slug: event.target.value })} required pattern="[a-z0-9]+(-[a-z0-9]+)*" maxLength={100} /></div></div>
           <div className="field"><label htmlFor="tier-description">Description</label><textarea id="tier-description" value={tierForm.description} onChange={(event) => setTierForm({ ...tierForm, description: event.target.value })} rows={3} maxLength={1000} /></div>
           <div className="form-grid"><div className="field"><label htmlFor="tier-currency">Currency</label><select id="tier-currency" value={tierForm.currency} onChange={(event) => setTierForm({ ...tierForm, currency: event.target.value })}><option value="KES">KES — Kenyan shilling</option><option value="USD">USD — US dollar</option></select></div><div className="field"><label htmlFor="tier-monthly">Monthly price *</label><input id="tier-monthly" type="number" min="0" step="0.01" value={tierForm.monthly} onChange={(event) => setTierForm({ ...tierForm, monthly: event.target.value })} required /></div><div className="field"><label htmlFor="tier-setup">Setup fee</label><input id="tier-setup" type="number" min="0" step="0.01" value={tierForm.setup} onChange={(event) => setTierForm({ ...tierForm, setup: event.target.value })} required /></div></div>
-          <label className="billing-check"><input type="checkbox" checked={tierForm.active} onChange={(event) => setTierForm({ ...tierForm, active: event.target.checked })} /> Available for new client agreements</label>
-          <p className="billing-form-help">Changing a tier does not change existing client prices, create invoices or activate checkout.</p>
+          <div className="form-grid"><div className="field"><label htmlFor="tier-display-order">Pricing page order</label><input id="tier-display-order" type="number" min="0" step="1" value={tierForm.displayOrder} onChange={(event) => setTierForm({ ...tierForm, displayOrder: event.target.value })} required /></div><div className="field"><label htmlFor="tier-team-limit">Maximum workspace members (0 = no cap)</label><input id="tier-team-limit" type="number" min="0" step="1" value={tierForm.maxTeamMembers} onChange={(event) => setTierForm({ ...tierForm, maxTeamMembers: event.target.value })} required /></div><div className="field"><label htmlFor="tier-message-limit">Monthly platform messages (0 = no cap)</label><input id="tier-message-limit" type="number" min="0" step="1" value={tierForm.monthlyMessageLimit} onChange={(event) => setTierForm({ ...tierForm, monthlyMessageLimit: event.target.value })} required /></div><div className="field"><label htmlFor="tier-ai-limit">Monthly AI request allowance</label><input id="tier-ai-limit" type="number" min="0" step="1" value={tierForm.monthlyAiRequestLimit} onChange={(event) => setTierForm({ ...tierForm, monthlyAiRequestLimit: event.target.value })} required /><small className="field-hint">Saved for upcoming AI usage enforcement.</small></div></div>
+          <div className="form-grid"><label className="billing-check"><input type="checkbox" checked={tierForm.active} onChange={(event) => setTierForm({ ...tierForm, active: event.target.checked })} /> Available for new client agreements</label><label className="billing-check"><input type="checkbox" checked={tierForm.isPublic} onChange={(event) => setTierForm({ ...tierForm, isPublic: event.target.checked })} /> Publish on pricing page and show to clients</label><label className="billing-check"><input type="checkbox" checked={tierForm.featured} onChange={(event) => setTierForm({ ...tierForm, featured: event.target.checked })} /> Mark as most popular</label></div>
+          <div className="field"><label>Tier gated capabilities</label><div className="form-grid">{[["campaigns", "Campaign sending"], ["api", "Developer API sending"]].map(([key, label]) => <label className="billing-check" key={key}><input type="checkbox" checked={tierForm.featureFlags[key] ?? false} onChange={(event) => setTierForm({ ...tierForm, featureFlags: { ...tierForm.featureFlags, [key]: event.target.checked } })} /> {label}</label>)}</div></div>
+          <div className="field"><label htmlFor="tier-highlights">Public plan features (one per line)</label><textarea id="tier-highlights" value={tierForm.highlights} onChange={(event) => setTierForm({ ...tierForm, highlights: event.target.value })} rows={5} maxLength={2200} placeholder="Official WhatsApp Business API\nShared inbox" /></div>
+          <p className="billing-form-help">Published descriptions and prices update the public and client-facing plan catalog. Assigned client prices remain as agreed. Campaign launch and API message sending enforce their feature switches. Other product capabilities remain available across tiers.</p>
           <div className="modal-actions"><span className="modal-action-hint">Tier changes are audit logged.</span><button type="submit" className="btn btn-primary" disabled={busy}><Save size={14} /> Save tier</button></div>
         </form>
       </div></div>}
