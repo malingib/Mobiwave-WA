@@ -1,10 +1,10 @@
 export const corsHeaders = {
-  // Production frontend origin. Keep this aligned with the Vercel custom domain.
-  // The previous APP_ALLOWED_ORIGIN secret pointed at the retired Vercel alias.
-  "Access-Control-Allow-Origin": "https://wap.mobiwave.co.ke",
+  // Edge Functions authenticate requests with bearer tokens. CORS is not an
+  // authorization boundary, and a fixed production origin prevents local Vite
+  // clients from reaching the same authenticated endpoints during development.
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, x-api-key, idempotency-key, content-type, x-hub-signature-256",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Vary": "Origin",
 };
 
 export function json(body: unknown, status = 200): Response {
