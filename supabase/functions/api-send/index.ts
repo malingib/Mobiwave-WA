@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import { checkTenantFeature } from "../_shared/auth.ts";
 import { decryptToken } from "../_shared/meta.ts";
 import { emitWebhook } from "../_shared/customer-webhooks.ts";
 import { mostAdvancedMetaStatus } from "../_shared/meta-status.ts";
@@ -29,14 +30,12 @@ Deno.serve(async (request) => {
     }
 
     const tenantId = apiKey.tenant_id;
-    const { data: plan, error: planError } = await admin.from("platform_customer_subscriptions")
-      .select("status,tier:platform_billing_tiers(feature_flags)").eq("tenant_id", tenantId).maybeSingle();
-    if (planError) {
-      console.error("Could not verify API plan access:", planError.code);
+    const feature = await checkTenantFeature(admin, tenantId, "api");
+    if (feature.error) {
+      console.error("Could not verify API plan access.");
       return json({ error: "Plan access could not be verified. No message was submitted." }, 503);
     }
-    const tier = Array.isArray(plan?.tier) ? plan.tier[0] : plan?.tier;
-    if (plan?.status === "active" && tier?.feature_flags?.api === false) {
+    if (!feature.allowed) {
       return json({ error: "Developer API sending is not included in this workspace plan." }, 403);
     }
     const rawBody = await readRequestText(request, 131_072);

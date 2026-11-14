@@ -2482,6 +2482,10 @@
   .billing-tier-card > p { flex: 1; color: var(--color-text-muted); font-size: 0.75rem; line-height: 1.5; }
   .billing-tier-highlights { display: flex; flex-direction: column; gap: 0.3rem; margin: 0.25rem 0 0; padding: 0; list-style: none; color: var(--color-text-muted); font-size: 0.7rem; line-height: 1.4; }
   .billing-tier-highlights li::before { content: "✓"; margin-right: 0.35rem; color: var(--color-brand-600); font-weight: 700; }
+  .billing-tier-capabilities .is-unavailable { color: var(--color-text-faint); }
+  .billing-tier-capabilities .is-unavailable::before { content: "×"; color: var(--color-text-faint); }
+  .app-shell .nav-item.is-unavailable { color: var(--color-text-faint); }
+  .app-shell .nav-item.is-unavailable:hover { background: transparent; color: var(--color-text-faint); }
   .billing-tier-price { color: var(--color-text); font-size: 1.25rem; font-variant-numeric: tabular-nums; }
   .billing-tier-price small { color: var(--color-text-faint); font-size: 0.72rem; font-weight: 500; }
   .billing-tier-setup { color: var(--color-text-muted); font-size: 0.72rem; }

@@ -1,4 +1,4 @@
-import { requireUser, requireTenantRole } from "../_shared/auth.ts";
+import { checkTenantFeature, requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 import { emitWebhook } from "../_shared/customer-webhooks.ts";
 import { mostAdvancedMetaStatus } from "../_shared/meta-status.ts";
@@ -13,11 +13,9 @@ Deno.serve(async (request) => {
     const tenantId = String(body.tenant_id ?? ""), campaignId = String(body.campaign_id ?? "");
     if (!tenantId || !campaignId) return json({ error: "tenant_id and campaign_id are required." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner", "admin"]);
-    const { data: plan, error: planError } = await auth.admin.from("platform_customer_subscriptions")
-      .select("status,tier:platform_billing_tiers(feature_flags)").eq("tenant_id", tenantId).maybeSingle();
-    if (planError) return json({ error: "Plan access could not be verified. No campaign messages were submitted." }, 503);
-    const tier = Array.isArray(plan?.tier) ? plan.tier[0] : plan?.tier;
-    if (plan?.status === "active" && tier?.feature_flags?.campaigns === false) {
+    const feature = await checkTenantFeature(auth.admin, tenantId, "campaigns");
+    if (feature.error) return json({ error: "Plan access could not be verified. No campaign messages were submitted." }, 503);
+    if (!feature.allowed) {
       return json({ error: "Campaign sending is not included in this workspace plan." }, 403);
     }
     const { data: campaign } = await auth.admin.from("campaigns").select("id,name,status,template_id,template_parameters").eq("tenant_id", tenantId).eq("id", campaignId).maybeSingle();

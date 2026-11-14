@@ -126,7 +126,7 @@ export default function PricingPage() {
                   </h3>
                   <ul className="flex flex-col gap-2.5">
                     <Feature onDark={plan.featured} label="Official WhatsApp Business API" enabled />
-                    {[["inbox", "Shared inbox"], ["contacts", "Contacts"], ["templates", "Templates"], ["campaigns", "Campaigns"], ["api", "Developer API"], ["webhooks", "Customer webhooks"]].map(([key, label]) => <Feature key={key} onDark={plan.featured} label={label} enabled={plan.feature_flags?.[key] ?? false} />)}
+                    {[["inbox", "Shared inbox"], ["contacts", "Contact management"], ["templates", "Template management"], ["campaigns", "Campaigns"], ["api", "Developer API"], ["webhooks", "Customer webhooks"]].map(([key, label]) => <Feature key={key} onDark={plan.featured} label={label} enabled={plan.feature_flags?.[key] ?? false} />)}
                     <Feature onDark={plan.featured} label={plan.max_team_members > 0 ? `Maximum team size: ${plan.max_team_members} users` : "No fixed team size cap"} enabled />
                     <Feature onDark={plan.featured} label={plan.monthly_message_limit > 0 ? `Up to ${new Intl.NumberFormat("en-KE").format(plan.monthly_message_limit)} platform messages / month` : "No fixed platform message cap"} enabled />
                     {plan.feature_highlights.map((feature) => <Feature key={feature} onDark={plan.featured} label={feature} enabled />)}

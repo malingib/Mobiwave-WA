@@ -1,4 +1,4 @@
-import { requireUser, requireTenantRole } from "../_shared/auth.ts";
+import { checkTenantFeature, requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { emitWebhook } from "../_shared/customer-webhooks.ts";
 import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 
@@ -11,6 +11,9 @@ Deno.serve(async (request) => {
     const tenantId = String(body.tenant_id ?? ""), conversationId = String(body.conversation_id ?? ""), action = String(body.action ?? "");
     if (!tenantId || !conversationId || !["resolve","pause_bot","resume_bot","assign"].includes(action)) return json({ error: "tenant_id, conversation_id and a supported action are required." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner","admin","agent"]);
+    const feature = await checkTenantFeature(auth.admin, tenantId, "inbox");
+    if (feature.error) return json({ error: feature.error }, 503);
+    if (!feature.allowed) return json({ error: "Inbox controls are not included in this workspace plan." }, 403);
     if (action === "assign") {
       const assigneeId = body.assigned_to ? String(body.assigned_to) : null;
       if (assigneeId) {

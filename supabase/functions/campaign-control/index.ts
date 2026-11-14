@@ -1,4 +1,4 @@
-import { requireUser, requireTenantRole } from "../_shared/auth.ts";
+import { checkTenantFeature, requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 
 Deno.serve(async (request) => {
@@ -14,6 +14,9 @@ Deno.serve(async (request) => {
       return json({ error: "tenant_id, campaign_id and a supported action are required." }, 400);
     }
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner", "admin"]);
+    const feature = await checkTenantFeature(auth.admin, tenantId, "campaigns");
+    if (feature.error) return json({ error: feature.error }, 503);
+    if (!feature.allowed) return json({ error: "Campaign controls are not included in this workspace plan." }, 403);
     const { data: status, error } = await auth.admin.rpc("control_campaign", {
       p_tenant_id: tenantId,
       p_campaign_id: campaignId,

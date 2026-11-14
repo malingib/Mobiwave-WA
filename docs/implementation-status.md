@@ -16,6 +16,8 @@ The dashboard and backend foundation are merged into `main`. The existing Vercel
 - Realtime shared inbox with per-agent unread state, assignments, filters, internal notes, paginated contact search, consent history, and guarded Meta media previews.
 - Guided template-variable preview for text body/header and URL-button parameters.
 - Tenant API keys, usage events, customer webhooks, and retryable webhook delivery worker.
+- Platform owner client overview and owner-only manual billing ledger: KES/USD tier catalog, client billing profiles, tier assignment, invoices, payment entries/reversals, voids, and audit records.
+- All six tier capabilities are configurable and, for active agreements, applied through workspace navigation, RLS policies, and privileged messaging/API/template/webhook functions. Team and monthly message limits remain enforced; the AI request allowance is reserved for future product use.
 - Supabase schema migrations, row-level security policies, CI type-check/build, and Vercel production environment variables for the frontend.
 
 ## Added production-readiness work

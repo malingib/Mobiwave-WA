@@ -1,4 +1,4 @@
-import { requireUser, requireTenantRole } from "../_shared/auth.ts";
+import { checkTenantFeature, requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { decryptToken } from "../_shared/meta.ts";
 import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 
@@ -15,6 +15,9 @@ Deno.serve(async (request) => {
     const mediaId = String(body.media_id ?? "");
     if (!tenantId || !/^\d{5,80}$/.test(mediaId)) return json({ error: "A tenant and valid media id are required." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner", "admin", "agent"]);
+    const feature = await checkTenantFeature(auth.admin, tenantId, "inbox");
+    if (feature.error) return json({ error: feature.error }, 503);
+    if (!feature.allowed) return json({ error: "Inbox attachments are not included in this workspace plan." }, 403);
     const { data: message } = await auth.admin.from("messages").select("id").eq("tenant_id", tenantId).contains("metadata", { media_id: mediaId }).maybeSingle();
     if (!message) return json({ error: "Attachment not found in this workspace." }, 404);
     const { data: integration } = await auth.admin.from("meta_integrations").select("encrypted_access_token").eq("tenant_id", tenantId).eq("enabled", true).maybeSingle();

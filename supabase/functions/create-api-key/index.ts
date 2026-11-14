@@ -1,4 +1,4 @@
-import { requireUser, requireTenantRole } from "../_shared/auth.ts";
+import { checkTenantFeature, requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 
 function base64url(bytes: Uint8Array) {
@@ -19,6 +19,9 @@ Deno.serve(async (request) => {
     const tenantId = String(body.tenant_id ?? ""), name = String(body.name ?? "").trim();
     if (!tenantId || name.length < 2 || name.length > 120) return json({ error: "tenant_id and an API key name of 2–120 characters are required." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner", "admin"]);
+    const feature = await checkTenantFeature(auth.admin, tenantId, "api");
+    if (feature.error) return json({ error: feature.error }, 503);
+    if (!feature.allowed) return json({ error: "Developer API access is not included in this workspace plan." }, 403);
     const random = crypto.getRandomValues(new Uint8Array(32));
     const token = "mw_live_" + base64url(random);
     const secretHash = await hash(token);

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import { checkTenantFeature } from "./auth.ts";
 import { decryptToken } from "./meta.ts";
 
 function ipv4Private(ip: string) {
@@ -124,6 +125,15 @@ export async function deliverWebhook(admin: SupabaseClient, deliveryId: string) 
     const { data, error } = await admin.from("webhook_deliveries").update({ ...values, lease_token: null, lease_expires_at: null, updated_at: new Date().toISOString() }).eq("id", deliveryId).eq("status", "processing").eq("lease_token", token).select("id").maybeSingle();
     return !error && Boolean(data);
   };
+  const feature = await checkTenantFeature(admin, delivery.tenant_id, "webhooks");
+  if (feature.error) {
+    const saved = await finish({ status: "failed", next_attempt_at: new Date(Date.now() + 5 * 60_000).toISOString(), last_error: feature.error });
+    return saved ? { ok: false, retrying: true, error: feature.error } : { ok: false, skipped: true, error: "Delivery lease was superseded." };
+  }
+  if (!feature.allowed) {
+    const saved = await finish({ status: "dead", last_error: "Customer webhooks are not included in this workspace's active tier." });
+    return saved ? { ok: false, error: "Customer webhooks are not included in this workspace's active tier." } : { ok: false, skipped: true, error: "Delivery lease was superseded." };
+  }
   let hook: any = null;
   try {
     const { data, error: hookError } = await admin.from("tenant_webhooks").select("id,endpoint_url,encrypted_secret,enabled").eq("id", delivery.webhook_id).eq("tenant_id", delivery.tenant_id).maybeSingle();
@@ -171,6 +181,13 @@ export async function emitWebhook(admin: SupabaseClient, tenantId: string, event
     return;
   }
   if (!hooks?.length) return;
+  const feature = await checkTenantFeature(admin, tenantId, "webhooks");
+  if (feature.error) {
+    if (requirePersistence) throw new Error(feature.error);
+    console.error("Could not verify customer webhook access.");
+    return;
+  }
+  if (!feature.allowed) return;
   const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
   const stableEvent = ["message.inbound", "message.status", "message.outbound", "campaign.completed"].includes(eventType);
   const base = stableEvent ? String(record.message_id ?? record.campaign_id ?? crypto.randomUUID()) : crypto.randomUUID();

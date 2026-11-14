@@ -17,6 +17,10 @@ const PricingPage = lazy(() => import("./PricingPage"));
 const ContactCsvImport = lazy(() => import("./ContactCsvImport"));
 import { Brand } from "./components/ui";
 type View = "Overview" | "Inbox" | "Contacts" | "Templates" | "Campaigns" | "Alerts" | "Integrations" | "Profile" | "Settings";
+type TierFeature = "inbox" | "contacts" | "templates" | "campaigns" | "api" | "webhooks";
+const viewTierFeature: Partial<Record<View, TierFeature>> = {
+  Inbox: "inbox", Contacts: "contacts", Templates: "templates", Campaigns: "campaigns",
+};
 type Tenant = { id: string; name: string; slug: string; role: string };
 type TenantPlan = {
   subscription_status: string | null;
@@ -353,6 +357,17 @@ export default function App() {
   const activeTenant = tenants.find((t) => t.id === tenantId);
   const isAdmin = activeTenant ? ["owner", "admin"].includes(activeTenant.role) : false;
   const canAgent = activeTenant ? ["owner", "admin", "agent"].includes(activeTenant.role) : false;
+  const tierFeatureAvailable = useCallback((feature: TierFeature) => {
+    if (tenantPlanLoading || !tenantPlan || tenantPlan.subscription_status !== "active") return true;
+    return Boolean(tenantPlan.tier && tenantPlan.tier.feature_flags?.[feature] !== false);
+  }, [tenantPlan, tenantPlanLoading]);
+  useEffect(() => {
+    const feature = viewTierFeature[view];
+    if (feature && !tierFeatureAvailable(feature)) {
+      setView("Overview");
+      setNotice("That capability is not included in this workspace’s active tier.");
+    }
+  }, [view, tierFeatureAvailable]);
   const loadContacts = useCallback(async () => {
     const requestId = ++contactsRequestId.current;
     if (!supabase || !tenantId) { setContacts([]); setContactHasMore(false); setTotalContacts(0); setContactsLoading(false); return; }
@@ -1110,14 +1125,21 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
         {navigation.map(({ section, items }) => (
           <div key={section} className="pt-4 first:pt-2">
             <div className="px-2 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-brand-600">{section}</div>
-            {items.map((item) => (
-              <button
+            {items.map((item) => {
+              const feature = viewTierFeature[item.label];
+              const available = !feature || tierFeatureAvailable(feature);
+              return <button
                 key={item.label}
                 type="button"
-                className={view === item.label ? "nav-item active mt-0.5" : "nav-item mt-0.5"}
+                className={(view === item.label ? "nav-item active mt-0.5" : "nav-item mt-0.5") + (available ? "" : " is-unavailable")}
                 aria-label={item.label}
                 aria-current={view === item.label ? "page" : undefined}
-                onClick={() => { setView(item.label); setMobileNavOpen(false); }}
+                aria-disabled={!available}
+                title={available ? undefined : `${item.label} is not included in this active tier`}
+                onClick={() => {
+                  if (!available) { setNotice(`${item.label} is not included in this workspace’s active tier.`); return; }
+                  setView(item.label); setMobileNavOpen(false);
+                }}
               >
                 <item.icon size={18} />
                 <span>{item.label}</span>
@@ -1131,8 +1153,9 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
                     {notificationUnread}
                   </span>
                 )}
-              </button>
-            ))}
+                {!available && <LockKeyhole className="ml-auto" size={13} aria-label="Not included in tier" />}
+              </button>;
+            })}
           </div>
         ))}
       </nav>
@@ -1312,8 +1335,8 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           {[
             { label: "WhatsApp number", value: metaStatus?.enabled && metaStatus?.verified ? "Connected" : metaStatus?.verified ? "Verify token" : "Not connected", hint: metaStatus?.display_phone_number || "Official Meta Cloud API", tone: metaStatus?.enabled && metaStatus?.verified ? "success" : "warning", href: "#integration-connection" },
             { label: "Approved templates", value: String(approvedTemplates.length), hint: `${templates.length} synced from Meta`, tone: approvedTemplates.length ? "success" : "warning", href: "#integration-connection" },
-            { label: "Active API keys", value: String(apiKeys.filter((key) => !key.revoked_at).length), hint: "Workspace-scoped server access", tone: apiKeys.some((key) => !key.revoked_at) ? "success" : "neutral", href: "#integration-api" },
-            { label: "Customer webhooks", value: String(webhooks.filter((webhook) => webhook.enabled).length), hint: `${webhooks.length} endpoint(s) configured`, tone: webhooks.some((webhook) => webhook.enabled) ? "success" : "neutral", href: "#integration-customer-webhooks" },
+            ...(tierFeatureAvailable("api") ? [{ label: "Active API keys", value: String(apiKeys.filter((key) => !key.revoked_at).length), hint: "Workspace-scoped server access", tone: apiKeys.some((key) => !key.revoked_at) ? "success" : "neutral", href: "#integration-api" }] : []),
+            ...(tierFeatureAvailable("webhooks") ? [{ label: "Customer webhooks", value: String(webhooks.filter((webhook) => webhook.enabled).length), hint: `${webhooks.length} endpoint(s) configured`, tone: webhooks.some((webhook) => webhook.enabled) ? "success" : "neutral", href: "#integration-customer-webhooks" }] : []),
           ].map((card) => (
             <a className={"integration-health-card is-" + card.tone} href={card.href} key={card.label}>
               <span className="integration-health-label">{card.label}</span>
@@ -1356,7 +1379,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           </ol>
           <p className="muted small">Webhook verification uses the Meta App Secret saved in this business account's WhatsApp connection. Each client account keeps its own app secret alongside its own access token and webhook verification token.</p>
         </div>
-        <div className="panel form-panel" id="integration-api">
+        {tierFeatureAvailable("api") && <div className="panel form-panel" id="integration-api">
           <h2>Developer API</h2><p className="muted small">Use business-account-scoped keys for server-to-server integrations. Never put API keys in browser code or public repositories.</p>
           {isAdmin&&<form onSubmit={createApiKey} className="api-key-create"><div className="field"><label>Key name</label><input value={apiKeyName} onChange={(e)=>setApiKeyName(e.target.value)} required minLength={2} maxLength={120}/></div><button className="primary-button" disabled={busy}><Plus size={15}/> Create API key</button></form>}
           {newApiKey&&<div className="new-key-box"><strong>Copy your new key now</strong><code>{newApiKey}</code><button className="secondary-button" onClick={()=>void copyApiKey()}>Copy key</button><small>It will disappear if you refresh or leave this screen.</small></div>}
@@ -1366,8 +1389,8 @@ apikey: YOUR_SUPABASE_PUBLISHABLE_KEY
 X-API-Key: YOUR_MOBIWAVE_API_KEY
 Content-Type: application/json
 {"to":"+2547XXXXXXXX","template_name":"approved_template","language_code":"en","components":[]}`}</pre></div>
-        </div>
-        <details className="panel form-panel" id="integration-customer-webhooks">
+        </div>}
+        {tierFeatureAvailable("webhooks") && <details className="panel form-panel" id="integration-customer-webhooks">
           <summary><strong>Advanced: customer event webhooks</strong><span className="muted small"> Send MobiWave events to your own HTTPS endpoints</span></summary>
           <p className="muted small">This is separate from the Meta callback above. Customer webhooks send signed MobiWave events to your server; they do not receive Meta's inbound WhatsApp webhook.</p>
           {isAdmin&&<form className="webhook-create" onSubmit={createWebhook}><div className="form-grid"><div className="field"><label>Webhook name</label><input value={webhookName} onChange={(e)=>setWebhookName(e.target.value)} required minLength={2} maxLength={120}/></div><div className="field"><label>HTTPS endpoint URL</label><input type="url" value={webhookUrl} onChange={(e)=>setWebhookUrl(e.target.value)} required placeholder="https://api.yourbusiness.co.ke/hooks/mobiwave"/></div></div><div className="webhook-event-options">{[["message.inbound","Inbound message"],["message.status","Delivery status"],["message.outbound","Outbound message"],["campaign.completed","Campaign completed"],["conversation.updated","Conversation updated"]].map(([value,label])=><label key={value} className="checkbox-line"><input type="checkbox" checked={webhookEvents.includes(value)} onChange={(e)=>setWebhookEvents(current=>e.target.checked?[...current,value]:current.filter(item=>item!==value))}/>{label}</label>)}</div><div className="form-actions"><span className="muted small">HTTPS only · public host required</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add webhook</button></div></form>}
@@ -1376,7 +1399,7 @@ Content-Type: application/json
           <div className="section-header"><div><h3>Recent delivery history</h3><p>Latest 50 attempts across this business account.</p></div></div>
           <div className="api-key-list">{webhookDeliveries.length===0?<p className="muted small">No webhook deliveries yet. Use Send test to validate an endpoint.</p>:webhookDeliveries.map(delivery=><div className="api-key-row" key={delivery.id}><div><strong>{delivery.event_type}</strong><small>{new Date(delivery.created_at).toLocaleString()} · Attempt {delivery.attempt_count}{delivery.response_status?" · HTTP "+delivery.response_status:""}</small>{delivery.last_error&&<small className="error-text">{delivery.last_error}</small>}</div><Status status={delivery.status}/>{isAdmin&&["failed","dead"].includes(delivery.status)&&<button className="secondary-button compact" onClick={()=>void retryWebhookDelivery(delivery)} disabled={busy}>Retry</button>}</div>)}</div>
           <div className="muted small">Signatures use HMAC-SHA256 over the exact raw JSON body. Use X-MobiWave-Delivery for idempotency.</div>
-        </details>
+        </details>}
       </section>}
       {view === "Profile" && <section className="content"><PageHeading eyebrow="ACCOUNT" title="Your profile" description="Manage your profile name and update your sign-in password."/>
         <div className="account-banner">
@@ -1387,7 +1410,23 @@ Content-Type: application/json
         </div>
         <form className="panel form-panel profile-form" onSubmit={saveProfile}><h2>Personal details</h2><div className="field"><label>Full name</label><input value={profileName} onChange={(e)=>setProfileName(e.target.value)} maxLength={120} placeholder="Your name"/></div><div className="field"><label>Email address</label><input value={user.email ?? ""} readOnly aria-readonly="true"/><small className="muted small">Your sign-in email is managed by your authentication account.</small></div><div className="field"><label>New password <span className="muted small">(optional)</span></label><input type="password" value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} minLength={8} autoComplete="new-password" placeholder="At least 8 characters"/></div><div className="form-actions"><span className="muted small">Leave the password blank to keep it unchanged.</span><button className="primary-button" disabled={busy}>{busy?"Saving…":"Save profile"}</button></div></form><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Account security</strong><p>Use a unique password. Your profile is stored with your authenticated account and does not change workspace permissions.</p></div></div></section>}
       {view === "Settings" && <section className="content"><PageHeading eyebrow="PREFERENCES" title="Settings" description="Review your business account, plan and account access."/><div className="panel settings-panel"><div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Active business account</strong><p>{activeTenant?.name ?? "No business account selected"} · Account ID and role are managed by business account membership.</p></div><span className="fixed-setting">{activeTenant?.role ?? "Member"}</span></div>
-          <div className="setting-row"><div className="setting-icon"><CreditCard size={19}/></div><div className="setting-copy"><strong>{tenantPlanLoading ? "Loading plan…" : tenantPlan?.tier?.name ?? "No plan assigned"}</strong><p>{tenantPlan?.tier ? `${tenantPlan.subscription_status ?? "Agreement"} · ${tenantPlan.tier.description || "Plan details"}${tenantPlan.monthly_price_minor !== undefined ? ` · ${new Intl.NumberFormat("en-KE", { style: "currency", currency: tenantPlan.currency ?? "KES", maximumFractionDigits: 2 }).format(tenantPlan.monthly_price_minor / 100)} / month` : ""}` : "Your platform owner can confirm or update your workspace plan."}</p>{tenantPlan?.tier && <><ul className="tenant-plan-highlights">{Object.entries({ inbox: "Shared inbox", contacts: "Contacts", templates: "WhatsApp templates", campaigns: "Campaigns", api: "Developer API", webhooks: "Customer webhooks" }).map(([key, label]) => <li key={key} className={tenantPlan.tier?.feature_flags?.[key] ? "" : "is-unavailable"}>{label}{tenantPlan.tier?.feature_flags?.[key] ? " included" : " not included"}</li>)}</ul><p className="tenant-plan-note">{tenantPlan.tier.monthly_message_limit > 0 ? `${new Intl.NumberFormat("en-KE").format(tenantPlan.monthly_messages_used ?? 0)} / ${new Intl.NumberFormat("en-KE").format(tenantPlan.tier.monthly_message_limit)} platform messages used this month` : `${new Intl.NumberFormat("en-KE").format(tenantPlan.monthly_messages_used ?? 0)} platform messages this month · no fixed cap`} · {tenantPlan.tier.max_team_members > 0 ? `Maximum ${tenantPlan.tier.max_team_members} team members` : "No fixed team size cap"}. Meta message charges are separate.</p></>}</div><a className="secondary-button compact" href="/pricing">View available plans</a></div>
+          <div className="setting-row">
+            <div className="setting-icon"><CreditCard size={19}/></div>
+            <div className="setting-copy">
+              <strong>{tenantPlanLoading ? "Loading plan…" : tenantPlan?.tier?.name ?? "No plan assigned"}</strong>
+              <p>{tenantPlan?.tier ? `${tenantPlan.subscription_status ?? "Agreement"} · ${tenantPlan.tier.description || "Plan details"}${tenantPlan.monthly_price_minor !== undefined ? ` · ${new Intl.NumberFormat("en-KE", { style: "currency", currency: tenantPlan.currency ?? "KES", maximumFractionDigits: 2 }).format(tenantPlan.monthly_price_minor / 100)} / month` : ""}` : "Your platform owner can confirm or update your workspace plan."}</p>
+              {tenantPlan?.tier && <>
+                <ul className="tenant-plan-highlights">
+                  {Object.entries({ inbox: "Shared inbox", contacts: "Contact management", templates: "WhatsApp template management", campaigns: "Campaigns", api: "Developer API", webhooks: "Customer webhooks" }).map(([key, label]) => {
+                    const included = tierFeatureAvailable(key as TierFeature);
+                    return <li key={key} className={included ? "" : "is-unavailable"}>{label}{included ? " included" : " not included"}</li>;
+                  })}
+                </ul>
+                <p className="tenant-plan-note">{tenantPlan.tier.monthly_message_limit > 0 ? `${new Intl.NumberFormat("en-KE").format(tenantPlan.monthly_messages_used ?? 0)} / ${new Intl.NumberFormat("en-KE").format(tenantPlan.tier.monthly_message_limit)} platform messages used this month` : `${new Intl.NumberFormat("en-KE").format(tenantPlan.monthly_messages_used ?? 0)} platform messages this month · no fixed cap`} · {tenantPlan.tier.max_team_members > 0 ? `Maximum ${tenantPlan.tier.max_team_members} team members` : "No fixed team size cap"}. Meta message charges are separate.</p>
+              </>}
+            </div>
+            <a className="secondary-button compact" href="/pricing">View available plans</a>
+          </div>
           <div className="setting-row"><div className="setting-icon"><MessageCircle size={19}/></div><div className="setting-copy"><strong>WhatsApp connection</strong><p>{metaStatus?.enabled ? "Meta Cloud API is enabled for this business account." : "Meta Cloud API is not enabled yet. Open Integrations to configure and verify it."}</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Integrations")}>Open integrations</button></div>
           <div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Team access</strong><p>{teamMembers.length} member(s) can access this business account. Owners and admins can invite teammates.</p></div><span className="fixed-setting">{teamMembers.length} members</span></div>
           <div className="setting-row"><div className="setting-icon"><Zap size={19}/></div><div className="setting-copy"><strong>Messaging readiness</strong><p>{approvedTemplates.length} approved template(s) · {webhooks.filter((webhook)=>webhook.enabled).length} customer webhook(s) enabled.</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Campaigns")}>Open campaigns</button></div>

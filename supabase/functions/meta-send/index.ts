@@ -1,4 +1,4 @@
-import { requireUser, requireTenantRole } from "../_shared/auth.ts";
+import { checkTenantFeature, requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { decryptToken } from "../_shared/meta.ts";
 import { emitWebhook } from "../_shared/customer-webhooks.ts";
 import { mostAdvancedMetaStatus } from "../_shared/meta-status.ts";
@@ -21,6 +21,9 @@ Deno.serve(async (request) => {
     if (!tenantId || !/^\+[1-9][0-9]{7,14}$/.test(to)) return json({ error: "A tenant_id and E.164 recipient phone number are required." }, 400);
     if (!/^[A-Za-z0-9._:-]{8,200}$/.test(idempotencyKey)) return json({ error: "Provide a stable Idempotency-Key (8–200 letters, numbers, or . _ : -) and reuse it only for this send operation." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner", "admin", "agent"]);
+    const feature = await checkTenantFeature(auth.admin, tenantId, "inbox");
+    if (feature.error) return json({ error: feature.error }, 503);
+    if (!feature.allowed) return json({ error: "Inbox messaging is not included in this workspace plan." }, 403);
     const { data: integration, error: integrationError } = await auth.admin.from("meta_integrations").select("*").eq("tenant_id", tenantId).eq("enabled", true).maybeSingle();
     if (integrationError || !integration?.encrypted_access_token || !integration.phone_number_id) return json({ error: "Official Meta Cloud API is not configured and enabled for this workspace." }, 409);
     const { data: contact } = await auth.admin.from("contacts").select("id,consent_status").eq("tenant_id", tenantId).eq("phone_e164", to).maybeSingle();

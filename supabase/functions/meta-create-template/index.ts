@@ -1,4 +1,4 @@
-import { requireUser, requireTenantRole } from "../_shared/auth.ts";
+import { checkTenantFeature, requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { decryptToken } from "../_shared/meta.ts";
 import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 
@@ -53,6 +53,9 @@ Deno.serve(async (request) => {
     if (!["MARKETING", "UTILITY", "AUTHENTICATION"].includes(category)) return json({ error: "Choose a supported template category." }, 400);
     if (!/^[a-z]{2,3}(_[A-Z]{2})?$/.test(language)) return json({ error: "Use a valid language code such as en or en_US." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner", "admin"]);
+    const feature = await checkTenantFeature(auth.admin, tenantId, "templates");
+    if (feature.error) return json({ error: feature.error }, 503);
+    if (!feature.allowed) return json({ error: "WhatsApp template management is not included in this workspace plan." }, 403);
     const { data: integration, error: integrationError } = await auth.admin.from("meta_integrations")
       .select("waba_id,encrypted_access_token").eq("tenant_id", tenantId).eq("enabled", true).eq("verified", true).maybeSingle();
     if (integrationError) throw integrationError;
