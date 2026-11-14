@@ -279,31 +279,62 @@ export default function App() {
   }, []);
   const loadTenants = useCallback(async () => {
     const requestId = ++tenantRequestId.current;
-    if (!supabase || !user) { setTenantLoading(false); return; }
-    setTenantLoading(true);
-    setTenantError("");
-    const [membershipResult, platformResult] = await Promise.all([
-      supabase.from("tenant_members").select("tenant_id,role,tenants(id,name,slug)").eq("user_id", user.id),
-      supabase.from("platform_admins").select("role").eq("user_id", user.id).limit(1),
-    ]);
-    if (requestId !== tenantRequestId.current) return;
-    if (platformResult.error) console.warn("Platform access lookup unavailable:", platformResult.error.message);
-    setPlatformRole(platformResult.data?.[0]?.role ?? null);
-    const { data, error } = membershipResult;
-    if (error) {
-      setTenantError(error.message);
-      setNotice("Could not load business accounts: " + error.message);
+    if (!supabase || !user) {
+      setTenants([]);
+      setTenantId("");
+      setPlatformRole(null);
+      setTenantError("");
       setTenantLoading(false);
       return;
     }
-    const mapped = (data ?? []).filter((row: any) => row.tenants).map((row: any) => ({ id: row.tenants.id, name: row.tenants.name, slug: row.tenants.slug, role: row.role })) as Tenant[];
-    const requestedTenant = new URLSearchParams(window.location.search).get("tenant");
-    setTenants(mapped);
-    setTenantId((current) => {
-      const preferred = requestedTenant && mapped.some((t) => t.id === requestedTenant) ? requestedTenant : current;
-      return mapped.some((t) => t.id === preferred) ? preferred : mapped[0]?.id ?? "";
-    });
-    setTenantLoading(false);
+    setTenantLoading(true);
+    setTenantError("");
+    try {
+      const [membershipResult, platformResult] = await Promise.all([
+        supabase.from("tenant_members").select("tenant_id,role").eq("user_id", user.id),
+        supabase.from("platform_admins").select("role").eq("user_id", user.id).limit(1),
+      ]);
+      if (requestId !== tenantRequestId.current) return;
+      if (platformResult.error) console.warn("Platform access lookup unavailable:", platformResult.error.message);
+      setPlatformRole(platformResult.data?.[0]?.role ?? null);
+      if (membershipResult.error) {
+        setTenantError(membershipResult.error.message);
+        setNotice("Could not load business accounts: " + membershipResult.error.message);
+        setTenantLoading(false);
+        return;
+      }
+      const memberships = membershipResult.data ?? [];
+      const tenantIds = [...new Set(memberships.map((row) => row.tenant_id))];
+      const tenantResult = tenantIds.length
+        ? await supabase.from("tenants").select("id,name,slug").in("id", tenantIds)
+        : { data: [], error: null };
+      if (requestId !== tenantRequestId.current) return;
+      if (tenantResult.error) {
+        setTenantError(tenantResult.error.message);
+        setNotice("Could not load business accounts: " + tenantResult.error.message);
+        setTenantLoading(false);
+        return;
+      }
+      const tenantsById = new Map((tenantResult.data ?? []).map((tenant) => [tenant.id, tenant]));
+      const mapped = memberships.flatMap((membership) => {
+        const tenant = tenantsById.get(membership.tenant_id);
+        return tenant ? [{ ...tenant, role: membership.role }] : [];
+      }) as Tenant[];
+      const requestedTenant = new URLSearchParams(window.location.search).get("tenant");
+      setTenants(mapped);
+      setTenantId((current) => {
+        const preferred = requestedTenant && mapped.some((t) => t.id === requestedTenant) ? requestedTenant : current;
+        return mapped.some((t) => t.id === preferred) ? preferred : mapped[0]?.id ?? "";
+      });
+      setTenantLoading(false);
+    } catch (error) {
+      if (requestId !== tenantRequestId.current) return;
+      console.error("MobiWave WA business account lookup failed:", error);
+      const message = error instanceof Error ? error.message : "Network request failed.";
+      setTenantError(message);
+      setNotice("Could not load business accounts: " + message);
+      setTenantLoading(false);
+    }
   }, [user]);
   useEffect(() => { void loadTenants(); }, [loadTenants]);
   useEffect(() => { setProfileName(String(user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "")); }, [user]);
@@ -577,13 +608,19 @@ export default function App() {
   async function signIn(event: FormEvent) {
     event.preventDefault(); if (!supabase) return;
     setBusy(true); setNotice("");
-    const result = authMode === "signin"
-      ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
-      : await supabase.auth.signUp({ email: email.trim(), password });
-    setBusy(false);
-    if (result.error) setNotice(result.error.message);
-    else if (authMode === "signup" && !result.data.session) setNotice("Check your email to confirm your account, then sign in.");
-    else setNotice(authMode === "signup" ? "Account created." : "Signed in.");
+    try {
+      const result = authMode === "signin"
+        ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
+        : await supabase.auth.signUp({ email: email.trim(), password });
+      if (result.error) setNotice(result.error.message);
+      else if (authMode === "signup" && !result.data.session) setNotice("Check your email to confirm your account, then sign in.");
+      else setNotice(authMode === "signup" ? "Account created." : "Signed in.");
+    } catch (error) {
+      console.error("MobiWave WA sign-in request failed:", error);
+      setNotice("Could not reach the authentication service. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   }
   async function sendPasswordReset(event: FormEvent) {
     event.preventDefault();
