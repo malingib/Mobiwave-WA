@@ -14,6 +14,9 @@ const Overview = lazy(() => import("./dashboard/Overview"));
 const PlatformConsole = lazy(() => import("./PlatformConsole"));
 const LandingPage = lazy(() => import("./LandingPage"));
 const PricingPage = lazy(() => import("./PricingPage"));
+const BillingPage = lazy(() => import("./BillingPage"));
+const TeamPage = lazy(() => import("./TeamPage"));
+const UsagePage = lazy(() => import("./UsagePage"));
 const ContactCsvImport = lazy(() => import("./ContactCsvImport"));
 import { Brand } from "./components/ui";
 type View = "Overview" | "Inbox" | "Contacts" | "Templates" | "Campaigns" | "Alerts" | "Integrations" | "Profile" | "Settings";
@@ -1016,6 +1019,9 @@ export default function App() {
   // Public routes are available without authentication; account access starts at /login.
   const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
   if (pathname === "/pricing") return <Suspense fallback={<div className="auth-screen" role="status">Loading pricing…</div>}><PricingPage /></Suspense>;
+  if (pathname === "/billing") return <Suspense fallback={<div className="auth-screen" role="status">Loading billing…</div>}><BillingPage /></Suspense>;
+  if (pathname === "/team") return <Suspense fallback={<div className="auth-screen" role="status">Loading team…</div>}><TeamPage /></Suspense>;
+  if (pathname === "/usage") return <Suspense fallback={<div className="auth-screen" role="status">Loading usage…</div>}><UsagePage /></Suspense>;
   if (pathname === "/") return <Suspense fallback={<div className="auth-screen" role="status">Loading MobiWave WA…</div>}><LandingPage /></Suspense>;
   const knownRoute = pathname === "/login" || ["/dashboard", "/admin", "/workspace", "/settings"].some((prefix) => pathname === prefix || pathname.startsWith(prefix + "/"));
   if (!knownRoute) return <ErrorPage kind="not-found" />;

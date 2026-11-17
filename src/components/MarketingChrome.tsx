@@ -29,6 +29,9 @@ const defaultNav: NavItem[] = [
   { label: "Use cases", href: "/#use-cases" },
   { label: "How it works", href: "/#how-it-works" },
   { label: "Pricing", href: "/pricing" },
+  { label: "Billing", href: "/billing" },
+  { label: "Team", href: "/team" },
+  { label: "Usage", href: "/usage" },
   { label: "Security", href: "/#security" },
   { label: "FAQs", href: "/#faq" },
 ];
