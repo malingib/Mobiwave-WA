@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import {
-  Activity, ArrowLeft, ArrowUpRight, Bell, Check, ChevronDown, CircleHelp, CreditCard,
+  Activity, ArrowLeft, ArrowUpRight, Bell, Check, ChevronDown, ChevronRight, CreditCard,
   LayoutDashboard, LogOut, MessageCircle, Menu, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail, FileText,
 } from "lucide-react";
@@ -14,12 +14,20 @@ const Overview = lazy(() => import("./dashboard/Overview"));
 const PlatformConsole = lazy(() => import("./PlatformConsole"));
 const LandingPage = lazy(() => import("./LandingPage"));
 const PricingPage = lazy(() => import("./PricingPage"));
+const ContactCsvImport = lazy(() => import("./ContactCsvImport"));
 const BillingPage = lazy(() => import("./BillingPage"));
 const TeamPage = lazy(() => import("./TeamPage"));
 const UsagePage = lazy(() => import("./UsagePage"));
-const ContactCsvImport = lazy(() => import("./ContactCsvImport"));
 import { Brand } from "./components/ui";
-type View = "Overview" | "Inbox" | "Contacts" | "Templates" | "Campaigns" | "Alerts" | "Integrations" | "Profile" | "Settings";
+
+// Canonical public origin used for user-facing callback URLs (e.g. the Meta
+// webhook). The webhook is served by the Vercel edge function deployed on the
+// production domain, so it must never be derived from window.location.origin —
+// doing so would show http://localhost:5173/... during local development.
+const PUBLIC_APP_ORIGIN = (import.meta.env.VITE_APP_URL || "https://wap.mobiwave.co.ke").replace(/\/+$/, "");
+const META_WEBHOOK_CALLBACK_URL = `${PUBLIC_APP_ORIGIN}/api/webhooks/whatsapp`;
+
+type View = "Overview" | "Inbox" | "Contacts" | "Templates" | "Campaigns" | "Alerts" | "Integrations" | "Billing" | "Team" | "Usage" | "Profile" | "Settings";
 type TierFeature = "inbox" | "contacts" | "templates" | "campaigns" | "api" | "webhooks";
 const viewTierFeature: Partial<Record<View, TierFeature>> = {
   Inbox: "inbox", Contacts: "contacts", Templates: "templates", Campaigns: "campaigns",
@@ -27,6 +35,11 @@ const viewTierFeature: Partial<Record<View, TierFeature>> = {
 type Tenant = { id: string; name: string; slug: string; role: string };
 type TenantPlan = {
   subscription_status: string | null;
+  entitlement_state?: "exempt" | "unassigned" | "active" | "trialing" | "grace" | "past_due" | "suspended" | "paused" | "canceled";
+  can_send?: boolean;
+  trial_ends_on?: string | null;
+  grace_ends_on?: string | null;
+  days_remaining?: number | null;
   currency?: string;
   monthly_price_minor?: number;
   monthly_messages_used?: number;
@@ -36,9 +49,26 @@ type TenantPlan = {
     feature_flags: Record<string, boolean>; max_team_members: number; monthly_message_limit: number;
   };
 };
+type MetaAllowance = {
+  connected: boolean;
+  phone_number_id?: string;
+  waba_timezone?: string;
+  period_start?: string;
+  period_end?: string;
+  free_limit: number;
+  free_service_used?: number;
+  free_service_remaining?: number;
+  billable_delivered?: number;
+  billable_by_category?: Record<string, number>;
+  unknown_pricing?: number;
+  has_pricing_data?: boolean;
+  messaging_limit_tier?: string | null;
+  quality_rating?: string | null;
+  last_capability_update_at?: string | null;
+};
 type Contact = { id: string; phone_e164: string; display_name?: string; consent_status: string; consent_source?: string; consent_at?: string; opted_out_at?: string };
 type Template = { id: string; meta_template_name: string; language_code: string; category: string; meta_status: string; components?: any[] };
-type Campaign = { id: string; name: string; status: string; created_at: string; template_id?: string; template_parameters?: Array<{ type: string; parameters?: Array<{ type: string; text?: string }> }> };
+type Campaign = { id: string; name: string; status: string; created_at: string; scheduled_at?: string | null; template_id?: string; template_parameters?: Array<{ type: string; parameters?: Array<{ type: string; text?: string }> }> };
 type CampaignFailure = { id: string; error_code?: string; error_detail?: string; contacts?: { display_name?: string; phone_e164?: string } | null };
 type Conversation = { id: string; status: string; assigned_to?: string | null; unread?: boolean; last_message_at?: string; contacts?: { display_name?: string; phone_e164: string } };
 type TeamMember = { user_id: string; role: string; name: string; email: string };
@@ -118,6 +148,20 @@ function MessageMedia({ mediaId, type, filename, tenantId }: { mediaId: string; 
   if (type === "audio") return <audio controls src={source}/>;
   return <a className="message-media-download" href={source} download={filename || "WhatsApp attachment"}>{filename || "Download attachment"}</a>;
 }
+function planStateLabel(plan: TenantPlan | null) {
+  switch (plan?.entitlement_state) {
+    case "exempt": return "Legacy access · no plan assigned";
+    case "trialing": return plan.days_remaining === 0 ? "Trial ends today" : `Trial · ${plan.days_remaining ?? 0} day(s) left`;
+    case "grace": return plan.days_remaining === 0 ? "Grace period ends today" : `Payment grace · ${plan.days_remaining ?? 0} day(s) left`;
+    case "active": return "Active subscription";
+    case "suspended": return "Sending paused · suspended";
+    case "paused": return "Sending paused · plan paused";
+    case "canceled": return "Subscription canceled";
+    case "unassigned": return "No subscription assigned";
+    default: return plan?.subscription_status ?? "No plan assigned";
+  }
+}
+
 const navigation: { section: string; items: { label: View; icon: typeof MessageCircle }[] }[] = [
   { section: "Workspace", items: [{ label: "Overview", icon: LayoutDashboard }] },
   {
@@ -135,6 +179,9 @@ const navigation: { section: string; items: { label: View; icon: typeof MessageC
     section: "Account",
     items: [
       { label: "Profile", icon: UserRound },
+      { label: "Team", icon: Users },
+      { label: "Usage", icon: Activity },
+      { label: "Billing", icon: CreditCard },
       { label: "Settings", icon: SettingsIcon },
     ],
   },
@@ -186,6 +233,7 @@ export default function App() {
   const [tenantError, setTenantError] = useState("");
   const [tenantPlan, setTenantPlan] = useState<TenantPlan | null>(null);
   const [tenantPlanLoading, setTenantPlanLoading] = useState(false);
+  const [metaAllowance, setMetaAllowance] = useState<MetaAllowance | null>(null);
   const [platformRole, setPlatformRole] = useState<string | null>(null);
   const [view, setView] = useState<View>("Overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -252,6 +300,7 @@ export default function App() {
   const [campaignTemplate, setCampaignTemplate] = useState("");
   const [campaignVariableValues, setCampaignVariableValues] = useState<Record<string, string>>({});
   const [campaignContacts, setCampaignContacts] = useState<string[]>([]);
+  const [campaignScheduledAt, setCampaignScheduledAt] = useState("");
   const [replyText, setReplyText] = useState("");
   const [pendingSendKey, setPendingSendKey] = useState<{ fingerprint: string; key: string } | null>(null);
   const [composerMode, setComposerMode] = useState<"reply" | "note">("reply");
@@ -260,9 +309,11 @@ export default function App() {
   const [consentRecordSource, setConsentRecordSource] = useState("");
   const [metaPhoneId, setMetaPhoneId] = useState("");
   const [metaWabaId, setMetaWabaId] = useState("");
+  const [metaWabaTimezone, setMetaWabaTimezone] = useState("Africa/Nairobi");
   const [metaToken, setMetaToken] = useState("");
   const [metaAppSecret, setMetaAppSecret] = useState("");
   const [metaAppSecretSaved, setMetaAppSecretSaved] = useState(false);
+  const [metaTokenSaved, setMetaTokenSaved] = useState(false);
   const [metaStatus, setMetaStatus] = useState<any>(null);
   const [metaWebhookToken, setMetaWebhookToken] = useState("");
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
@@ -357,12 +408,23 @@ export default function App() {
     });
     return () => { current = false; };
   }, [tenantId]);
+  useEffect(() => {
+    let current = true;
+    if (!supabase || !tenantId) { setMetaAllowance(null); return; }
+    supabase.rpc("tenant_meta_allowance", { p_tenant_id: tenantId }).then(({ data, error }) => {
+      if (!current) return;
+      setMetaAllowance(error ? null : data as MetaAllowance);
+    });
+    return () => { current = false; };
+  }, [tenantId]);
   const activeTenant = tenants.find((t) => t.id === tenantId);
   const isAdmin = activeTenant ? ["owner", "admin"].includes(activeTenant.role) : false;
   const canAgent = activeTenant ? ["owner", "admin", "agent"].includes(activeTenant.role) : false;
   const tierFeatureAvailable = useCallback((feature: TierFeature) => {
-    if (tenantPlanLoading || !tenantPlan || tenantPlan.subscription_status !== "active") return true;
-    return Boolean(tenantPlan.tier && tenantPlan.tier.feature_flags?.[feature] !== false);
+    if (tenantPlanLoading || !tenantPlan || !tenantPlan.tier) return true;
+    const state = tenantPlan.entitlement_state;
+    if (state && !["active", "trialing", "grace", "exempt"].includes(state)) return true;
+    return tenantPlan.tier.feature_flags?.[feature] !== false;
   }, [tenantPlan, tenantPlanLoading]);
   useEffect(() => {
     const feature = viewTierFeature[view];
@@ -425,7 +487,7 @@ export default function App() {
     if (!supabase || !tenantId) {
       overviewRequestId.current++;
       setContacts([]); setTemplates([]); setCampaigns([]); setConversations([]); setTeamMembers([]);
-      setMetaStatus(null); setMetaPhoneId(""); setMetaWabaId(""); setMetaWebhookToken(""); setApiKeys([]); setWebhooks([]); setWebhookDeliveries([]); setDailyMessages([]); setOverviewMetrics(null); setOverviewMetricsError(""); return;
+      setMetaStatus(null); setMetaPhoneId(""); setMetaWabaId(""); setMetaWabaTimezone("Africa/Nairobi"); setMetaWebhookToken(""); setApiKeys([]); setWebhooks([]); setWebhookDeliveries([]); setDailyMessages([]); setOverviewMetrics(null); setOverviewMetricsError(""); return;
     }
     setOverviewMetrics(null);
     setOverviewMetricsError("");
@@ -433,9 +495,9 @@ export default function App() {
     setLoading(true);
     const results = await Promise.all([
       supabase.from("wa_templates").select("id,meta_template_name,language_code,category,meta_status,components").eq("tenant_id", tenantId).order("meta_template_name"),
-      supabase.from("campaigns").select("id,name,status,created_at,template_id,template_parameters").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
-      supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
-      supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at").eq("tenant_id", tenantId).maybeSingle(),
+      supabase.from("campaigns").select("id,name,status,created_at,scheduled_at,template_id,template_parameters").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
+      supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts!conversations_contact_same_tenant_fk(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
+      supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at,waba_timezone,messaging_limit_tier,quality_rating").eq("tenant_id", tenantId).maybeSingle(),
       supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
     ]).catch((cause: unknown) => {
@@ -471,6 +533,7 @@ export default function App() {
     setMetaStatus(mi.data);
     setMetaPhoneId(mi.data?.phone_number_id ?? "");
     setMetaWabaId(mi.data?.waba_id ?? "");
+    setMetaWabaTimezone(mi.data?.waba_timezone ?? "Africa/Nairobi");
     setApiKeys((ak.data ?? []) as ApiKey[]);
     setWebhooks((wh.data ?? []) as TenantWebhook[]);
     const { data: deliveryRows, error: deliveryError } = await Promise.resolve(supabase.from("webhook_deliveries").select("id,webhook_id,event_type,status,attempt_count,response_status,last_error,created_at,delivered_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(50)).catch((cause: unknown) => { console.error("MobiWave WA webhook history load failed:", cause); return { data: null, error: { message: "Could not load webhook history. Refresh and try again." } }; });
@@ -482,10 +545,13 @@ export default function App() {
   }, [tenantId, user, loadContacts, loadOverviewMetrics]);
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
   useEffect(() => {
-    if (!supabase || !tenantId || !isAdmin) { setMetaAppSecretSaved(false); return; }
+    if (!supabase || !tenantId || !isAdmin) { setMetaAppSecretSaved(false); setMetaTokenSaved(false); return; }
     let active = true;
     supabase.functions.invoke("meta-config", { body: { tenant_id: tenantId, action: "status" } }).then(({ data, error }) => {
-      if (active && !error && data?.ok === true) setMetaAppSecretSaved(data.app_secret_configured === true);
+      if (active && !error && data?.ok === true) {
+        setMetaAppSecretSaved(data.app_secret_configured === true);
+        setMetaTokenSaved(data.access_token_configured === true);
+      }
     });
     return () => { active = false; };
   }, [tenantId, isAdmin]);
@@ -530,7 +596,7 @@ export default function App() {
     const start = append ? Math.max(0, limit - 100) : 0;
     const pageSize = limit - start;
     const [conversationResult] = await Promise.all([
-      supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).range(start, limit),
+      supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts!conversations_contact_same_tenant_fk(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).range(start, limit),
     ]);
     if (requestId !== inboxRequestId.current) return;
     if (conversationResult.error) { setNotice("Could not refresh the inbox. Check your connection and retry."); return; }
@@ -666,7 +732,7 @@ export default function App() {
     if (!supabase || !tenantId || !teamInviteEmail.trim()) return;
     setBusy(true); setNotice("");
     const { data, error } = await supabase.functions.invoke("team-members", {
-      body: { tenant_id: tenantId, action: "invite", email: teamInviteEmail.trim(), role: teamInviteRole },
+      body: { tenant_id: tenantId, action: "invite", email: teamInviteEmail.trim(), role: teamInviteRole, redirect_origin: window.location.origin },
     });
     setBusy(false);
     if (error || data?.error || data?.ok !== true) {
@@ -692,14 +758,19 @@ export default function App() {
   }
   async function optOut(contact: Contact) {
     if (!supabase || !confirm("Suppress " + (contact.display_name || contact.phone_e164) + " from campaigns?")) return;
-    const { data, error } = await supabase.from("contacts").update({ consent_status: "opted_out", consent_source: "Suppressed by business account user", opted_out_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", contact.id).eq("tenant_id", tenantId).select("id").maybeSingle();
+    const { data, error } = await supabase.rpc("record_contact_consent", {
+      p_tenant_id: tenantId, p_contact_id: contact.id, p_status: "opted_out",
+      p_source: "Suppressed by business account user",
+    }).maybeSingle();
     setNotice(error ? error.message : data ? "Contact opted out and suppressed from campaigns." : "Contact was not found in this workspace; no changes were made."); await loadWorkspace();
   }
   async function recordOptIn(contact: Contact, event: FormEvent) {
     event.preventDefault();
     if (!supabase || !tenantId || !consentRecordSource.trim()) return;
-    const now = new Date().toISOString();
-    const { data, error } = await supabase.from("contacts").update({ consent_status: "opted_in", consent_source: consentRecordSource.trim(), consent_at: now, opted_out_at: null, updated_at: now }).eq("id", contact.id).eq("tenant_id", tenantId).select("id").maybeSingle();
+    const { data, error } = await supabase.rpc("record_contact_consent", {
+      p_tenant_id: tenantId, p_contact_id: contact.id, p_status: "opted_in",
+      p_source: consentRecordSource.trim(),
+    }).maybeSingle();
     setNotice(error ? "Could not record consent: " + error.message : data ? "Opt-in recorded and added to the consent history." : "Contact was not found in this workspace; no consent change was made.");
     setConsentTarget(""); setConsentRecordSource(""); await loadWorkspace();
   }
@@ -723,8 +794,10 @@ export default function App() {
       setNotice("Fill in every template variable before saving this campaign."); return;
     }
     const parameters = getTemplateParameters(parts, campaignVariableValues);
+    const scheduledAt = campaignScheduledAt ? new Date(campaignScheduledAt) : null;
+    if (scheduledAt && Number.isNaN(scheduledAt.getTime())) { setNotice("Choose a valid schedule date and time."); return; }
     setBusy(true);
-    const { data: campaign, error } = await supabase.from("campaigns").insert({ tenant_id: tenantId, name: campaignName.trim(), template_id: campaignTemplate, template_parameters: parameters, created_by: user.id, status: "draft" }).select("id").single();
+    const { data: campaign, error } = await supabase.from("campaigns").insert({ tenant_id: tenantId, name: campaignName.trim(), template_id: campaignTemplate, template_parameters: parameters, created_by: user.id, status: "draft", scheduled_at: scheduledAt ? scheduledAt.toISOString() : null }).select("id").single();
     if (error) { setBusy(false); setNotice(error.message); return; }
     const { error: recipientError } = await supabase.from("campaign_recipients").insert(chosen.map((contactId) => ({ tenant_id: tenantId, campaign_id: campaign.id, contact_id: contactId, status: "queued" })));
     if (recipientError) {
@@ -739,7 +812,10 @@ export default function App() {
       setCampaignName("");
       setCampaignContacts([]);
       setCampaignVariableValues({});
-      setNotice("Campaign draft created with " + chosen.length + " selected contacts. Consent is checked again immediately before sending.");
+      setCampaignScheduledAt("");
+      setNotice(scheduledAt
+        ? "Campaign scheduled for " + scheduledAt.toLocaleString() + " with " + chosen.length + " selected contacts. It will start automatically and send in batches."
+        : "Campaign draft created with " + chosen.length + " selected contacts. Consent is checked again immediately before sending.");
     }
     await loadWorkspace();
   }
@@ -797,7 +873,7 @@ export default function App() {
         baseCount().eq("status", "queued"),
         baseCount().in("status", ["failed", "outcome_unknown"]),
         client.from("campaign_recipients")
-          .select("id,error_code,error_detail,contacts(display_name,phone_e164)")
+          .select("id,error_code,error_detail,contacts!campaign_recipients_contact_same_tenant_fk(display_name,phone_e164)")
           .eq("tenant_id", tenantId).eq("campaign_id", campaign.id).in("status", ["failed", "outcome_unknown"])
           .order("updated_at", { ascending: false }).limit(5),
       ]);
@@ -898,10 +974,10 @@ export default function App() {
   }
   async function saveMeta(event: FormEvent) {
     event.preventDefault(); if (!supabase) return; setBusy(true);
-    const { data, error } = await supabase.functions.invoke("meta-config", { body: { tenant_id: tenantId, phone_number_id: metaPhoneId.trim(), waba_id: metaWabaId.trim(), access_token: metaToken.trim(), app_secret: metaAppSecret.trim() } });
+    const { data, error } = await supabase.functions.invoke("meta-config", { body: { tenant_id: tenantId, phone_number_id: metaPhoneId.trim(), waba_id: metaWabaId.trim(), waba_timezone: metaWabaTimezone.trim(), access_token: metaToken.trim(), app_secret: metaAppSecret.trim() } });
     setBusy(false);
     if (error || data?.error || data?.ok !== true) setNotice(data?.error ?? error?.message ?? "Meta credentials were not confirmed as saved. Try again.");
-    else { setMetaToken(""); setMetaAppSecret(""); setMetaAppSecretSaved(true); setNotice("Client Meta credentials encrypted and saved. Verify the connection next."); await loadWorkspace(); }
+    else { setMetaToken(""); setMetaAppSecret(""); setMetaAppSecretSaved(true); setMetaTokenSaved(true); setNotice("Client Meta credentials encrypted and saved. Verify the connection next."); await loadWorkspace(); }
   }
   async function verifyMeta() {
     if (!supabase || !tenantId) return;
@@ -1019,9 +1095,6 @@ export default function App() {
   // Public routes are available without authentication; account access starts at /login.
   const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
   if (pathname === "/pricing") return <Suspense fallback={<div className="auth-screen" role="status">Loading pricing…</div>}><PricingPage /></Suspense>;
-  if (pathname === "/billing") return <Suspense fallback={<div className="auth-screen" role="status">Loading billing…</div>}><BillingPage /></Suspense>;
-  if (pathname === "/team") return <Suspense fallback={<div className="auth-screen" role="status">Loading team…</div>}><TeamPage /></Suspense>;
-  if (pathname === "/usage") return <Suspense fallback={<div className="auth-screen" role="status">Loading usage…</div>}><UsagePage /></Suspense>;
   if (pathname === "/") return <Suspense fallback={<div className="auth-screen" role="status">Loading MobiWave WA…</div>}><LandingPage /></Suspense>;
   const knownRoute = pathname === "/login" || ["/dashboard", "/admin", "/workspace", "/settings"].some((prefix) => pathname === prefix || pathname.startsWith(prefix + "/"));
   if (!knownRoute) return <ErrorPage kind="not-found" />;
@@ -1034,7 +1107,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
       <a className="auth-back-home" href="/" aria-label="Back to MobiWave WA home"><ArrowLeft size={15}/> Back to website</a>
       <div className="auth-layout">
         <section className="auth-story">
-          <a className="auth-story-brand" href="/" aria-label="MobiWave WA home"><span className="auth-story-mark"><MessageCircle size={22} strokeWidth={2.5}/></span><span><strong>MobiWave</strong><small>WA</small></span></a>
+          <a className="auth-story-brand" href="/" aria-label="MobiWave WA home"><img src="/branding/mw-logo.svg" alt="MobiWave" /></a>
           <div className="auth-story-content">
             <div className="auth-story-kicker"><span/> WHATSAPP BUSINESS, IN ONE PLACE</div>
             <h1>Better conversations.<br/><em>Stronger relationships.</em></h1>
@@ -1057,7 +1130,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
             <div className="auth-input-wrap"><Mail size={17}/><input id="auth-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required placeholder="you@company.co.ke" /></div>
             {!forgotMode && <>
               <div className="auth-password-label"><label htmlFor="auth-password">Password</label>{authMode === "signin" && <button type="button" className="auth-text-link" onClick={() => { setForgotMode(true); setNotice(""); }}>Forgot password?</button>}</div>
-              <div className="auth-input-wrap"><LockKeyhole size={17}/><input id="auth-password" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} autoComplete={authMode === "signin" ? "current-password" : "new-password"} required placeholder={authMode === "signin" ? "Enter your password" : "At least 8 characters"} /><button type="button" className="auth-password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div>
+              <div className="auth-input-wrap"><LockKeyhole size={17}/><input id="auth-password" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} minLength={authMode === "signup" ? 8 : undefined} autoComplete={authMode === "signin" ? "current-password" : "new-password"} required placeholder={authMode === "signin" ? "Enter your password" : "At least 8 characters"} /><button type="button" className="auth-password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div>
             </>}
             <button className="auth-submit" disabled={busy}>{busy ? "Please wait…" : forgotMode ? "Send reset link" : authMode === "signin" ? "Sign in securely" : "Create account"} <ArrowUpRight size={16}/></button>
             {notice && <div className="auth-feedback" role="status">{notice}</div>}
@@ -1130,7 +1203,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
       <nav className="flex-1 overflow-y-auto px-4 pb-4" aria-label="Workspace navigation">
         {navigation.map(({ section, items }) => (
           <div key={section} className="pt-4 first:pt-2">
-            <div className="px-2 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-brand-600">{section}</div>
+            <div className="nav-heading">{section}</div>
             {items.map((item) => {
               const feature = viewTierFeature[item.label];
               const available = !feature || tierFeatureAvailable(feature);
@@ -1150,14 +1223,10 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
                 <item.icon size={18} />
                 <span>{item.label}</span>
                 {item.label === "Inbox" && unreadCount > 0 && (
-                  <span className="ml-auto min-w-[1.25rem] rounded-full bg-brand-600 px-1.5 py-0.5 text-center text-[10.5px] font-bold text-white">
-                    {unreadCount}
-                  </span>
+                  <span className="nav-count">{unreadCount}</span>
                 )}
                 {item.label === "Alerts" && notificationUnread > 0 && (
-                  <span className="ml-auto min-w-[1.25rem] rounded-full bg-warning-soft px-1.5 py-0.5 text-center text-[10.5px] font-bold text-warning">
-                    {notificationUnread}
-                  </span>
+                  <span className="nav-count is-warning">{notificationUnread}</span>
                 )}
                 {!available && <LockKeyhole className="ml-auto" size={13} aria-label="Not included in tier" />}
               </button>;
@@ -1173,15 +1242,16 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           <ArrowUpRight size={14} className="flex-none" />
         </a>}
         <a
-          href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md"
-          className="mb-2 flex items-start gap-2.5 rounded-lg border border-hairline bg-raised p-3 transition-colors hover:bg-surface"
+          href="/pricing"
+          className="upgrade-card mb-2 block rounded-xl border border-brand-100 bg-brand-50 p-3 transition-colors hover:bg-brand-100"
         >
-          <CircleHelp size={17} className="mt-0.5 flex-none text-brand-600" />
-          <span className="min-w-0 flex-1">
-            <strong className="block text-[12px] font-semibold text-text">Need a hand?</strong>
-            <span className="block text-[11px] text-text-muted">Setup and deployment guide</span>
+          <strong className="block font-display text-[13px] font-bold text-text">Upgrade to Pro</strong>
+          <span className="mt-1 block text-[11px] leading-relaxed text-text-muted">
+            Unlock more messages, advanced analytics and priority support.
           </span>
-          <ArrowUpRight size={14} className="mt-0.5 flex-none text-text-faint" />
+          <span className="btn btn-primary btn-pill mt-3 h-8 w-full text-[11.5px]">
+            Upgrade Now <ArrowUpRight size={13} />
+          </span>
         </a>
         <div className="flex items-center gap-2.5 rounded-lg border border-hairline bg-raised p-2">
           <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-brand-600 text-[12px] font-bold text-white">
@@ -1208,11 +1278,19 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
         >
           <Menu size={19} />
         </button>
-        <div className="breadcrumbs">
-          <span>{activeTenant?.name ?? "Business account"}</span>
-          <span className="crumb-sep">/</span>
-          <strong>{view}</strong>
+        <div className="topbar-search">
+          <Search size={15}/>
+          <input
+            aria-label="Search workspace"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setContactPage(0); if (view !== "Contacts") setView("Contacts"); }}
+            placeholder="Search anything…"
+          />
         </div>
+        <span className="topbar-status-pill">
+          {metaStatus?.enabled && metaStatus?.verified ? "Open conversations" : "Setup required"}
+          <strong>{unreadCount ?? 0}</strong>
+        </span>
         <div className="top-actions">
           <span className={metaStatus?.enabled && metaStatus?.verified ? "environment is-connected" : "environment is-disconnected"}>
             <span className="status-dot" /> {metaStatus?.enabled ? "WhatsApp connected" : "WhatsApp not connected"}
@@ -1220,7 +1298,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           <button type="button" className="icon-btn relative" aria-label="Open alerts" onClick={() => { setView("Alerts"); setMobileNavOpen(false); }}>
             <Bell size={17} />
             {notificationUnread > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[9px] font-bold text-white">
+              <span className="absolute right-1 top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-danger px-1 text-[8.5px] font-bold text-white">
                 {notificationUnread}
               </span>
             )}
@@ -1228,11 +1306,20 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           <button type="button" className="icon-btn" aria-label="Refresh" onClick={() => void loadWorkspace()}>
             <RefreshCw size={17} className={loading ? "spin" : ""} />
           </button>
-          <button type="button" className="mini-avatar" aria-label="Open profile" onClick={() => { setView("Profile"); setMobileNavOpen(false); }}>
-            {user.email?.slice(0, 1).toUpperCase()}
+          <button type="button" className="topbar-profile" aria-label="Open profile" onClick={() => { setView("Profile"); setMobileNavOpen(false); }}>
+            <span className="topbar-profile-copy">
+              <strong>{user.email?.split("@")[0] ?? "Account"}</strong>
+              <small className="capitalize">{activeTenant?.role ?? "Member"}</small>
+            </span>
+            <span className="mini-avatar">{user.email?.slice(0, 1).toUpperCase()}</span>
           </button>
         </div>
       </header>
+      <div className="page-crumbs" aria-label="Breadcrumb">
+        <span>Home</span>
+        <ChevronRight aria-hidden />
+        <strong>{view}</strong>
+      </div>
       {view === "Overview" && <section className="content"><Suspense fallback={<div className="panel" role="status">Loading overview…</div>}>
         <Overview
           conversations={conversations}
@@ -1252,8 +1339,8 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           ))}
           <span className="consent-summary-note">Only opted-in contacts are eligible for campaign delivery.</span>
         </div>
-        {isAdmin&&<Suspense fallback={<div className="panel" role="status">Loading contact import…</div>}><ContactCsvImport tenantId={tenantId} onImported={() => void loadWorkspace()}/></Suspense>}
-        {isAdmin&&<form className="panel form-panel" onSubmit={addContact}><h2>Add contact</h2><div className="form-grid"><div className="field"><label>Phone number (E.164) *</label><input value={contactPhone} onChange={(e)=>setContactPhone(e.target.value)} required pattern="\+[1-9][0-9]{7,14}" placeholder="+2547XXXXXXXX"/></div><div className="field"><label>Display name</label><input value={contactName} onChange={(e)=>setContactName(e.target.value)} placeholder="Customer name"/></div></div><label className="checkbox-line"><input type="checkbox" checked={contactOptIn} onChange={(e)=>setContactOptIn(e.target.checked)}/> I have verifiable permission to send WhatsApp messages to this contact.</label>{contactOptIn&&<div className="field"><label>Consent source / record *</label><input value={contactConsentSource} onChange={(e)=>setContactConsentSource(e.target.value)} required placeholder="e.g. website signup form, 2026-10-16"/></div>}<div className="form-actions"><span className="muted small">Unconfirmed contacts are not eligible for campaigns.</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add contact</button></div></form>}
+        {isAdmin&&<div className="panel-grid-2"><Suspense fallback={<div className="panel" role="status">Loading contact import…</div>}><ContactCsvImport tenantId={tenantId} onImported={() => void loadWorkspace()}/></Suspense>
+        <form className="panel form-panel" onSubmit={addContact}><h2>Add contact</h2><div className="form-grid"><div className="field"><label>Phone number (E.164) *</label><input value={contactPhone} onChange={(e)=>setContactPhone(e.target.value)} required pattern="\+[1-9][0-9]{7,14}" placeholder="+2547XXXXXXXX"/></div><div className="field"><label>Display name</label><input value={contactName} onChange={(e)=>setContactName(e.target.value)} placeholder="Customer name"/></div></div><label className="checkbox-line"><input type="checkbox" checked={contactOptIn} onChange={(e)=>setContactOptIn(e.target.checked)}/> I have verifiable permission to send WhatsApp messages to this contact.</label>{contactOptIn&&<div className="field"><label>Consent source / record *</label><input value={contactConsentSource} onChange={(e)=>setContactConsentSource(e.target.value)} required placeholder="e.g. website signup form, 2026-10-16"/></div>}<div className="form-actions"><span className="muted small">Unconfirmed contacts are not eligible for campaigns.</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add contact</button></div></form></div>}
         <div className="section-header">
           <div><h2>Contact list</h2><p>{contacts.length ? `Showing ${contactPage * 100 + 1}–${contactPage * 100 + contacts.length} of ${totalContacts} contact(s)` : `${totalContacts} contact(s)`}</p></div>
           <div className="search-field"><Search size={16}/><input aria-label="Search contacts" value={search} onChange={(e)=>{setSearch(e.target.value);setContactPage(0);}} placeholder="Search all contacts…"/></div>
@@ -1285,16 +1372,19 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
       {view === "Campaigns" && <section className="content"><PageHeading eyebrow="OUTBOUND MESSAGING" title="Campaigns" description="Campaigns use only Meta-approved templates and contacts with recorded opt-in consent."/>
         {isAdmin&&<form className="panel form-panel" onSubmit={createCampaign}>
           <h2>Create campaign</h2>
-          <div className="field"><label>Campaign name *</label><input value={campaignName} onChange={(e)=>setCampaignName(e.target.value)} required maxLength={180} placeholder="October customer update"/></div>
+          <div className="form-grid">
+            <div className="field"><label>Campaign name *</label><input value={campaignName} onChange={(e)=>setCampaignName(e.target.value)} required maxLength={180} placeholder="October customer update"/></div>
+            <div className="field"><label>Schedule (optional)</label><input type="datetime-local" value={campaignScheduledAt} onChange={(e)=>setCampaignScheduledAt(e.target.value)}/><small className="muted">Leave blank for a manual draft. Scheduled campaigns send in 10-recipient batches.</small></div>
+          </div>
           <div className="field"><label>Approved template *</label><select value={campaignTemplate} onChange={(e)=>{setCampaignTemplate(e.target.value);setCampaignVariableValues({});}} required><option value="">Choose template…</option>{approvedTemplates.map(t=><option value={t.id} key={t.id}>{t.meta_template_name} · {t.language_code}</option>)}</select>{approvedTemplates.length===0&&<small className="muted">No approved templates found. Connect Meta and sync templates in Integrations.</small>}</div>
           {unsupportedMediaHeader&&<div className="inline-notice" role="status">This template has a media header. The campaign composer currently supports text headers, body variables, and URL button variables.</div>}
           {selectedTemplateParts.length>0&&<div className="template-variable-panel"><strong>Personalize this template</strong><p>These values will be the same for every selected recipient.</p>{selectedTemplateParts.map(part=><div className="template-variable-part" key={part.componentIndex}><small>{part.type.toUpperCase()} preview</small><p>{(()=>{let placeholderIndex=0;return part.text.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,(match)=>campaignVariableValues[part.componentIndex+":"+(placeholderIndex++)]?.trim()||match);})()}</p>{part.variables.map((variable,index)=><div className="field" key={part.componentIndex+":"+index}><label>{part.type==="body"?"Body":part.type==="header"?"Header":"Button URL"} · {'{{'+variable+'}}'}</label><input required value={campaignVariableValues[part.componentIndex+":"+index]??""} onChange={(e)=>setCampaignVariableValues((values)=>({...values,[part.componentIndex+":"+index]:e.target.value}))} placeholder={'Value for '+variable}/></div>)}</div>)}</div>}
           <div className="field campaign-recipient-field"><label>Find opted-in recipients</label><p className="field-hint">Only contacts with recorded opt-in can be selected. Selected contacts stay selected as you move between pages.</p><div className="search-field"><Search size={16}/><input aria-label="Search opted-in recipients" value={search} onChange={(e)=>{setSearch(e.target.value);setContactPage(0);}} placeholder="Search name or phone"/></div><div className="contact-select">{contactsLoading?<div className="contact-search-state"><LoaderCircle size={15} className="spin"/> Loading recipients…</div>:visibleCampaignContacts.map(c=><label key={c.id} className="checkbox-line"><input type="checkbox" checked={campaignContacts.includes(c.id)} onChange={(e)=>setCampaignContacts(list=>e.target.checked?[...list,c.id]:list.filter(id=>id!==c.id))}/><span className="campaign-contact-name">{c.display_name||"Unnamed contact"}<small>{c.phone_e164}</small></span></label>)}{!contactsLoading&&visibleCampaignContacts.length===0&&<div className="contact-search-state">{search.trim()?"No opted-in contacts match this search.":"No opted-in contacts on this page."}</div>}</div><div className="pagination-controls compact-pagination"><button type="button" className="secondary-button compact" disabled={contactPage===0} onClick={()=>setContactPage(page=>Math.max(0,page-1))}>Previous</button><span>Page {contactPage+1}</span><button type="button" className="secondary-button compact" disabled={!contactHasMore} onClick={()=>setContactPage(page=>page+1)}>Next</button></div></div>
           <div className="form-actions"><span className="muted small">{campaignContacts.length} recipient(s) selected</span><button className="primary-button" disabled={busy}><Plus size={15}/> Save draft</button></div>
         </form>}
-        <div className="section-header"><div><h2>Campaign history</h2><p>Each send batch processes up to 10 recipients.</p></div></div>
-        <div className="campaign-safety-chips"><span><ShieldCheck size={12}/> Approved templates only</span><span><Users size={12}/> Opted-in audience</span><span><RefreshCw size={12}/> 10 recipients per batch</span></div>
-        <div className="source-list"><div className="source-table-head campaign-head"><span>CAMPAIGN</span><span>STATUS</span><span>CREATED</span><span/></div>{campaigns.length===0?<Empty icon={<Zap size={24}/>} title="No campaigns" text="Create a campaign draft above."/>:campaigns.map(c=><div className="source-row campaign-row" key={c.id}><div className="source-main"><div className="source-icon"><Zap size={17}/></div><div className="source-text"><button type="button" className="campaign-name-button" onClick={()=>void openCampaign(c)}>{c.name}</button><small>{templates.find(t=>t.id===c.template_id)?.meta_template_name||"Template unavailable"}</small></div></div><div><Status status={c.status}/></div><div className="source-added">{new Date(c.created_at).toLocaleDateString()}</div><div className="row-actions"><button className="secondary-button compact" onClick={()=>void openCampaign(c)}>Details</button>{isAdmin&&["draft","paused","running"].includes(c.status)&&<button className="secondary-button compact" aria-label={`${c.status==="running"?"Continue":"Send"} campaign batch: ${c.name}`} onClick={()=>void launchCampaign(c.id)} disabled={busy}>{c.status==="running"?"Continue batch":"Send batch"} <ArrowUpRight size={13}/></button>}</div></div>)}</div>
+        <div className="section-header"><div><h2>Campaign history</h2><p>Batches send automatically in groups of 10 until the campaign finishes.</p></div></div>
+        <div className="campaign-safety-chips"><span><ShieldCheck size={12}/> Approved templates only</span><span><Users size={12}/> Opted-in audience</span><span><RefreshCw size={12}/> Auto-batched sending</span></div>
+        <div className="source-list"><div className="source-table-head campaign-head"><span>CAMPAIGN</span><span>STATUS</span><span>CREATED</span><span/></div>{campaigns.length===0?<Empty icon={<Zap size={24}/>} title="No campaigns" text="Create a campaign draft above."/>:campaigns.map(c=><div className="source-row campaign-row" key={c.id}><div className="source-main"><div className="source-icon"><Zap size={17}/></div><div className="source-text"><button type="button" className="campaign-name-button" onClick={()=>void openCampaign(c)}>{c.name}</button><small>{templates.find(t=>t.id===c.template_id)?.meta_template_name||"Template unavailable"}</small></div></div><div><Status status={c.status==="draft"&&c.scheduled_at?"scheduled":c.status}/></div><div className="source-added">{c.status==="draft"&&c.scheduled_at?new Date(c.scheduled_at).toLocaleString():new Date(c.created_at).toLocaleDateString()}</div><div className="row-actions"><button className="secondary-button compact" onClick={()=>void openCampaign(c)}>Details</button>{isAdmin&&["draft","paused","running"].includes(c.status)&&<button className="secondary-button compact" aria-label={`${c.status==="running"?"Continue":"Send"} campaign batch: ${c.name}`} onClick={()=>void launchCampaign(c.id)} disabled={busy}>{c.status==="running"?"Continue batch":"Send batch"} <ArrowUpRight size={13}/></button>}</div></div>)}</div>
       </section>}
       {view === "Inbox" && <section className="content inbox-content">
         <div className="inbox-page-header"><div><h1>Inbox</h1><p>{metaStatus?.display_phone_number ? `WhatsApp conversations for ${metaStatus.display_phone_number}` : "Conversations with your WhatsApp contacts"}</p></div>{metaStatus?.enabled && <span className="inbox-number-pill"><span className="status-dot"/>{metaStatus.display_phone_number || "WhatsApp number connected"}</span>}</div>
@@ -1312,7 +1402,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
                 <select aria-label="Filter by assignee" value={conversationAssigneeFilter} onChange={e=>setConversationAssigneeFilter(e.target.value)}><option value="all">All assignments</option><option value="mine">Assigned to me</option><option value="unassigned">Unassigned</option>{teamMembers.map(member=><option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select>
               </div>
             </div>
-            {filteredConversations.length===0?<Empty icon={<MessageCircle size={22}/>} title={conversations.length?"No matching conversations":"No conversations yet"} text={conversations.length?"Try changing your search or filters.":metaStatus?.enabled?"New messages from your contacts will appear here.":"Connect your WhatsApp number to see messages here."}/>:filteredConversations.map(c=>{
+            {filteredConversations.length===0?<Empty icon={<MessageCircle size={22}/>} title={conversations.length?"No matching conversations":"No conversations yet"} text={conversations.length?"Try changing your search or filters.":isAdmin&&metaStatus?.enabled&&!metaAppSecretSaved?"This number is connected, but inbound messages are rejected until this account's Meta app secret is saved in Integrations.":metaStatus?.enabled?"New messages from your contacts will appear here.":"Connect your WhatsApp number to see messages here."}/>:filteredConversations.map(c=>{
               const assignee=teamMembers.find(member=>member.user_id===c.assigned_to);
               return <div className="conversation-row" key={c.id}>
                 <button className={selectedConversation===c.id?"conversation-item selected":"conversation-item"} onClick={()=>setSelectedConversation(c.id)}>
@@ -1353,6 +1443,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
         </div>
         <div className="integration-card" id="integration-connection">
           <div className="integration-head"><div className="integration-logo"><MessageCircle size={24}/></div><div><strong>WhatsApp Business Platform</strong><p>Official Meta Cloud API</p></div><Status status={metaStatus?.enabled&&metaStatus?.verified?"connected":metaStatus?.verified?"verified":"not connected"}/></div>
+          {isAdmin&&metaStatus&&!metaAppSecretSaved&&<div className="inline-notice" role="alert">Meta signs every webhook with this account's app secret, and inbound events are rejected without it. Save the secret below to receive messages.</div>}
           <div className="checklist">
             <SetupRow done={Boolean(metaStatus?.phone_number_id)} label="Business number details saved" detail="Phone Number ID and WABA ID are stored for this business account."/>
             <SetupRow done={metaAppSecretSaved} label="This account's Meta app secret saved" detail="Used to verify signed webhooks for this client's Meta app."/>
@@ -1364,16 +1455,52 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           {isAdmin&&<form onSubmit={saveMeta} className="integration-form">
             <h2>1. Connect your WhatsApp number</h2>
             <div className="form-grid"><div className="field"><label>Phone Number ID *</label><input value={metaPhoneId} onChange={(e)=>setMetaPhoneId(e.target.value)} required pattern="[0-9]{5,30}" placeholder="Numeric ID from Meta"/></div><div className="field"><label>WhatsApp Business Account ID *</label><input value={metaWabaId} onChange={(e)=>setMetaWabaId(e.target.value)} required pattern="[0-9]{5,30}" placeholder="Numeric WABA ID"/></div></div>
-            <div className="field"><label>Meta access token *</label><input type="password" value={metaToken} onChange={(e)=>setMetaToken(e.target.value)} required minLength={40} autoComplete="off" placeholder="Paste Meta access token"/></div>
+            <div className="field"><label htmlFor="meta-waba-timezone">Messaging-account timezone</label><input id="meta-waba-timezone" value={metaWabaTimezone} onChange={(e)=>setMetaWabaTimezone(e.target.value)} maxLength={64} placeholder="Africa/Nairobi"/><small>Used for the monthly Meta service-message allowance reset. Match the timezone shown in WhatsApp Manager.</small></div>
+            <div className="field"><label htmlFor="client-meta-access-token">Meta access token{metaTokenSaved ? "" : " *"}</label><input id="client-meta-access-token" type="password" value={metaToken} onChange={(e)=>setMetaToken(e.target.value)} required={!metaTokenSaved} minLength={metaToken ? 40 : undefined} autoComplete="off" placeholder={metaTokenSaved ? "Leave blank to keep the saved token" : "Paste Meta access token"}/><small>{metaTokenSaved ? "A token is saved for this business. Leave blank to keep it, or enter a replacement." : "Required for first setup."} The saved value is never shown again.</small></div>
             <div className="field"><label htmlFor="client-meta-app-secret">This client's Meta app secret{metaAppSecretSaved ? "" : " *"}</label><input id="client-meta-app-secret" type="password" value={metaAppSecret} onChange={(e)=>setMetaAppSecret(e.target.value)} required={!metaAppSecretSaved} minLength={metaAppSecret ? 32 : undefined} maxLength={32} pattern="[A-Fa-f0-9]{32}" autoComplete="new-password" spellCheck={false} placeholder="32-character secret from this client's Meta app"/><small>{metaAppSecretSaved ? "A secret is saved for this business. Leave blank to keep it, or enter a replacement." : "Enter the app secret from the Meta Developer app connected to this business. It is required for first setup."} The saved value is never shown again.</small></div>
             <div className="form-actions"><button className="primary-button" disabled={busy}>{busy?"Saving…":"Encrypt and save credentials"}</button><button type="button" className="secondary-button" onClick={()=>void verifyMeta()} disabled={busy}><ShieldCheck size={15}/> Verify connection</button><button type="button" className="secondary-button" onClick={()=>void syncTemplates()} disabled={busy}><RefreshCw size={15}/> Sync templates</button></div>
           </form>}
           {metaStatus?.display_phone_number&&<div className="connected-detail"><Check size={15}/> Connected number: {metaStatus.display_phone_number}{metaStatus.verified_name?" · "+metaStatus.verified_name:""}</div>}
         </div>
+        {metaAllowance?.connected && <div className="panel form-panel" id="integration-allowance">
+          <h2>Meta service-message allowance</h2>
+          <p className="muted small">
+            The first <strong>{new Intl.NumberFormat("en-KE").format(metaAllowance.free_limit ?? 1000)}</strong> delivered service messages
+            each month are free for this business phone number. Marketing, utility and authentication templates are billed from the first
+            delivered message. This allowance is separate from your MobiWave plan.
+          </p>
+          <div className="form-grid">
+            <div className="field">
+              <label>Free service messages used</label>
+              <strong>{new Intl.NumberFormat("en-KE").format(metaAllowance.free_service_used ?? 0)} / {new Intl.NumberFormat("en-KE").format(metaAllowance.free_limit ?? 1000)}</strong>
+              <small className="muted small">{new Intl.NumberFormat("en-KE").format(metaAllowance.free_service_remaining ?? 0)} free service message(s) remaining</small>
+            </div>
+            <div className="field">
+              <label>Billable delivered this month</label>
+              <strong>{new Intl.NumberFormat("en-KE").format(metaAllowance.billable_delivered ?? 0)}</strong>
+              <small className="muted small">{Object.keys(metaAllowance.billable_by_category ?? {}).length ? Object.entries(metaAllowance.billable_by_category ?? {}).map(([category, count]) => `${category}: ${new Intl.NumberFormat("en-KE").format(Number(count))}`).join(" · ") : "No billable template deliveries recorded"}</small>
+            </div>
+            <div className="field">
+              <label>Messaging limit</label>
+              <strong>{metaAllowance.messaging_limit_tier ?? "Not reported yet"}</strong>
+              <small className="muted small">Number quality: {metaAllowance.quality_rating ?? "Not reported yet"}</small>
+            </div>
+          </div>
+          <div aria-hidden style={{ height: 8, background: "var(--hairline, #e5e7eb)", borderRadius: 999, overflow: "hidden", marginTop: 8 }}>
+            <div style={{ width: `${Math.min(100, Math.round(((metaAllowance.free_service_used ?? 0) / Math.max(1, metaAllowance.free_limit ?? 1000)) * 100))}%`, height: "100%", background: "#16a34a" }} />
+          </div>
+          <p className="muted small" style={{ marginTop: 8 }}>
+            {metaAllowance.has_pricing_data === false
+              ? "No delivered message with Meta pricing details has been recorded yet. Send a test message and check again."
+              : `Resets ${metaAllowance.period_end ? new Date(metaAllowance.period_end).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" }) : "at the start of next month"} (${metaAllowance.waba_timezone ?? "Africa/Nairobi"}).`}
+            {metaAllowance.unknown_pricing ? ` ${metaAllowance.unknown_pricing} delivered message(s) did not include pricing details.` : ""}
+          </p>
+          <p className="muted small">Without a payment method on the WhatsApp Business Account, Meta stops delivery after the free service-message allowance. Keep a valid payment method in Meta Billing.</p>
+        </div>}
         <div className="panel form-panel" id="integration-webhook">
           <h2>2. Configure Meta's webhook callback</h2>
           <p className="muted small">Meta requires a callback URL and verification token. Configure these in your Meta app and subscribe to the messages field before verifying the connection. The token is stored as a hash and shown only when generated; it cannot be retrieved after leaving this screen.</p>
-          <div className="field"><label>Callback URL</label><div className="copyable-value"><code>{window.location.origin.replace(/\/$/,"")+"/api/webhooks/whatsapp"}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(window.location.origin.replace(/\/$/,"")+"/api/webhooks/whatsapp","Callback URL")}>Copy URL</button></div></div>
+          <div className="field"><label>Callback URL</label><div className="copyable-value"><code>{META_WEBHOOK_CALLBACK_URL}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(META_WEBHOOK_CALLBACK_URL,"Callback URL")}>Copy URL</button></div></div>
           <div className="field"><label>Webhook verification token</label>{metaWebhookToken?<div className="copyable-value"><code>{metaWebhookToken}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(metaWebhookToken,"Verification token")}>Copy token</button></div>:<p className="muted small">Generate this token before or after saving your Meta phone credentials. It is shown only once; copy it before leaving this screen.</p>}</div>
           {isAdmin&&<div className="form-actions"><button type="button" className="primary-button" onClick={()=>void generateMetaWebhookToken()} disabled={busy}><ShieldCheck size={15}/>{metaWebhookToken?"Generate replacement token":"Generate verification token"}</button></div>}
           <ol className="setup-steps">
@@ -1390,11 +1517,11 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           {isAdmin&&<form onSubmit={createApiKey} className="api-key-create"><div className="field"><label>Key name</label><input value={apiKeyName} onChange={(e)=>setApiKeyName(e.target.value)} required minLength={2} maxLength={120}/></div><button className="primary-button" disabled={busy}><Plus size={15}/> Create API key</button></form>}
           {newApiKey&&<div className="new-key-box"><strong>Copy your new key now</strong><code>{newApiKey}</code><button className="secondary-button" onClick={()=>void copyApiKey()}>Copy key</button><small>It will disappear if you refresh or leave this screen.</small></div>}
           <div className="api-key-list">{apiKeys.length===0?<p className="muted small">No API keys created.</p>:apiKeys.map(key=><div className="api-key-row" key={key.id}><div><strong>{key.name}</strong><code>{key.key_prefix}…</code><small>Created {new Date(key.created_at).toLocaleDateString()} · {key.last_used_at?"Last used "+new Date(key.last_used_at).toLocaleString():"Not used yet"}{key.expires_at?" · Expires "+new Date(key.expires_at).toLocaleDateString():""}</small></div><Status status={key.revoked_at?"revoked":"active"}/>{isAdmin&&!key.revoked_at&&<button className="secondary-button compact" onClick={()=>void revokeApiKey(key)}>Revoke</button>}</div>)}</div>
-          <div className="api-example"><strong>Send an approved template</strong><pre>{`POST ${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-send
-apikey: YOUR_SUPABASE_PUBLISHABLE_KEY
+          <div className="api-example"><strong>Send an approved template</strong><pre>{`POST ${window.location.origin.replace(/\/$/,"")}/api/v1/messages/send
 X-API-Key: YOUR_MOBIWAVE_API_KEY
+Idempotency-Key: YOUR_UNIQUE_REQUEST_KEY
 Content-Type: application/json
-{"to":"+2547XXXXXXXX","template_name":"approved_template","language_code":"en","components":[]}`}</pre></div>
+{"to":"+2547XXXXXXXX","template_name":"approved_template","language_code":"en","components":[]}`}</pre><small className="muted small">Use the MobiWave endpoint above. Direct Supabase function URLs are not a supported integration surface.</small></div>
         </div>}
         {tierFeatureAvailable("webhooks") && <details className="panel form-panel" id="integration-customer-webhooks">
           <summary><strong>Advanced: customer event webhooks</strong><span className="muted small"> Send MobiWave events to your own HTTPS endpoints</span></summary>
@@ -1415,12 +1542,16 @@ Content-Type: application/json
           <button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button>
         </div>
         <form className="panel form-panel profile-form" onSubmit={saveProfile}><h2>Personal details</h2><div className="field"><label>Full name</label><input value={profileName} onChange={(e)=>setProfileName(e.target.value)} maxLength={120} placeholder="Your name"/></div><div className="field"><label>Email address</label><input value={user.email ?? ""} readOnly aria-readonly="true"/><small className="muted small">Your sign-in email is managed by your authentication account.</small></div><div className="field"><label>New password <span className="muted small">(optional)</span></label><input type="password" value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} minLength={8} autoComplete="new-password" placeholder="At least 8 characters"/></div><div className="form-actions"><span className="muted small">Leave the password blank to keep it unchanged.</span><button className="primary-button" disabled={busy}>{busy?"Saving…":"Save profile"}</button></div></form><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Account security</strong><p>Use a unique password. Your profile is stored with your authenticated account and does not change workspace permissions.</p></div></div></section>}
+      {view === "Billing" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading billing…</div></section>}><BillingPage /></Suspense>}
+{view === "Team" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading team…</div></section>}><TeamPage /></Suspense>}
+{view === "Usage" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading usage…</div></section>}><UsagePage /></Suspense>}
       {view === "Settings" && <section className="content"><PageHeading eyebrow="PREFERENCES" title="Settings" description="Review your business account, plan and account access."/><div className="panel settings-panel"><div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Active business account</strong><p>{activeTenant?.name ?? "No business account selected"} · Account ID and role are managed by business account membership.</p></div><span className="fixed-setting">{activeTenant?.role ?? "Member"}</span></div>
           <div className="setting-row">
             <div className="setting-icon"><CreditCard size={19}/></div>
             <div className="setting-copy">
               <strong>{tenantPlanLoading ? "Loading plan…" : tenantPlan?.tier?.name ?? "No plan assigned"}</strong>
-              <p>{tenantPlan?.tier ? `${tenantPlan.subscription_status ?? "Agreement"} · ${tenantPlan.tier.description || "Plan details"}${tenantPlan.monthly_price_minor !== undefined ? ` · ${new Intl.NumberFormat("en-KE", { style: "currency", currency: tenantPlan.currency ?? "KES", maximumFractionDigits: 2 }).format(tenantPlan.monthly_price_minor / 100)} / month` : ""}` : "Your platform owner can confirm or update your workspace plan."}</p>
+              <p>{tenantPlanLoading ? "Checking your subscription…" : `${planStateLabel(tenantPlan)}${tenantPlan?.tier ? ` · ${tenantPlan.tier.description || "Plan details"}${tenantPlan.monthly_price_minor !== undefined ? ` · ${new Intl.NumberFormat("en-KE", { style: "currency", currency: tenantPlan.currency ?? "KES", maximumFractionDigits: 2 }).format(tenantPlan.monthly_price_minor / 100)} / month` : ""}` : " · Your platform owner can confirm or update your workspace plan."}`}</p>
+              {!tenantPlanLoading && tenantPlan?.can_send === false && <p className="field-hint">Outbound sending and campaigns are paused. Inbound messages remain available, and sending resumes once billing is updated.</p>}
               {tenantPlan?.tier && <>
                 <ul className="tenant-plan-highlights">
                   {Object.entries({ inbox: "Shared inbox", contacts: "Contact management", templates: "WhatsApp template management", campaigns: "Campaigns", api: "Developer API", webhooks: "Customer webhooks" }).map(([key, label]) => {
@@ -1548,6 +1679,6 @@ Content-Type: application/json
   </div>;
 }
 function PageHeading({eyebrow,title,description}:{eyebrow:string;title:string;description:string}) { return <div className="page-heading"><div><div className="eyebrow"><Activity size={14}/>{eyebrow}</div><h1>{title}</h1><p className="page-description">{description}</p></div></div>; }
-function Status({status}:{status:string}) { const s=status.toLowerCase(); const tone=["approved","indexed","completed","accepted","delivered","read","connected","opted_in","sent","verified"].includes(s)?"success":["failed","rejected","opted_out","paused"].includes(s)?"danger":["needs_review","suggested","pending","running","queued","processing","outcome_unknown","unknown","not connected","draft"].includes(s)?"warning":"neutral"; return <span className={"status-pill "+tone}><span/>{status.replaceAll("_"," ")}</span>; }
+function Status({status}:{status:string}) { const s=status.toLowerCase(); const tone=["approved","indexed","completed","accepted","delivered","read","connected","opted_in","sent","verified"].includes(s)?"success":["failed","rejected","opted_out","paused"].includes(s)?"danger":["needs_review","suggested","pending","running","queued","processing","outcome_unknown","unknown","not connected","draft","scheduled"].includes(s)?"warning":"neutral"; return <span className={"status-pill "+tone}><span/>{status.replaceAll("_"," ")}</span>; }
 function Empty({icon,title,text}:{icon:ReactNode;title:string;text:string}) { return <div className="empty-state">{icon}<strong>{title}</strong><span>{text}</span></div>; }
 function SetupRow({done=false,label,detail}:{done?:boolean;label:string;detail:string}) { return <div className="setup-row"><div className={done?"setup-check done":"setup-check"}>{done?<Check size={15}/>:<span/>}</div><div><strong>{label}</strong><p>{detail}</p></div><span className={done?"setup-status complete":"setup-status"}>{done?"Done":"Pending"}</span></div>; }

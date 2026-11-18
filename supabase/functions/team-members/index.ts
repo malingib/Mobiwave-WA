@@ -1,6 +1,14 @@
 import { requireUser, requireTenantRole } from "../_shared/auth.ts";
 import { corsHeaders, json, errorMessage, readRequestJson } from "../_shared/cors.ts";
 
+function inviteRedirectUrl(requested: unknown) {
+  const configured = (Deno.env.get("INVITE_REDIRECT_ORIGINS") ?? "https://wap.mobiwave.co.ke,http://localhost:5173")
+    .split(",").map((value) => value.trim().replace(/\/$/, "")).filter(Boolean);
+  const origin = typeof requested === "string" ? requested.trim().replace(/\/$/, "") : "";
+  const safe = configured.includes(origin) ? origin : configured[0];
+  return safe + "/login";
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
@@ -34,7 +42,7 @@ Deno.serve(async (request) => {
       if (!targetUser) {
         const { data, error } = await auth.admin.auth.admin.inviteUserByEmail(email, {
           data: { invited_to_tenant: tenantId },
-          redirectTo: "https://wap.mobiwave.co.ke/login",
+          redirectTo: inviteRedirectUrl(body.redirect_origin),
         });
         if (error) {
           // A concurrent signup/invite can create the Auth user after the lookup.

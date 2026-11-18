@@ -24,7 +24,7 @@ Team invitations use Supabase Auth `inviteUserByEmail`. Configure a production S
 
 Save, then test email/password sign-up and sign-in on the production dashboard. Do not add broad wildcard domains.
 
-Live config was updated on 2026-11-13 to use `https://wap.mobiwave.co.ke` as both Site URL and the only redirect pattern, matching the active CORS origin and invitation callback. Email confirmation is required. Leaked-password protection remains disabled: the Management API returned HTTP 402 when enabling it, so revisit it if the project plan/configuration changes. Invitation SMTP and acceptance still need a controlled test.
+Live config was updated on 2026-11-13 to use `https://wap.mobiwave.co.ke` as both Site URL and the only redirect pattern, matching the invitation callback. Edge Functions answer CORS with `Access-Control-Allow-Origin: *` so local development origins such as `http://localhost:5173` can call the same authenticated endpoints; authorization comes from the bearer token, not from CORS. Email confirmation is required. Leaked-password protection remains disabled: the Management API returned HTTP 402 when enabling it, so revisit it if the project plan/configuration changes. Invitation SMTP and acceptance still need a controlled test.
 
 ## 2. Supabase Edge Function secrets
 
@@ -71,7 +71,7 @@ The 18 tenant-matching foreign keys are now validated in production (`pg_constra
 1. In Meta for Developers, select the correct app and add/configure the WhatsApp product.
 2. Use the intended WhatsApp Business Account (WABA), phone number ID, and a long-lived/system-user access token with only the required permissions.
 3. In the Meta app's Webhooks product, configure the callback URL above and the workspace verification token shown in Integrations. Subscribe to WhatsApp `messages` events (and `message_template_status_update` if template review updates are needed).
-4. In each client's dashboard → Integrations, enter its phone number ID, WABA ID, access token, and Meta app secret. Verify the connection; MobiWave checks the phone number and subscribes the app to that WABA through `POST /{WABA-ID}/subscribed_apps`. The access token must have the required WhatsApp Business Management permission.
+4. In each client's dashboard → Integrations, enter its phone number ID, WABA ID, access token, and Meta app secret. Verify the connection; MobiWave checks the phone number and subscribes the app to that WABA through `POST /{WABA-ID}/subscribed_apps`. The access token must have the required WhatsApp Business Management permission. Messaging is only enabled when the app secret is saved, because Meta signs every webhook with it and unsigned deliveries are rejected; an existing access token can be kept by leaving the token field blank when only the secret needs saving.
 5. Test only with a Meta-authorized recipient by sending a WhatsApp message to the connected Cloud API business number. Confirm the inbound message appears in Inbox, then verify outbound template sends and delivered/read/failed status updates.
 
 Do not run campaigns until the Meta credentials, webhook signature verification, approved templates, and consent records have all been checked.
@@ -82,6 +82,7 @@ Supabase Cron is configured as the scheduler for both webhook workers. The last 
 
 - `mobiwave-webhook-worker` → `/functions/v1/webhook-worker`
 - `mobiwave-meta-webhook-worker` → `/functions/v1/meta-webhook-worker`
+- `mobiwave-campaign-worker` → `/functions/v1/campaign-worker`
 
 The worker endpoints authenticate internal calls with `INTERNAL_FUNCTION_TOKEN`. The token is stored in Supabase Vault and the Edge Function environment; never expose it in source control or client code. GitHub Actions does not schedule or invoke either worker.
 
@@ -107,7 +108,7 @@ Database acceptance tests on 2026-11-03 verified customer-delivery first claim, 
 
 ## Known scope limits
 
-- Campaigns do not auto-launch at a scheduled time or drain their queue in the background; an operator resumes each bounded batch. A batch processes at most ten recipients and yields after 90 seconds to stay below the Edge Function request timeout.
+- Campaigns start automatically when a `scheduled_at` time is set, and a running campaign continues in ten-recipient batches through the one-minute `campaign-worker` schedule. Each invocation still yields after 90 seconds to stay below the Edge Function request timeout. Campaign launch, send, and the worker accept the internal scheduler token in addition to user sessions; all other request validation (plan, consent, approved template, 24-hour window, idempotency) is unchanged.
 - Unknown Meta send outcomes require manual review and must not be retried automatically.
 - Media previews are limited to 8 MB per attachment.
 - Pricing cards open an email enquiry and remain indicative. The platform-owner console supports configurable KES/USD tiers, per-tier feature flags, client billing profiles, manually recorded agreements, invoices that can be printed/saved as PDF, external payment records with audited reversals, and voiding unpaid invoices. There is no payment gateway, invoice-email delivery, automated renewal, tax calculation, or customer billing portal. Active tier assignments enforce configured capabilities and team/message limits; agreement status alone does not suspend or unlock a workspace. Confirm contract prices and tax treatment before issuing invoices.

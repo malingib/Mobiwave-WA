@@ -14,33 +14,41 @@ Deno.serve(async (request) => {
 
     if (body.action === "status") {
       const { data, error } = await auth.admin.from("meta_integrations")
-        .select("encrypted_app_secret")
+        .select("encrypted_app_secret,encrypted_access_token")
         .eq("tenant_id", tenantId)
         .maybeSingle();
       if (error) throw error;
-      return json({ ok: true, app_secret_configured: Boolean(data?.encrypted_app_secret) });
+      return json({ ok: true, app_secret_configured: Boolean(data?.encrypted_app_secret), access_token_configured: Boolean(data?.encrypted_access_token) });
     }
 
     const phoneNumberId = String(body.phone_number_id ?? "").trim();
     const wabaId = String(body.waba_id ?? "").trim();
     const token = String(body.access_token ?? "").trim();
     const appSecret = String(body.app_secret ?? "").trim();
-    if (!/^\d{5,30}$/.test(phoneNumberId) || !/^\d{5,30}$/.test(wabaId) || token.length < 40 || token.length > 5000) {
-      return json({ error: "Provide the Meta phone number ID, WhatsApp Business Account ID and a valid access token." }, 400);
+    if (!/^\d{5,30}$/.test(phoneNumberId) || !/^\d{5,30}$/.test(wabaId)) {
+      return json({ error: "Provide the Meta phone number ID and WhatsApp Business Account ID." }, 400);
+    }
+    if (token && (token.length < 40 || token.length > 5000)) {
+      return json({ error: "Provide a valid Meta access token." }, 400);
     }
     if (appSecret && !/^[a-f0-9]{32}$/i.test(appSecret)) {
       return json({ error: "The Meta app secret must be 32 hexadecimal characters." }, 400);
     }
     const { data: existing, error: existingError } = await auth.admin.from("meta_integrations")
-      .select("encrypted_app_secret")
+      .select("encrypted_access_token,encrypted_app_secret")
       .eq("tenant_id", tenantId)
       .maybeSingle();
     if (existingError) throw existingError;
+    // Saving only the app secret is a normal repair step, so a stored access
+    // token may be reused instead of forcing the token to be pasted again.
+    if (!token && !existing?.encrypted_access_token) {
+      return json({ error: "Enter this client's Meta access token to complete setup." }, 400);
+    }
     if (!appSecret && !existing?.encrypted_app_secret) {
       return json({ error: "Enter this client's Meta app secret to complete setup." }, 400);
     }
     const [encryptedToken, encryptedAppSecret] = await Promise.all([
-      encryptToken(token),
+      token ? encryptToken(token) : Promise.resolve(existing?.encrypted_access_token as string),
       appSecret ? encryptToken(appSecret) : Promise.resolve(existing?.encrypted_app_secret as string),
     ]);
     const { error } = await auth.admin.from("meta_integrations").upsert({

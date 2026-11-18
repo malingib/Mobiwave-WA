@@ -43,23 +43,6 @@ function ChartTooltip({ active, payload, label }: any) {
 
 const STATUS_COLORS: Record<string, string> = { open: "#009966", pending: SERIES_3, resolved: SERIES_1 };
 
-/* Compact 7/14 day sparkline used inside the KPI cards. */
-function Sparkline({ data, dataKey, color }: { data: DailyMessagePoint[]; dataKey: "inbound" | "outbound"; color: string }) {
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-        <defs>
-          <linearGradient id={"spark-" + dataKey} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={0.22} />
-            <stop offset="100%" stopColor={color} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <Area type="monotone" dataKey={dataKey} stroke={color} strokeWidth={1.6} fill={"url(#spark-" + dataKey + ")"} isAnimationActive={false} />
-      </AreaChart>
-    </ResponsiveContainer>
-  );
-}
-
 export default function Overview({
   conversations,
   dailyMessages,
@@ -117,58 +100,43 @@ export default function Overview({
 
   return (
     <div className="overview-page flex flex-col gap-5">
-      <div className="overview-intro flex flex-wrap items-end justify-between gap-3">
+      <div className="overview-intro">
         <div>
-          <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-brand-600">Workspace overview</span>
-          <h1 className="font-display text-[22px] font-semibold leading-tight tracking-[-0.035em] text-text">Your messaging at a glance</h1>
-          <p className="mt-1 text-[12.5px] text-text-muted">A live view of conversations, audience readiness and WhatsApp activity.</p>
-        </div>
-        <div className="flex items-center gap-2 rounded-lg border border-hairline bg-surface px-3 py-2 text-[11px] font-medium text-text-muted">
-          <span className={"h-1.5 w-1.5 rounded-full " + (whatsappConnected ? "bg-success" : "bg-warning")} />
-          {whatsappConnected ? "WhatsApp connected" : "WhatsApp setup required"}
+          <span className="eyebrow">Workspace overview</span>
+          <h1>Your messaging at a glance</h1>
+          <p>A live view of conversations, audience readiness and WhatsApp activity.</p>
         </div>
       </div>
       {/* KPI row */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
-          label="Messages · last 14 days"
+          label="Messages"
           value={metrics ? stats.messages14d.toLocaleString() : "—"}
-          hint={metrics ? `${stats.inbound} inbound · ${stats.outbound} outbound` : "Workspace metrics unavailable"}
-          icon={<MessageCircle size={13} />}
-          trend={<Sparkline data={dailyMessages} dataKey="inbound" color={SERIES_1} />}
+          hint={metrics ? `Last 14 days · ${stats.inbound} in / ${stats.outbound} out` : "Workspace metrics unavailable"}
+          icon={<MessageCircle size={20} />}
+          tone="brand"
         />
         <KpiCard
           label="Open conversations"
           value={metrics ? String(stats.open) : "—"}
-          delta={stats.unread ? `${stats.unread} unread` : "All read"}
-          deltaTone={stats.unread ? "negative" : "positive"}
           hint={metrics ? `${stats.pending} pending · ${stats.resolved} resolved` : "Workspace metrics unavailable"}
-          icon={<Inbox size={13} />}
-        >
-          <button className="text-[11.5px] font-medium text-brand-700 hover:text-brand-800" onClick={() => onNavigate("Inbox")}>
-            Open inbox
-          </button>
-        </KpiCard>
+          icon={<Inbox size={20} />}
+          tone="warning"
+        />
         <KpiCard
           label="Opted-in contacts"
           value={metrics ? stats.optedIn.toLocaleString() : "—"}
           hint={metrics ? `${optInShare}% of ${contactTotal} contact(s)` : "Workspace metrics unavailable"}
-          icon={<Users size={13} />}
-        >
-          <div className="h-1.5 w-20 overflow-hidden rounded-full bg-text-faint" aria-hidden>
-            <div className="h-full rounded-full bg-brand-600" style={{ width: `${optInShare}%` }} />
-          </div>
-        </KpiCard>
+          icon={<Users size={20} />}
+          tone="success"
+        />
         <KpiCard
           label="Unfinished campaigns"
           value={metrics ? stats.unfinishedCampaigns.toLocaleString() : "—"}
-          hint={metrics ? "Draft, scheduled, queued, running or paused" : "Workspace metrics unavailable"}
-          icon={<Zap size={13} />}
-        >
-          <button className="text-[11.5px] font-medium text-brand-700 hover:text-brand-800" onClick={() => onNavigate("Campaigns")}>
-            Open campaigns
-          </button>
-        </KpiCard>
+          hint={metrics ? "Draft, scheduled or running" : "Workspace metrics unavailable"}
+          icon={<Zap size={20} />}
+          tone="danger"
+        />
       </div>
 
       {/* Charts row */}
@@ -356,6 +324,7 @@ export default function Overview({
           </WidgetCard>
 
           <WidgetCard
+            className="readiness-card"
             title="Messaging readiness"
             subtitle="What is ready right now"
             action={
@@ -364,11 +333,34 @@ export default function Overview({
               </button>
             }
           >
-            <div className="flex flex-col gap-1.5">
-              <SetupRow done={whatsappConnected} label="WhatsApp number connected" detail={metaStatus?.display_phone_number || "Add Meta credentials to connect a number."} />
-              <SetupRow done={stats.approvedTemplates > 0} label="Approved templates synced" detail={`${stats.approvedTemplates} available for campaigns.`} />
-              <SetupRow done={stats.optedIn > 0} label="Opted-in audience recorded" detail={`${stats.optedIn} contact(s) eligible.`} />
-            </div>
+            {(() => {
+              const ready = [whatsappConnected, stats.approvedTemplates > 0, stats.optedIn > 0].filter(Boolean).length;
+              const pct = Math.round((ready / 3) * 100);
+              const circumference = 2 * Math.PI * 46;
+              return (
+                <div className="readiness-body">
+                  <div className="readiness-ring">
+                    <svg viewBox="0 0 110 110" aria-hidden>
+                      <circle cx="55" cy="55" r="46" fill="none" stroke="rgba(255,255,255,.25)" strokeWidth="7" />
+                      <circle
+                        cx="55" cy="55" r="46" fill="none" stroke="#fff" strokeWidth="7" strokeLinecap="round"
+                        strokeDasharray={`${(pct / 100) * circumference} ${circumference}`}
+                        transform="rotate(-90 55 55)"
+                      />
+                    </svg>
+                    <div className="readiness-ring-label">
+                      <strong>{pct}%</strong>
+                      <span>{ready} of 3 ready</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <SetupRow done={whatsappConnected} label="WhatsApp number connected" detail={metaStatus?.display_phone_number || "Add Meta credentials to connect a number."} />
+                    <SetupRow done={stats.approvedTemplates > 0} label="Approved templates synced" detail={`${stats.approvedTemplates} available for campaigns.`} />
+                    <SetupRow done={stats.optedIn > 0} label="Opted-in audience recorded" detail={`${stats.optedIn} contact(s) eligible.`} />
+                  </div>
+                </div>
+              );
+            })()}
           </WidgetCard>
         </div>
       </div>

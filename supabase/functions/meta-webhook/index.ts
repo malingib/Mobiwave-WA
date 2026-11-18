@@ -38,10 +38,22 @@ async function hasValidClientSignature(rawBody: string, signature: string | null
   for (const result of lookups) for (const row of result.data ?? []) {
     if (row.encrypted_app_secret) encryptedSecrets.add(String(row.encrypted_app_secret));
   }
-  for (const encryptedSecret of encryptedSecrets) {
-    const secret = await decryptToken(encryptedSecret);
+  const candidateSecrets: string[] = [];
+  for (const encryptedSecret of encryptedSecrets) candidateSecrets.push(await decryptToken(encryptedSecret));
+  // A platform-level secret keeps webhook delivery working for the platform's
+  // own Meta app when a workspace has not saved a client app secret yet.
+  const platformSecret = Deno.env.get("META_APP_SECRET")?.trim();
+  if (platformSecret) candidateSecrets.push(platformSecret);
+  for (const secret of candidateSecrets) {
     if (await verifyMetaSignature(rawBody, signature, secret)) return true;
   }
+  console.error("Rejected Meta webhook signature.", {
+    signature_provided: Boolean(signature),
+    phone_number_ids: [...phoneNumberIds],
+    waba_ids: [...wabaIds],
+    stored_app_secrets: encryptedSecrets.size,
+    platform_secret_configured: Boolean(platformSecret),
+  });
   return false;
 }
 
@@ -55,7 +67,12 @@ Deno.serve(async (request) => {
     const legacyExpected = Deno.env.get("META_WEBHOOK_VERIFY_TOKEN");
     const tokenHash = token ? await sha256(token) : "";
     const { data: matchingTenant } = tokenHash ? await admin.from("meta_integrations").select("tenant_id").eq("webhook_verify_token_hash", tokenHash).limit(1).maybeSingle() : { data: null };
-    if (mode === "subscribe" && challenge && ((matchingTenant && tokenHash) || (legacyExpected && token === legacyExpected))) return new Response(challenge, { status: 200, headers: { "Content-Type": "text/plain" } });
+    if (mode === "subscribe" && challenge && ((matchingTenant && tokenHash) || (legacyExpected && token === legacyExpected))) {
+      if (matchingTenant?.tenant_id) {
+        await admin.from("meta_integrations").update({ webhook_verified_at: new Date().toISOString() }).eq("tenant_id", matchingTenant.tenant_id);
+      }
+      return new Response(challenge, { status: 200, headers: { "Content-Type": "text/plain" } });
+    }
     return new Response("Forbidden", { status: 403 });
   }
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);

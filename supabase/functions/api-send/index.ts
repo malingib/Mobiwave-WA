@@ -116,16 +116,27 @@ Deno.serve(async (request) => {
     const { data: quotaAllowed, error: quotaError } = await admin.rpc("claim_monthly_message_quota", {
       p_tenant_id: tenantId, p_attempt_id: claimed.id, p_month_start: monthStart.toISOString().slice(0, 10),
     });
-    if (quotaError || quotaAllowed !== true) {
-      const limited = !quotaError;
+    if (quotaError) {
+      // Nothing reached Meta, so the claimed key must stay usable. Keeping the
+      // attempt as "rejected" would make the documented same-key retry replay a
+      // 502 even though no message was ever submitted.
+      const { error: releaseError } = await admin.from("outbound_send_attempts").delete().eq("id", claimed.id).eq("tenant_id", tenantId);
+      console.error("Atomic monthly quota check failed:", quotaError.code, releaseError?.code ?? "released");
+      return json({
+        error: releaseError
+          ? "Usage limits could not be verified and the send attempt could not be released. No message was submitted; use a new idempotency key."
+          : "Usage limits could not be verified. No message was submitted; retry with the same idempotency key.",
+        status: "not_submitted",
+      }, 503);
+    }
+    if (quotaAllowed !== true) {
       await admin.from("outbound_send_attempts").update({
         status: "rejected",
-        error_code: limited ? "monthly_limit_reached" : "usage_check_unavailable",
-        error_detail: limited ? "Workspace monthly message limit reached before provider submission." : "Usage limits could not be verified; provider submission was not attempted.",
+        error_code: "monthly_limit_reached",
+        error_detail: "Workspace monthly message limit reached before provider submission.",
         updated_at: new Date().toISOString(),
-      }).eq("id", claimed.id).eq("status", "submitting");
-      if (quotaError) console.error("Atomic monthly quota check failed:", quotaError.code);
-      return json({ error: limited ? "This workspace has reached its configured monthly message limit." : "Usage limits could not be verified. No message was submitted; retry with the same idempotency key.", status: limited ? "rejected" : "not_submitted" }, limited ? 429 : 503);
+      }).eq("id", claimed.id).eq("tenant_id", tenantId).eq("status", "submitting");
+      return json({ error: "This workspace has reached its configured monthly message limit." }, 429);
     }
 
     let response: Response;

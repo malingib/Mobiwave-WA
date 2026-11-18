@@ -1,353 +1,276 @@
-import { useEffect, useState } from "react";
-import { Activity, TrendingUp, AlertTriangle, Clock } from "lucide-react";
-import { supabase } from "./lib/supabase";
-import { MarketingFooter, MarketingNav, SectionHeading } from "./components/MarketingChrome";
+import React, { useState, useEffect } from 'react';
+import { HardDrive, Megaphone, MessageSquare, Send } from 'lucide-react';
+import { supabase as supabaseClient } from './lib/supabase';
+import { MarketingChrome } from './components/MarketingChrome';
+import { Empty, KpiCard } from './components/ui';
 
-type UsageData = {
-  daily_messages: Array<{
-    date: string;
-    count: number;
-  }>;
-  monthly_stats: {
-    total_messages: number;
-    remaining_messages: number;
-    daily_average: number;
-    days_remaining: number;
-  };
-  alerts: Array<{
-    id: string;
-    type: "warning" | "info";
-    message: string;
-    timestamp: string;
-  }>;
-};
+const supabase = supabaseClient!;
 
-type PlanLimit = {
-  monthly_message_limit: number;
-  current_usage: number;
-  usage_percentage: number;
-  days_remaining: number;
-};
+interface UsageStat {
+  id: string;
+  period_start: string;
+  period_end: string;
+  messages_sent: number;
+  messages_received: number;
+  campaigns_launched: number;
+  templates_created: number;
+  meta_cost: number;
+  storage_used: number;
+  storage_limit: number;
+}
 
-export default function UsagePage() {
-  const [usageData, setUsageData] = useState<UsageData | null>(null);
-  const [planLimit, setPlanLimit] = useState<PlanLimit | null>(null);
+interface MetaAllowance {
+  meta_allowance_remaining: number;
+  meta_allowance_reset_date: string;
+  meta_allowance_used: number;
+  meta_allowance_limit: number;
+}
+
+const UsagePage: React.FC = () => {
+  const [loading, setLoading] = useState(true);
+  const [usageStats, setUsageStats] = useState<UsageStat[]>([]);
+  const [metaAllowance, setMetaAllowance] = useState<MetaAllowance | null>(null);
+  const [selectedPeriod, setSelectedPeriod] = useState('30d');
+  const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     fetchUsageData();
-  }, []);
+  }, [selectedPeriod]);
 
   const fetchUsageData = async () => {
     try {
-      // Fetch daily message data
-      const { data: dailyMessages, error: dailyError } = await (supabase ? supabase
-        .from("daily_message_stats")
-        .select("date, count")
-        .order("date", { ascending: false })
-        .limit(30) : { data: [], error: null });
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) throw authError;
 
-      if (dailyError) throw dailyError;
-
-      // Fetch monthly stats
-      const { data: monthlyStats, error: monthlyError } = await (supabase ? supabase
-        .from("monthly_usage_stats")
-        .select("*")
-        .eq("tenant_id", "current_tenant_id") // Replace with actual tenant ID
-        .single() : { data: null, error: null });
-
-      if (monthlyError) throw monthlyError;
-
-      // Fetch plan information
-      const { data: planData, error: planError } = await (supabase ? supabase
-        .from("platform_billing_tiers")
-        .select("monthly_message_limit")
-        .eq("slug", "current_plan_slug") // Replace with actual plan slug
-        .single() : { data: null, error: null });
-
-      if (planError) throw planError;
-
-      // Calculate usage percentage and days remaining
-      const currentUsage = monthlyStats?.total_messages || 0;
-      const monthlyLimit = planData?.monthly_message_limit || 0;
-      const usagePercentage = monthlyLimit > 0 ? (currentUsage / monthlyLimit) * 100 : 0;
-      const daysRemaining = 30 - (monthlyStats?.days_used || 0);
-
-      setUsageData({
-        daily_messages: dailyMessages || [],
-        monthly_stats: {
-          total_messages: currentUsage,
-          remaining_messages: Math.max(0, monthlyLimit - currentUsage),
-          daily_average: currentUsage / Math.max(1, daysRemaining),
-          days_remaining: daysRemaining
-        },
-        alerts: generateAlerts(usagePercentage, daysRemaining)
+      // Get usage statistics
+      const { data: statsData, error: statsError } = await supabase.functions.invoke('unified-api', {
+        body: {
+          action: 'usage',
+          tenant_id: (user as any).tenant_id ?? '' // tenant id from user context
+        }
       });
 
-      setPlanLimit({
-        monthly_message_limit: monthlyLimit,
-        current_usage: currentUsage,
-        usage_percentage: usagePercentage,
-        days_remaining: daysRemaining
-      });
+      if (statsError) throw statsError;
 
-    } catch (err) {
-      console.error("Error fetching usage data:", err);
+      setUsageStats(statsData.stats || []);
+
+      // Get Meta allowance
+      const { data: tenantData, error: tenantError } = await supabase
+        .from('tenants')
+        .select(`
+          *,
+          tenant_meta_allowance (
+            meta_allowance_remaining,
+            meta_allowance_reset_date,
+            meta_allowance_used,
+            meta_allowance_limit
+          )
+        `)
+        .eq('owner_id', user.id)
+        .single();
+
+      if (tenantError) throw tenantError;
+
+      setMetaAllowance(tenantData.tenant_meta_allowance);
+    } catch (error) {
+      console.error('Error fetching usage data:', error);
     } finally {
-      // setLoading(false);
+      setLoading(false);
     }
-  };
-
-  const generateAlerts = (usagePercentage: number, daysRemaining: number) => {
-    const alerts = [];
-
-    if (usagePercentage > 90) {
-      alerts.push({
-        id: "high-usage",
-        type: "warning" as const,
-        message: "You've used 90% of your monthly message limit. Consider upgrading your plan.",
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    if (daysRemaining <= 3) {
-      alerts.push({
-        id: "near-end-month",
-        type: "info" as const,
-        message: `Your monthly reset is in ${daysRemaining} day${daysRemaining > 1 ? 's' : ''}.`,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    if (usagePercentage > 75 && usagePercentage <= 90) {
-      alerts.push({
-        id: "moderate-usage",
-        type: "info" as const,
-        message: "You're approaching your monthly message limit.",
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    return alerts;
-  };
-
-  const getUsageColor = (percentage: number) => {
-    if (percentage >= 90) return "text-red-600";
-    if (percentage >= 75) return "text-yellow-600";
-    return "text-green-600";
-  };
-
-  const getUsageBgColor = (percentage: number) => {
-    if (percentage >= 90) return "bg-red-100";
-    if (percentage >= 75) return "bg-yellow-100";
-    return "bg-green-100";
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-KE", {
-      month: "short",
-      day: "numeric"
+    return new Date(dateString).toLocaleDateString('en-KE', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
   };
 
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-KE', {
+      style: 'currency',
+      currency: 'KES'
+    }).format(amount);
+  };
+
+  const formatNumber = (num: number) => {
+    return new Intl.NumberFormat('en-KE').format(num);
+  };
+
+  const getUsagePercentage = (used: number, total: number) => {
+    return total > 0 ? Math.round((used / total) * 100) : 0;
+  };
+
+  const getMetaProgress = () => {
+    if (!metaAllowance) return 0;
+    const used = metaAllowance.meta_allowance_used || 0;
+    const limit = metaAllowance.meta_allowance_limit || 1000;
+    return getUsagePercentage(used, limit);
+  };
+
+  const getStorageProgress = () => {
+    const latestStat = usageStats[0];
+    if (!latestStat) return 0;
+    return getUsagePercentage(latestStat.storage_used, latestStat.storage_limit);
+  };
+
+  if (loading) {
+    return (
+      <MarketingChrome>
+        <div className="content">
+          <div className="panel flex min-h-[12rem] items-center justify-center gap-2" role="status">
+            <span className="animate-spin rounded-full h-5 w-5 border-2 border-brand-200 border-t-brand-600" />
+            <span className="muted small">Loading usage data…</span>
+          </div>
+        </div>
+      </MarketingChrome>
+    );
+  }
+
+  const metaProgress = getMetaProgress();
+  const storageProgress = getStorageProgress();
+  const metaUsed = metaAllowance?.meta_allowance_used || 0;
+  const storageUsed = usageStats[0]?.storage_used || 0;
+  const storageLimit = usageStats[0]?.storage_limit || 0;
+
   return (
-    <div className="flex min-h-screen flex-col bg-surface">
-      <MarketingNav />
-
-      <main className="flex-grow">
-        <div className="container mx-auto px-4 py-12 md:py-16 lg:py-20">
-          {/* Hero Section */}
-          <SectionHeading
-            kicker="Usage Analytics"
-            title="Track your messaging performance"
-            description="Monitor your daily and monthly usage with detailed analytics and insights."
-            align="center"
-          />
-
-          {/* Usage Overview Cards */}
-          <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-xl border border-ink-200 bg-surface p-6">
-              <div className="flex items-center gap-2">
-                <Activity size={20} className="text-brand-600" />
-                <h3 className="font-medium text-ink-800">Total Messages</h3>
-              </div>
-              <p className="mt-2 text-2xl font-bold text-ink-800">
-                {planLimit?.current_usage.toLocaleString() || "0"}
-              </p>
-              <p className="text-sm text-ink-500">This month</p>
-            </div>
-
-            <div className="rounded-xl border border-ink-200 bg-surface p-6">
-              <div className="flex items-center gap-2">
-                <TrendingUp size={20} className="text-brand-600" />
-                <h3 className="font-medium text-ink-800">Remaining</h3>
-              </div>
-              <p className="mt-2 text-2xl font-bold text-ink-800">
-                {usageData?.monthly_stats.remaining_messages.toLocaleString() || "0"}
-              </p>
-              <p className="text-sm text-ink-500">This month</p>
-            </div>
-
-            <div className="rounded-xl border border-ink-200 bg-surface p-6">
-              <div className="flex items-center gap-2">
-                <Clock size={20} className="text-brand-600" />
-                <h3 className="font-medium text-ink-800">Daily Average</h3>
-              </div>
-              <p className="mt-2 text-2xl font-bold text-ink-800">
-                {Math.round(usageData?.monthly_stats.daily_average || 0).toLocaleString()}
-              </p>
-              <p className="text-sm text-ink-500">Messages/day</p>
-            </div>
-
-            <div className="rounded-xl border border-ink-200 bg-surface p-6">
-              <div className="flex items-center gap-2">
-                <AlertTriangle size={20} className="text-brand-600" />
-                <h3 className="font-medium text-ink-800">Days Left</h3>
-              </div>
-              <p className="mt-2 text-2xl font-bold text-ink-800">
-                {usageData?.monthly_stats.days_remaining || 0}
-              </p>
-              <p className="text-sm text-ink-500">In this billing cycle</p>
-            </div>
+    <MarketingChrome>
+      <div className="content">
+        <div className="page-heading">
+          <div>
+            <span className="eyebrow">Monitor</span>
+            <h1>Usage</h1>
+            <p className="page-description">Monitor messaging volume, campaigns and Meta allowance for this workspace.</p>
           </div>
-
-          {/* Usage Progress */}
-          <div className="mt-12">
-            <h3 className="text-[18px] font-bold text-ink-800 mb-6">Monthly Usage</h3>
-            <div className="rounded-xl border border-ink-200 bg-surface p-6">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm font-medium text-ink-700">
-                  {planLimit?.current_usage.toLocaleString() || "0"} of {planLimit?.monthly_message_limit.toLocaleString() || "Unlimited"} messages
-                </span>
-                <span className={`text-sm font-medium ${getUsageColor(planLimit?.usage_percentage || 0)}`}>
-                  {Math.round(planLimit?.usage_percentage || 0)}% used
-                </span>
-              </div>
-              <div className="h-3 w-full rounded-full bg-ink-100">
-                <div 
-                  className={`h-3 rounded-full ${getUsageBgColor(planLimit?.usage_percentage || 0)}`}
-                  style={{ width: `${Math.min(100, planLimit?.usage_percentage || 0)}%` }}
-                ></div>
-              </div>
-              <div className="mt-4 flex justify-between text-xs text-ink-500">
-                <span>0</span>
-                <span>50%</span>
-                <span>75%</span>
-                <span>90%</span>
-                <span>100%</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Alerts */}
-          {usageData?.alerts && usageData.alerts.length > 0 && (
-            <div className="mt-8">
-              <h3 className="text-[18px] font-bold text-ink-800 mb-4">Usage Alerts</h3>
-              <div className="space-y-3">
-                {usageData.alerts.map((alert) => (
-                  <div
-                    key={alert.id}
-                    className={`rounded-lg p-4 ${alert.type === "warning" ? "bg-red-50 border border-red-200" : "bg-blue-50 border border-blue-200"}`}
-                  >
-                    <div className="flex items-start gap-3">
-                      {alert.type === "warning" ? (
-                        <AlertTriangle size={20} className="text-red-600 mt-0.5" />
-                      ) : (
-                        <Clock size={20} className="text-blue-600 mt-0.5" />
-                      )}
-                      <div>
-                        <p className="text-sm font-medium text-ink-800">{alert.message}</p>
-                        <p className="text-xs text-ink-500 mt-1">
-                          {new Date(alert.timestamp).toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Daily Usage Chart */}
-          <div className="mt-12">
-            <h3 className="text-[18px] font-bold text-ink-800 mb-6">Daily Message Trend</h3>
-            <div className="rounded-xl border border-ink-200 bg-surface p-6">
-              <div className="h-64 flex items-end justify-between gap-2">
-                {usageData?.daily_messages.slice(0, 14).map((day, index) => {
-                  const maxValue = Math.max(...usageData.daily_messages.map(d => d.count));
-                  const height = maxValue > 0 ? (day.count / maxValue) * 100 : 0;
-                  
-                  return (
-                    <div key={index} className="flex flex-col items-center flex-1">
-                      <div
-                        className="w-full bg-brand-600 rounded-t transition-all duration-300"
-                        style={{ height: `${height}%` }}
-                      ></div>
-                      <span className="text-xs text-ink-500 mt-2">
-                        {formatDate(day.date)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Usage Tips */}
-          <div className="mt-12">
-            <SectionHeading
-              kicker="Usage Optimization Tips"
-              title="Get the most out of your messaging plan"
-              align="center"
-            />
-
-            <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              <div className="rounded-xl border border-ink-200 bg-surface p-6">
-                <h3 className="font-bold text-ink-800 mb-2">Use Templates</h3>
-                <p className="text-sm text-ink-600">
-                  Save time with reusable message templates for common responses.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-ink-200 bg-surface p-6">
-                <h3 className="font-bold text-ink-800 mb-2">Schedule Messages</h3>
-                <p className="text-sm text-ink-600">
-                  Send messages at optimal times when your audience is most responsive.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-ink-200 bg-surface p-6">
-                <h3 className="font-bold text-ink-800 mb-2">Segment Contacts</h3>
-                <p className="text-sm text-ink-600">
-                  Target specific customer groups with relevant messaging.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-ink-200 bg-surface p-6">
-                <h3 className="font-bold text-ink-800 mb-2">Track Performance</h3>
-                <p className="text-sm text-ink-600">
-                  Monitor which messages get the best response rates.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-ink-200 bg-surface p-6">
-                <h3 className="font-bold text-ink-800 mb-2">Use Analytics</h3>
-                <p className="text-sm text-ink-600">
-                  Review usage patterns to optimize your messaging strategy.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-ink-200 bg-surface p-6">
-                <h3 className="font-bold text-ink-800 mb-2">Upgrade Plan</h3>
-                <p className="text-sm text-ink-600">
-                  Upgrade when you consistently exceed your current limits.
-                </p>
-              </div>
+          <div className="flex flex-none items-center gap-2">
+            <div className="flex rounded-md border border-hairline-strong bg-raised p-0.5" role="group" aria-label="Usage period">
+              {['7d', '30d', '90d', '1y'].map((period) => (
+                <button
+                  key={period}
+                  type="button"
+                  aria-pressed={selectedPeriod === period}
+                  onClick={() => setSelectedPeriod(period)}
+                  className={
+                    'rounded px-2.5 py-1 text-[11px] font-medium transition-colors ' +
+                    (selectedPeriod === period ? 'bg-surface text-text shadow-card' : 'text-text-muted hover:text-text')
+                  }
+                >
+                  {period}
+                </button>
+              ))}
             </div>
           </div>
         </div>
-      </main>
 
-      <MarketingFooter />
-    </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="Meta messages used"
+            value={formatNumber(metaUsed)}
+            hint={`${formatNumber(metaAllowance?.meta_allowance_remaining || 0)} remaining · resets ${metaAllowance?.meta_allowance_reset_date ? formatDate(metaAllowance.meta_allowance_reset_date) : 'N/A'}`}
+            icon={<MessageSquare size={20} />}
+            tone={metaProgress >= 90 ? 'danger' : 'brand'}
+          >
+            <div className="kpi-progress" aria-hidden><span style={{ width: `${Math.min(100, metaProgress)}%` }} /></div>
+          </KpiCard>
+          <KpiCard
+            label="Storage used"
+            value={`${formatNumber(storageUsed)} MB`}
+            hint={`of ${formatNumber(storageLimit)} MB · ${storageProgress}% used`}
+            icon={<HardDrive size={20} />}
+            tone={storageProgress >= 90 ? 'danger' : 'success'}
+          >
+            <div className="kpi-progress" aria-hidden><span style={{ width: `${Math.min(100, storageProgress)}%` }} /></div>
+          </KpiCard>
+          <KpiCard
+            label="Messages sent"
+            value={formatNumber(usageStats[0]?.messages_sent || 0)}
+            hint="Total sent this period"
+            icon={<Send size={20} />}
+            tone="brand"
+          />
+          <KpiCard
+            label="Campaigns launched"
+            value={formatNumber(usageStats[0]?.campaigns_launched || 0)}
+            hint="Sent this period"
+            icon={<Megaphone size={20} />}
+            tone="warning"
+          />
+        </div>
+
+        <div className="section-header">
+          <div>
+            <h2>Detailed usage</h2>
+            <p>Per-period message, campaign and storage totals.</p>
+          </div>
+          <button type="button" className="secondary-button compact" onClick={() => setShowDetails(!showDetails)}>
+            {showDetails ? 'Hide details' : 'Show details'}
+          </button>
+        </div>
+        <div className="source-list">
+          <div className="source-table-head usage-head">
+            <span>Period</span><span>Sent</span><span>Received</span><span>Campaigns</span><span>Templates</span><span>Meta cost</span><span>Storage</span>
+          </div>
+          {usageStats.length === 0 ? (
+            <Empty icon={<MessageSquare size={22} />} title="No usage data yet" text="Usage totals will appear after your workspace sends or receives messages." />
+          ) : (
+            usageStats.map((stat) => (
+              <div className="source-row usage-row" key={stat.id}>
+                <span>{formatDate(stat.period_start)} – {formatDate(stat.period_end)}</span>
+                <strong>{formatNumber(stat.messages_sent)}</strong>
+                <strong>{formatNumber(stat.messages_received)}</strong>
+                <span>{formatNumber(stat.campaigns_launched)}</span>
+                <span>{formatNumber(stat.templates_created)}</span>
+                <span>{formatCurrency(stat.meta_cost)}</span>
+                <span>
+                  {formatNumber(stat.storage_used)} / {formatNumber(stat.storage_limit)} MB
+                  <span className="kpi-progress mt-1.5" aria-hidden>
+                    <span style={{ width: `${Math.min(100, getUsagePercentage(stat.storage_used, stat.storage_limit))}%` }} />
+                  </span>
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+
+        {showDetails && usageStats.length > 0 && (
+          <div className="panel form-panel">
+            <div className="section-header">
+              <div><h2>Period summary</h2><p>Totals across the selected reporting window.</p></div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="setup-row"><div><strong>Messages sent</strong><p>{formatNumber(usageStats.reduce((sum, stat) => sum + stat.messages_sent, 0))}</p></div></div>
+              <div className="setup-row"><div><strong>Messages received</strong><p>{formatNumber(usageStats.reduce((sum, stat) => sum + stat.messages_received, 0))}</p></div></div>
+              <div className="setup-row"><div><strong>Campaigns</strong><p>{formatNumber(usageStats.reduce((sum, stat) => sum + stat.campaigns_launched, 0))}</p></div></div>
+              <div className="setup-row"><div><strong>Meta cost</strong><p>{formatCurrency(usageStats.reduce((sum, stat) => sum + stat.meta_cost, 0))}</p></div></div>
+            </div>
+          </div>
+        )}
+
+        {(metaProgress >= 90 || storageProgress >= 90 || (metaAllowance && metaAllowance.meta_allowance_remaining <= 0)) && (
+          <div className="flex flex-col gap-3">
+            {metaAllowance && metaAllowance.meta_allowance_remaining <= 0 ? (
+              <div className="notice error">
+                <strong>Meta message allowance exceeded</strong>
+                <p>You have exceeded your monthly Meta message allowance. Upgrade your plan to continue sending messages.</p>
+              </div>
+            ) : metaProgress >= 90 ? (
+              <div className="notice error">
+                <strong>Meta message allowance almost exhausted</strong>
+                <p>You have used {metaProgress}% of your monthly Meta message allowance. Upgrade your plan to avoid service interruption.</p>
+              </div>
+            ) : null}
+            {storageProgress >= 90 && (
+              <div className="inline-notice">
+                <strong>Storage almost full</strong>
+                <p>You have used {storageProgress}% of your storage capacity. Delete unused files or upgrade your plan.</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </MarketingChrome>
   );
-}
+};
+
+export default UsagePage;

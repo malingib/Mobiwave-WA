@@ -1,95 +1,76 @@
-import { useState } from "react";
-import { ArrowRight, ArrowUpRight, Menu, MessageCircle, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { ArrowRight, ArrowUpRight, ChevronDown, Menu, X } from "lucide-react";
 
-export function BrandMark({ size = "md" }: { size?: "sm" | "md" }) {
-  const box = size === "sm" ? "h-7 w-7 rounded-md" : "h-8 w-8 rounded-lg";
-  const icon = size === "sm" ? 15 : 17;
+/** Layout wrapper for the billing/team/usage pages when shown inside the dashboard. */
+export function MarketingChrome({ children }: { children: ReactNode }) {
+  return <div className="dashboard-page">{children}</div>;
+}
+
+/** Parent-style wordmark: the official MobiWave logo in a white rounded box. */
+export function BrandLockup({ dark = false }: { dark?: boolean }) {
   return (
-    <span className={`flex ${box} items-center justify-center bg-brand-600 text-white shadow-brand`}>
-      <MessageCircle size={icon} strokeWidth={2.4} />
+    <span className={"inline-flex items-center rounded-xl bg-white px-3 py-1.5 shadow-sm " + (dark ? "ring-1 ring-white/15" : "")}>
+      <img src="/branding/mw-logo.svg" alt="MobiWave" className="h-5 w-auto" />
+      <span className="ml-2 font-sans text-[10px] font-bold tracking-wide text-brand-blue">WA</span>
     </span>
   );
 }
 
-export function BrandLockup({ size = "md" }: { size?: "sm" | "md" }) {
-  return (
-    <span className="flex items-center gap-2.5">
-      <BrandMark size={size} />
-      <span className="font-display text-[14.5px] font-bold tracking-tight text-text">
-        MobiWave<span className="ml-1 font-sans text-[10.5px] font-bold text-brand-600">WA</span>
-      </span>
-    </span>
-  );
-}
-
-type NavItem = { label: string; href: string };
+type NavItem = { label: string; href: string; hasDropdown?: boolean };
 
 const defaultNav: NavItem[] = [
-  { label: "Features", href: "/#features" },
-  { label: "Use cases", href: "/#use-cases" },
-  { label: "How it works", href: "/#how-it-works" },
+  { label: "Home", href: "/" },
   { label: "Pricing", href: "/pricing" },
-  { label: "Billing", href: "/billing" },
-  { label: "Team", href: "/team" },
-  { label: "Usage", href: "/usage" },
-  { label: "Security", href: "/#security" },
-  { label: "FAQs", href: "/#faq" },
+  { label: "Contact Us", href: "mailto:info@mobiwave.co.ke" },
 ];
 
 export function MarketingNav({ items = defaultNav, current }: { items?: NavItem[]; current?: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <header className="sticky top-0 z-40 border-b border-hairline-strong bg-surface/90 backdrop-blur-md">
-      <div className="mx-auto flex h-14 max-w-[1180px] items-center justify-between gap-4 px-5 lg:px-8">
+    <header className="absolute inset-x-0 top-0 z-40">
+      <div className="mx-auto flex h-[76px] max-w-[80rem] items-center justify-between gap-4 px-5 lg:px-8">
         <a href="/" aria-label="MobiWave WA home">
           <BrandLockup />
         </a>
 
-        <nav className="hidden items-center gap-0.5 lg:flex" aria-label="Main navigation">
+        <nav className="hidden items-center gap-6 lg:flex" aria-label="Main navigation">
           {items.map((item) => (
             <a
               key={item.label}
               href={item.href}
               aria-current={current === item.label ? "page" : undefined}
               className={
-                "rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors " +
+                "inline-flex items-center gap-1 text-[13.5px] font-medium transition-colors " +
                 (current === item.label
-                  ? "bg-raised text-text"
-                  : "text-text-muted hover:bg-raised hover:text-text")
+                  ? "text-brand-blue"
+                  : "text-[#3d4b5c] hover:text-brand-blue")
               }
             >
               {item.label}
+              {item.hasDropdown && <ChevronDown size={13} />}
             </a>
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
-          <a className="hidden rounded-md px-2.5 py-1.5 text-[13px] font-medium text-text-muted hover:text-text sm:inline-flex" href="/login">
-            Sign in
-          </a>
-          <a className="btn btn-primary btn-sm" href="/login?mode=signup">
-            Start free <ArrowUpRight size={13} />
-          </a>
-          <button
-            type="button"
-            className="icon-btn lg:hidden"
-            aria-label={open ? "Close menu" : "Open menu"}
-            aria-expanded={open}
-            onClick={() => setOpen((value) => !value)}
-          >
-            {open ? <X size={18} /> : <Menu size={18} />}
-          </button>
-        </div>
+        <button
+          type="button"
+          className="icon-btn lg:hidden"
+          aria-label={open ? "Close menu" : "Open menu"}
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? <X size={18} /> : <Menu size={18} />}
+        </button>
       </div>
 
       {open && (
-        <nav className="border-t border-hairline-strong bg-surface px-5 pb-4 pt-2 lg:hidden" aria-label="Mobile navigation">
+        <nav className="border-t border-white/20 bg-white/95 px-5 pb-4 pt-2 backdrop-blur lg:hidden" aria-label="Mobile navigation">
           {items.map((item) => (
             <a
               key={item.label}
               href={item.href}
               onClick={() => setOpen(false)}
-              className="block rounded-md px-2 py-2.5 text-[14px] font-medium text-text hover:bg-raised"
+              className="block rounded-md px-2 py-2.5 text-[14px] font-medium text-[#3d4b5c] hover:bg-white"
             >
               {item.label}
             </a>
@@ -100,13 +81,9 @@ export function MarketingNav({ items = defaultNav, current }: { items?: NavItem[
   );
 }
 
-export function Kicker({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={"inline-flex items-center gap-2 rounded-md border border-hairline-strong bg-raised px-2 py-1 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-text-muted " + className}>
-      <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
-      {children}
-    </div>
-  );
+/** Central kicker line used above section headings (no pill). */
+export function Kicker({ children }: { children: React.ReactNode }) {
+  return <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-brand-blue">{children}</div>;
 }
 
 export function SectionHeading({
@@ -116,19 +93,19 @@ export function SectionHeading({
   align = "center",
   id,
 }: {
-  kicker: string;
+  kicker?: string;
   title: React.ReactNode;
   description?: string;
   align?: "center" | "left";
   id?: string;
 }) {
   return (
-    <div className={"max-w-2xl " + (align === "center" ? "mx-auto text-center" : "")}>
-      <Kicker className={align === "center" ? "justify-center" : ""}>{kicker}</Kicker>
-      <h2 id={id} className="mt-3.5 font-display text-[clamp(1.7rem,2.8vw,2.3rem)] font-semibold leading-[1.12] tracking-[-0.03em]">
+    <div className={"max-w-3xl " + (align === "center" ? "mx-auto text-center" : "")}>
+      {kicker && <Kicker>{kicker}</Kicker>}
+      <h2 id={id} className="font-outfit mt-3 text-[clamp(1.9rem,3.4vw,3rem)] font-bold leading-[1.08] tracking-[-0.035em] text-[#0a1a25]">
         {title}
       </h2>
-      {description && <p className="mt-3 text-[14.5px] leading-relaxed text-text-muted">{description}</p>}
+      {description && <p className="mx-auto mt-4 max-w-2xl text-[15px] leading-relaxed text-[#5b6b78]">{description}</p>}
     </div>
   );
 }
@@ -140,38 +117,49 @@ export function FinalCTA({
   cta = "Get started",
   ctaHref = "/login?mode=signup",
 }: {
-  kicker: string;
+  kicker?: string;
   title: string;
   description: string;
   cta?: string;
   ctaHref?: string;
 }) {
   return (
-    <section className="mx-auto max-w-[1180px] px-5 pb-20 lg:px-8">
-      <div className="relative overflow-hidden rounded-xl bg-midnight-950 px-7 py-12 sm:px-12">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-[0.35]"
-          style={{
-            backgroundImage:
-              "linear-gradient(to right, rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)",
-            backgroundSize: "44px 44px",
-          }}
-        />
-        <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-brand-500/20 blur-3xl" />
-        <div className="relative max-w-xl">
-          <div className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-brand-300">{kicker}</div>
-          <h2 className="mt-3 font-display text-[clamp(1.6rem,2.8vw,2.2rem)] font-semibold leading-[1.14] tracking-[-0.03em] text-white">
+    <section className="bg-[#f1efff] py-20">
+      <div className="mx-auto grid max-w-[80rem] items-center gap-10 px-5 lg:grid-cols-[1fr_0.9fr] lg:px-8">
+        <div>
+          {kicker && <Kicker>{kicker}</Kicker>}
+          <h2 className="font-outfit mt-3 text-[clamp(1.9rem,3.4vw,2.8rem)] font-bold leading-[1.08] tracking-[-0.035em] text-[#0a1a25]">
             {title}
           </h2>
-          <p className="mt-3 text-[14px] leading-relaxed text-white/60">{description}</p>
-          <div className="mt-7 flex flex-wrap gap-2.5">
-            <a className="btn btn-primary" href={ctaHref}>
-              {cta} <ArrowRight size={15} />
-            </a>
-            <a className="btn border border-white/15 bg-white/5 text-white hover:bg-white/10" href="/pricing">
-              See pricing
-            </a>
+          <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-[#5b6b78]">{description}</p>
+          <a className="btn btn-primary btn-pill mt-7" href={ctaHref}>
+            {cta} <ArrowRight size={15} />
+          </a>
+        </div>
+        {/* Decorative chat mockup */}
+        <div className="rounded-2xl border border-white bg-white p-5 shadow-[0_20px_50px_-20px_rgba(89,85,209,0.25)]">
+          <div className="mb-4 flex items-center gap-2 border-b border-[#eef0f6] pb-3">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#e0e3ec]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#e0e3ec]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#e0e3ec]" />
+            <span className="ml-2 text-[11px] font-semibold text-[#5b6b78]">New conversation</span>
+          </div>
+          <div className="space-y-3">
+            <div className="w-fit max-w-[80%] rounded-2xl rounded-tl-sm bg-[#f4f7fb] px-4 py-2.5 text-[13px] text-[#3d4b5c]">
+              Hi! How can we help you today?
+            </div>
+            <div className="ml-auto w-fit max-w-[80%] rounded-2xl rounded-tr-sm bg-brand-blue px-4 py-2.5 text-[13px] text-white">
+              I'd like to know more about your service.
+            </div>
+            <div className="w-fit max-w-[80%] rounded-2xl rounded-tl-sm bg-[#f4f7fb] px-4 py-2.5 text-[13px] text-[#3d4b5c]">
+              Of course — let me connect you with the right team.
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-2 rounded-full border border-[#eef0f6] bg-[#fafbfe] px-4 py-2.5">
+            <span className="text-[12px] text-[#9aa8b2]">Type your message…</span>
+            <span className="ml-auto flex h-6 w-6 items-center justify-center rounded-full bg-brand-blue text-white">
+              <ArrowUpRight size={12} />
+            </span>
           </div>
         </div>
       </div>
@@ -179,29 +167,58 @@ export function FinalCTA({
   );
 }
 
-export function MarketingFooter({ blurb = "WhatsApp Business messaging for Kenyan teams." }: { blurb?: string }) {
+export function MarketingFooter() {
   return (
-    <footer className="border-t border-hairline-strong bg-surface">
-      <div className="mx-auto flex max-w-[1180px] flex-col gap-6 px-5 py-9 lg:flex-row lg:items-start lg:justify-between lg:px-8">
-        <div className="max-w-xs">
-          <a href="/" aria-label="MobiWave WA home">
-            <BrandLockup size="sm" />
-          </a>
-          <p className="mt-3 text-[12.5px] leading-relaxed text-text-muted">{blurb}</p>
+    <footer className="bg-white">
+      <div className="border-t border-[#edf0f6]">
+        <div className="mx-auto max-w-[80rem] px-5 py-14 lg:px-8">
+          <div className="grid gap-10 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
+            <div>
+              <BrandLockup />
+              <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-[#5b6b78]">
+                Bulk SMS, WhatsApp API, USSD, email and M-Pesa integrations for Kenyan businesses.
+              </p>
+              <a className="btn btn-primary btn-pill mt-5" href="mailto:info@mobiwave.co.ke">
+                Contact us <ArrowRight size={14} />
+              </a>
+            </div>
+            <div>
+              <h3 className="font-outfit text-[14px] font-bold text-[#0a1a25]">MobiWave</h3>
+              <ul className="mt-4 space-y-2.5 text-[13px] text-[#5b6b78]">
+                <li><a className="hover:text-brand-blue" href="https://mobiwave.co.ke/">About us</a></li>
+                <li><a className="hover:text-brand-blue" href="https://mobiwave.co.ke/#services">Services</a></li>
+                <li><a className="hover:text-brand-blue" href="https://mobiwave.co.ke/#pricing">Pricing</a></li>
+                <li><a className="hover:text-brand-blue" href="/pricing">WA Pricing</a></li>
+              </ul>
+            </div>
+            <div>
+              <h3 className="font-outfit text-[14px] font-bold text-[#0a1a25]">Useful links</h3>
+              <ul className="mt-4 space-y-2.5 text-[13px] text-[#5b6b78]">
+                <li><a className="hover:text-brand-blue" href="https://mobiwave.co.ke/">API Docs</a></li>
+                <li><a className="hover:text-brand-blue" href="/privacy-policy/">Privacy Policy</a></li>
+                <li><a className="hover:text-brand-blue" href="/terms-of-service/">Terms of Service</a></li>
+                <li><a className="hover:text-brand-blue" href="/data-deletion/">Data Deletion</a></li>
+              </ul>
+            </div>
+            <div>
+              <h3 className="font-outfit text-[14px] font-bold text-[#0a1a25]">Get in touch</h3>
+              <ul className="mt-4 space-y-2.5 text-[13px] text-[#5b6b78]">
+                <li>Kilifi, Kenya</li>
+                <li><a className="hover:text-brand-blue" href="mailto:info@mobiwave.co.ke">info@mobiwave.co.ke</a></li>
+                <li>Mon–Fri, 8am–5pm EAT</li>
+              </ul>
+            </div>
+          </div>
         </div>
-        <nav className="flex flex-wrap gap-x-5 gap-y-2 text-[12.5px]" aria-label="Footer navigation">
-          <a className="font-medium text-text-muted hover:text-text" href="https://mobiwave.co.ke/">MobiWave services</a>
-          <a className="font-medium text-text-muted hover:text-text" href="/pricing">Pricing</a>
-          <a className="font-medium text-text-muted hover:text-text" href="/privacy-policy/">Privacy</a>
-          <a className="font-medium text-text-muted hover:text-text" href="/terms-of-service/">Terms</a>
-          <a className="font-medium text-text-muted hover:text-text" href="/data-deletion/">Data deletion</a>
-          <a className="font-medium text-text-muted hover:text-text" href="mailto:info@mobiwave.co.ke">Contact</a>
-        </nav>
       </div>
-      <div className="border-t border-hairline-strong">
-        <div className="mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-2 px-5 py-4 text-[11.5px] text-text-faint lg:px-8">
-          <span>© {new Date().getFullYear()} MobiWave Innovations Ltd</span>
-          <span>Official Meta WhatsApp Cloud API</span>
+      <div className="border-t border-[#edf0f6]">
+        <div className="mx-auto flex max-w-[80rem] flex-wrap items-center justify-between gap-3 px-5 py-5 text-[12px] text-[#8b95a3] lg:px-8">
+          <span>© {new Date().getFullYear()} MobiWave Innovations Ltd. All rights reserved.</span>
+          <span className="flex items-center gap-2">
+            <a className="hover:text-brand-blue" href="https://mobiwave.co.ke/">A product of MobiWave</a>
+            <span>·</span>
+            <span>Official Meta WhatsApp Cloud API</span>
+          </span>
         </div>
       </div>
     </footer>

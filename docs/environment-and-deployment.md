@@ -22,6 +22,7 @@ Configure server-side secrets in the Supabase project dashboard:
 - `META_WEBHOOK_VERIFY_TOKEN` — optional legacy verification token. New workspaces generate and store their own webhook verification token from Integrations.
 - `META_GRAPH_VERSION` — supported Graph API version for the connected Meta app.
 - `INTERNAL_FUNCTION_TOKEN` — high-entropy internal token used by server-to-server worker calls.
+- `INVITE_REDIRECT_ORIGINS` — optional comma-separated allowlist of origins accepted for team invitation links. Defaults to `https://wap.mobiwave.co.ke,http://localhost:5173`; any other requested origin falls back to the first entry.
 
 Use unique random values and a password manager. Do not send secrets in chat or commit them to Git. Losing the encryption key prevents decrypting existing saved Meta credentials.
 

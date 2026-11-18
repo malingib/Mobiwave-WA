@@ -1,33 +1,47 @@
-import { useEffect, useState } from "react";
-import { Check, X, Plus, Trash2, Edit, User, ShieldCheck } from "lucide-react";
-import { supabase } from "./lib/supabase";
-import { MarketingFooter, MarketingNav, SectionHeading } from "./components/MarketingChrome";
+import React, { useState, useEffect } from 'react';
+import { Mail, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { supabase as supabaseClient } from './lib/supabase';
+import { MarketingChrome } from './components/MarketingChrome';
+import { Empty } from './components/ui';
 
-type TeamMember = {
+const supabase = supabaseClient!;
+
+interface TeamMember {
   id: string;
-  name: string;
-  email: string;
-  role: "admin" | "editor";
-  avatar_url?: string;
+  role: string;
   created_at: string;
-  last_sign_in_at?: string;
-};
+  users: {
+    id: string;
+    email: string;
+    created_at: string;
+    user_metadata?: any;
+  };
+}
 
-type TeamPlan = {
-  max_team_members: number;
-  current_team_members: number;
-  can_add_members: boolean;
-};
+interface TeamInvitation {
+  id: string;
+  email: string;
+  role: string;
+  created_at: string;
+  expires_at: string;
+  invited_by: string;
+}
 
-export default function TeamPage() {
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
-  const [plan, setPlan] = useState<TeamPlan | null>(null);
+const TeamPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showInviteForm, setShowInviteForm] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<"admin" | "editor">("editor");
-  const [inviteLoading, setInviteLoading] = useState(false);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [newMemberEmail, setNewMemberEmail] = useState('');
+  const [newMemberRole, setNewMemberRole] = useState<'admin' | 'editor'>('editor');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'editor'>('editor');
+  const [processing, setProcessing] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     fetchTeamData();
@@ -35,331 +49,466 @@ export default function TeamPage() {
 
   const fetchTeamData = async () => {
     try {
-      // Fetch team members
-      const { data: members, error: membersError } = await (supabase ? supabase
-        .from("team_members")
-        .select("*")
-        .eq("tenant_id", "current_tenant_id") : { data: [], error: null }); // Replace with actual tenant ID
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) throw authError;
+
+      // Get team members
+      const { data: membersData, error: membersError } = await supabase.functions.invoke('team-management', {
+        body: {
+          action: 'get-team',
+          tenant_id: (user as any).tenant_id ?? '' // tenant id from user context
+        }
+      });
 
       if (membersError) throw membersError;
-      setTeamMembers(members || []);
 
-      // Fetch plan information
-      const { data: planData, error: planError } = await (supabase ? supabase
-        .from("platform_billing_tiers")
-        .select("max_team_members")
-        .eq("slug", "current_plan_slug") : { data: [], error: null }); // Replace with actual plan slug
-
-      if (planError) throw planError;
-      
-      const maxTeamMembers = planData && planData.length > 0 ? planData[0].max_team_members : 0;
-      
-      setPlan({
-        max_team_members: maxTeamMembers,
-        current_team_members: members.length,
-        can_add_members: members.length < maxTeamMembers
-      });
-    } catch (err) {
-      console.error("Error fetching team data:", err);
-      setError("Failed to load team information");
+      setTeamMembers(membersData.team || []);
+      setInvitations(membersData.invitations || []);
+    } catch (error) {
+      console.error('Error fetching team data:', error);
+      setMessage({ type: 'error', text: 'Failed to load team data' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleInvite = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setInviteLoading(true);
+  const handleAddMember = async () => {
+    if (!newMemberEmail || !newMemberRole) {
+      setMessage({ type: 'error', text: 'Please fill in all required fields' });
+      return;
+    }
+
+    setProcessing(true);
+    setMessage(null);
 
     try {
-      const { error } = await (supabase ? supabase
-        .from("team_members")
-        .insert({
-          tenant_id: "current_tenant_id", // Replace with actual tenant ID
-          email: inviteEmail,
-          role: inviteRole,
-          invited_by: "current_user_id" // Replace with actual user ID
-        }) : { error: null });
+      // First, get the user ID from email
+      const { data: userData, error: userError } = await supabase
+        .from('auth.users')
+        .select('id')
+        .eq('email', newMemberEmail)
+        .single();
+
+      if (userError || !userData) {
+        throw new Error('User not found with this email');
+      }
+
+      // Add team member
+      const { error } = await supabase.functions.invoke('team-management', {
+        body: {
+          action: 'add-member',
+          tenant_id: 'current-tenant-id', // This should come from user context
+          user_id: userData.id,
+          role: newMemberRole
+        }
+      });
 
       if (error) throw error;
 
-      // Reset form and refresh data
-      setInviteEmail("");
-      setInviteRole("editor");
-      setShowInviteForm(false);
+      setMessage({ type: 'success', text: 'Team member added successfully' });
+      setShowAddModal(false);
+      setNewMemberEmail('');
+      setNewMemberRole('editor');
       fetchTeamData();
-    } catch (err) {
-      console.error("Error inviting team member:", err);
-      setError("Failed to invite team member");
+    } catch (error) {
+      setMessage({ type: 'error', text: (error as Error).message || 'Failed to add team member' });
     } finally {
-      setInviteLoading(false);
+      setProcessing(false);
     }
   };
 
-  const handleRemoveMember = async (memberId: string) => {
-    if (!confirm("Are you sure you want to remove this team member?")) return;
+  const handleSendInvitation = async () => {
+    if (!inviteEmail || !inviteRole) {
+      setMessage({ type: 'error', text: 'Please fill in all required fields' });
+      return;
+    }
+
+    setProcessing(true);
+    setMessage(null);
 
     try {
-      const { error } = await (supabase ? supabase
-        .from("team_members")
-        .delete()
-        .eq("id", memberId) : { error: null });
+      const { error } = await supabase.functions.invoke('team-management', {
+        body: {
+          action: 'send-invitation',
+          tenant_id: 'current-tenant-id', // This should come from user context
+          email: inviteEmail,
+          role: inviteRole
+        }
+      });
 
       if (error) throw error;
 
+      setMessage({ type: 'success', text: 'Invitation sent successfully' });
+      setShowInviteModal(false);
+      setInviteEmail('');
+      setInviteRole('editor');
       fetchTeamData();
-    } catch (err) {
-      console.error("Error removing team member:", err);
-      setError("Failed to remove team member");
+    } catch (error) {
+      setMessage({ type: 'error', text: (error as Error).message || 'Failed to send invitation' });
+    } finally {
+      setProcessing(false);
     }
   };
 
-  const getRoleColor = (role: string) => {
-    return role === "admin" ? "bg-red-100 text-red-800" : "bg-blue-100 text-blue-800";
+  const handleUpdateRole = async () => {
+    if (!selectedMember) return;
+
+    setProcessing(true);
+    setMessage(null);
+
+    try {
+      const { error } = await supabase.functions.invoke('team-management', {
+        body: {
+          action: 'update-role',
+          tenant_id: 'current-tenant-id', // This should come from user context
+          member_id: selectedMember.id,
+          role: newMemberRole
+        }
+      });
+
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: 'Role updated successfully' });
+      setShowRoleModal(false);
+      setSelectedMember(null);
+      setNewMemberRole('editor');
+      fetchTeamData();
+    } catch (error) {
+      setMessage({ type: 'error', text: (error as Error).message || 'Failed to update role' });
+    } finally {
+      setProcessing(false);
+    }
   };
 
-  const getRoleText = (role: string) => {
-    return role === "admin" ? "Admin" : "Editor";
+  const handleRemoveMember = async () => {
+    if (!selectedMember) return;
+
+    setProcessing(true);
+    setMessage(null);
+
+    try {
+      const { error } = await supabase.functions.invoke('team-management', {
+        body: {
+          action: 'remove-member',
+          tenant_id: 'current-tenant-id', // This should come from user context
+          member_id: selectedMember.id
+        }
+      });
+
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: 'Team member removed successfully' });
+      setShowRemoveModal(false);
+      setSelectedMember(null);
+      fetchTeamData();
+    } catch (error) {
+      setMessage({ type: 'error', text: (error as Error).message || 'Failed to remove team member' });
+    } finally {
+      setProcessing(false);
+    }
   };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-KE', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  if (loading) {
+    return (
+      <MarketingChrome>
+        <div className="content">
+          <div className="panel flex min-h-[12rem] items-center justify-center gap-2" role="status">
+            <span className="animate-spin rounded-full h-5 w-5 border-2 border-brand-200 border-t-brand-600" />
+            <span className="muted small">Loading team information…</span>
+          </div>
+        </div>
+      </MarketingChrome>
+    );
+  }
+
+  const adminCount = teamMembers.filter((member) => member.role === 'admin').length;
+
+  const rolePill = (role: string) => (
+    <span className={role === 'admin' ? 'status-pill success' : 'status-pill neutral'}>
+      {role.charAt(0).toUpperCase() + role.slice(1)}
+    </span>
+  );
 
   return (
-    <div className="flex min-h-screen flex-col bg-surface">
-      <MarketingNav />
-
-      <main className="flex-grow">
-        <div className="container mx-auto px-4 py-12 md:py-16 lg:py-20">
-          {/* Hero Section */}
-          <SectionHeading
-            kicker="Team Management"
-            title="Manage your team members and permissions"
-            description="Add collaborators to your workspace with different roles and access levels."
-            align="center"
-          />
-
-          {/* Team Overview */}
-          <div className="mt-12 grid grid-cols-1 gap-8 lg:grid-cols-3">
-            <div className="rounded-xl border border-ink-200 bg-surface p-6">
-              <h3 className="font-bold text-ink-800">Team Members</h3>
-              <p className="mt-2 text-[13.5px] text-ink-600">
-                {teamMembers.length} of {plan?.max_team_members || "Unlimited"} members
-              </p>
-              <div className="mt-4 h-2 w-full rounded-full bg-ink-100">
-                <div 
-                  className="h-2 rounded-full bg-brand-600" 
-                  style={{ width: `${Math.min(100, (teamMembers.length / (plan?.max_team_members || 1)) * 100)}%` }}
-                ></div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-ink-200 bg-surface p-6">
-              <h3 className="font-bold text-ink-800">Admin Access</h3>
-              <p className="mt-2 text-[13.5px] text-ink-600">
-                {teamMembers.filter(m => m.role === "admin").length} admin(s)
-              </p>
-              <p className="text-[12px] text-ink-500 mt-1">
-                Admins can manage billing and team settings
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-ink-200 bg-surface p-6">
-              <h3 className="font-bold text-ink-800">Editor Access</h3>
-              <p className="mt-2 text-[13.5px] text-ink-600">
-                {teamMembers.filter(m => m.role === "editor").length} editor(s)
-              </p>
-              <p className="text-[12px] text-ink-500 mt-1">
-                Editors can create and manage messages
-              </p>
-            </div>
+    <MarketingChrome>
+      <div className="content">
+        <div className="page-heading">
+          <div>
+            <span className="eyebrow">Workspace</span>
+            <h1>Team</h1>
+            <p className="page-description">Manage team access, roles and pending invitations for this business account.</p>
           </div>
-
-          {/* Team Members List */}
-          <div className="mt-12">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[18px] font-bold text-ink-800">Team Members</h3>
-              {plan?.can_add_members && (
-                <button
-                  onClick={() => setShowInviteForm(true)}
-                  className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-white hover:bg-brand-500"
-                >
-                  <Plus size={16} />
-                  Add Member
-                </button>
-              )}
-            </div>
-
-            {/* Invite Form */}
-            {showInviteForm && (
-              <div className="mt-6 rounded-xl border border-ink-200 bg-surface p-6">
-                <h4 className="font-bold text-ink-800">Invite Team Member</h4>
-                <form onSubmit={handleInvite} className="mt-4 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-ink-700 mb-1">
-                      Email Address
-                    </label>
-                    <input
-                      type="email"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      required
-                      className="w-full rounded-lg border border-ink-300 px-3 py-2 focus:border-brand-500 focus:outline-none"
-                      placeholder="team@example.com"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-ink-700 mb-1">
-                      Role
-                    </label>
-                    <select
-                      value={inviteRole}
-                      onChange={(e) => setInviteRole(e.target.value as "admin" | "editor")}
-                      className="w-full rounded-lg border border-ink-300 px-3 py-2 focus:border-brand-500 focus:outline-none"
-                    >
-                      <option value="editor">Editor - Can create and manage messages</option>
-                      <option value="admin">Admin - Can manage billing and team settings</option>
-                    </select>
-                  </div>
-                  <div className="flex gap-3">
-                    <button
-                      type="submit"
-                      disabled={inviteLoading}
-                      className="flex-1 rounded-lg bg-brand-600 px-4 py-2 text-white hover:bg-brand-500 disabled:opacity-50"
-                    >
-                      {inviteLoading ? "Inviting..." : "Send Invitation"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowInviteForm(false)}
-                      className="flex-1 rounded-lg border border-ink-300 px-4 py-2 text-ink-700 hover:bg-ink-50"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              </div>
-            )}
-
-            {/* Members List */}
-            <div className="mt-6 grid grid-cols-1 gap-4">
-              {loading ? (
-                <div className="text-center py-8">
-                  <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-brand-600 border-t-transparent"></div>
-                  <p className="mt-2 text-sm text-ink-500">Loading team members...</p>
-                </div>
-              ) : error ? (
-                <div className="text-center py-8">
-                  <p className="text-red-600">{error}</p>
-                </div>
-              ) : teamMembers.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-ink-500">No team members yet. Add your first team member to get started.</p>
-                </div>
-              ) : (
-                teamMembers.map((member) => (
-                  <div key={member.id} className="flex items-center justify-between rounded-xl border border-ink-200 bg-surface p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-brand-100 flex items-center justify-center">
-                        {member.avatar_url ? (
-                          <img src={member.avatar_url} alt={member.name} className="h-10 w-10 rounded-full" />
-                        ) : (
-                          <User size={20} className="text-brand-600" />
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-ink-800">{member.name}</h4>
-                        <p className="text-sm text-ink-500">{member.email}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(member.role)}`}>
-                        {getRoleText(member.role)}
-                      </span>
-                      {member.role !== "admin" && (
-                        <button
-                          onClick={() => handleRemoveMember(member.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+          <div className="flex flex-none flex-wrap items-center gap-2">
+            <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(true)}>
+              <UserPlus size={15} /> Add member
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => setShowInviteModal(true)}>
+              <Mail size={15} /> Invite member
+            </button>
           </div>
+        </div>
 
-          {/* Role Permissions */}
-          <div className="mt-16">
-            <SectionHeading
-              kicker="Role Permissions"
-              title="Understand what each role can do in your workspace"
-              align="center"
-            />
+        {message && !showAddModal && !showInviteModal && !showRoleModal && !showRemoveModal && (
+          <p className={message.type === 'success' ? 'notice success' : 'notice error'} role="status">
+            {message.text}
+          </p>
+        )}
 
-            <div className="mt-8 grid grid-cols-1 gap-8 md:grid-cols-2">
-              <div className="rounded-xl border border-ink-200 bg-surface p-6">
-                <h3 className="font-bold text-ink-800 flex items-center gap-2">
-                  <ShieldCheck size={20} className="text-red-600" />
-                  Admin
-                </h3>
-                <ul className="mt-4 space-y-2">
-                  <li className="flex items-start gap-2 text-sm">
-                    <Check size={16} className="text-green-600 mt-0.5" />
-                    Manage billing and payments
-                  </li>
-                  <li className="flex items-start gap-2 text-sm">
-                    <Check size={16} className="text-green-600 mt-0.5" />
-                    Add and remove team members
-                  </li>
-                  <li className="flex items-start gap-2 text-sm">
-                    <Check size={16} className="text-green-600 mt-0.5" />
-                    Change workspace settings
-                  </li>
-                  <li className="flex items-start gap-2 text-sm">
-                    <Check size={16} className="text-green-600 mt-0.5" />
-                    View and export all data
-                  </li>
-                  <li className="flex items-start gap-2 text-sm">
-                    <Check size={16} className="text-green-600 mt-0.5" />
-                    Manage integrations
-                  </li>
-                </ul>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <article className="kpi-card panel kpi-tone-brand">
+            <div className="kpi-body">
+              <span className="kpi-icon"><Users size={20} /></span>
+              <div className="kpi-copy">
+                <span className="kpi-label">Team members</span>
+                <strong className="kpi-value">{teamMembers.length.toLocaleString()}</strong>
+                <span className="kpi-hint">People with workspace access</span>
               </div>
-
-              <div className="rounded-xl border border-ink-200 bg-surface p-6">
-                <h3 className="font-bold text-ink-800 flex items-center gap-2">
-                  <Edit size={20} className="text-blue-600" />
-                  Editor
-                </h3>
-                <ul className="mt-4 space-y-2">
-                  <li className="flex items-start gap-2 text-sm">
-                    <Check size={16} className="text-green-600 mt-0.5" />
-                    Create and manage messages
-                  </li>
-                  <li className="flex items-start gap-2 text-sm">
-                    <Check size={16} className="text-green-600 mt-0.5" />
-                    View analytics and reports
-                  </li>
-                  <li className="flex items-start gap-2 text-sm">
-                    <Check size={16} className="text-green-600 mt-0.5" />
-                    Manage contacts
-                  </li>
-                  <li className="flex items-start gap-2 text-sm">
-                    <X size={16} className="text-red-600 mt-0.5" />
-                    Cannot manage billing
-                  </li>
-                  <li className="flex items-start gap-2 text-sm">
-                    <X size={16} className="text-red-600 mt-0.5" />
-                    Cannot add/remove team members
-                  </li>
-                </ul>
+            </div>
+          </article>
+          <article className="kpi-card panel kpi-tone-success">
+            <div className="kpi-body">
+              <span className="kpi-icon"><ShieldCheck size={20} /></span>
+              <div className="kpi-copy">
+                <span className="kpi-label">Administrators</span>
+                <strong className="kpi-value">{adminCount.toLocaleString()}</strong>
+                <span className="kpi-hint">Can manage team and settings</span>
               </div>
+            </div>
+          </article>
+          <article className="kpi-card panel kpi-tone-warning">
+            <div className="kpi-body">
+              <span className="kpi-icon"><Mail size={20} /></span>
+              <div className="kpi-copy">
+                <span className="kpi-label">Pending invitations</span>
+                <strong className="kpi-value">{invitations.length.toLocaleString()}</strong>
+                <span className="kpi-hint">Awaiting acceptance</span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div className="section-header">
+          <div>
+            <h2>Team members</h2>
+            <p>Everyone who can access this business account.</p>
+          </div>
+        </div>
+        <div className="source-list">
+          <div className="source-table-head team-head">
+            <span>Member</span><span>Role</span><span>Joined</span><span>Actions</span>
+          </div>
+          {teamMembers.length === 0 ? (
+            <Empty icon={<Users size={22} />} title="No team members yet" text="Invite a teammate to collaborate in this workspace." />
+          ) : (
+            teamMembers.map((member) => (
+              <div className="source-row team-row" key={member.id}>
+                <div className="source-main">
+                  <span className="source-icon">{member.users.email.slice(0, 1).toUpperCase()}</span>
+                  <div className="source-text">
+                    <strong>{member.users.email}</strong>
+                    <small>{member.role === 'admin' ? 'Full workspace access' : 'Inbox and campaign access'}</small>
+                  </div>
+                </div>
+                <span>{rolePill(member.role)}</span>
+                <span className="muted small">{formatDate(member.created_at)}</span>
+                <div className="row-actions">
+                  <button
+                    type="button"
+                    className="secondary-button compact"
+                    onClick={() => {
+                      setSelectedMember(member);
+                      setNewMemberRole(member.role as 'admin' | 'editor');
+                      setShowRoleModal(true);
+                    }}
+                  >
+                    Edit role
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button compact btn-danger"
+                    onClick={() => {
+                      setSelectedMember(member);
+                      setShowRemoveModal(true);
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="section-header">
+          <div>
+            <h2>Pending invitations</h2>
+            <p>Invitations that have not been accepted yet.</p>
+          </div>
+        </div>
+        <div className="source-list">
+          <div className="source-table-head invite-head">
+            <span>Email</span><span>Role</span><span>Sent</span><span>Expires</span><span />
+          </div>
+          {invitations.length === 0 ? (
+            <Empty icon={<Mail size={22} />} title="No pending invitations" text="Invite a teammate to send them a workspace invitation." />
+          ) : (
+            invitations.map((invitation) => (
+              <div className="source-row invite-row" key={invitation.id}>
+                <div className="source-main">
+                  <span className="source-icon"><Mail size={16} /></span>
+                  <div className="source-text">
+                    <strong>{invitation.email}</strong>
+                    <small>Invitation pending acceptance</small>
+                  </div>
+                </div>
+                <span>{rolePill(invitation.role)}</span>
+                <span className="muted small">{formatDate(invitation.created_at)}</span>
+                <span className="muted small">{formatDate(invitation.expires_at)}</span>
+                <div className="row-actions">
+                  <button
+                    type="button"
+                    className="secondary-button compact btn-danger"
+                    onClick={async () => {
+                      try {
+                        await supabase.functions.invoke('team-management', {
+                          body: {
+                            action: 'revoke-invitation',
+                            tenant_id: 'current-tenant-id', // This should come from user context
+                            invitation_id: invitation.id
+                          }
+                        });
+                        fetchTeamData();
+                      } catch (error) {
+                        setMessage({ type: 'error', text: 'Failed to revoke invitation' });
+                      }
+                    }}
+                  >
+                    Revoke
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(12,36,60,0.45)] p-4">
+          <div className="panel w-full max-w-md p-6">
+            <div className="section-header">
+              <div><h2>Add team member</h2><p>Add an existing MobiWave user to this workspace.</p></div>
+              <button type="button" className="icon-btn" aria-label="Close add member dialog" onClick={() => setShowAddModal(false)}><span aria-hidden>×</span></button>
+            </div>
+            {message && <p className={message.type === 'success' ? 'notice success' : 'notice error'} role="status">{message.text}</p>}
+            <div className="flex flex-col gap-4">
+              <div className="field">
+                <label>Email address</label>
+                <input type="email" value={newMemberEmail} onChange={(e) => setNewMemberEmail(e.target.value)} placeholder="teammate@company.co.ke" />
+              </div>
+              <div className="field">
+                <label>Role</label>
+                <select value={newMemberRole} onChange={(e) => setNewMemberRole(e.target.value as 'admin' | 'editor')}>
+                  <option value="admin">Admin</option>
+                  <option value="editor">Editor</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-actions">
+              <button type="button" className="secondary-button" onClick={() => setShowAddModal(false)}>Cancel</button>
+              <button type="button" className="primary-button" onClick={() => void handleAddMember()} disabled={processing}>
+                {processing ? 'Adding…' : 'Add member'}
+              </button>
             </div>
           </div>
         </div>
-      </main>
+      )}
 
-      <MarketingFooter />
-    </div>
+      {showInviteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(12,36,60,0.45)] p-4">
+          <div className="panel w-full max-w-md p-6">
+            <div className="section-header">
+              <div><h2>Invite team member</h2><p>Send an email invitation to join this workspace.</p></div>
+              <button type="button" className="icon-btn" aria-label="Close invite dialog" onClick={() => setShowInviteModal(false)}><span aria-hidden>×</span></button>
+            </div>
+            {message && <p className={message.type === 'success' ? 'notice success' : 'notice error'} role="status">{message.text}</p>}
+            <div className="flex flex-col gap-4">
+              <div className="field">
+                <label>Email address</label>
+                <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="teammate@company.co.ke" />
+              </div>
+              <div className="field">
+                <label>Role</label>
+                <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as 'admin' | 'editor')}>
+                  <option value="admin">Admin</option>
+                  <option value="editor">Editor</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-actions">
+              <button type="button" className="secondary-button" onClick={() => setShowInviteModal(false)}>Cancel</button>
+              <button type="button" className="primary-button" onClick={() => void handleSendInvitation()} disabled={processing}>
+                {processing ? 'Sending…' : 'Send invitation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRoleModal && selectedMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(12,36,60,0.45)] p-4">
+          <div className="panel w-full max-w-md p-6">
+            <div className="section-header">
+              <div><h2>Edit role</h2><p>{selectedMember.users.email}</p></div>
+              <button type="button" className="icon-btn" aria-label="Close edit role dialog" onClick={() => setShowRoleModal(false)}><span aria-hidden>×</span></button>
+            </div>
+            {message && <p className={message.type === 'success' ? 'notice success' : 'notice error'} role="status">{message.text}</p>}
+            <div className="field">
+              <label>Role</label>
+              <select value={newMemberRole} onChange={(e) => setNewMemberRole(e.target.value as 'admin' | 'editor')}>
+                <option value="admin">Admin</option>
+                <option value="editor">Editor</option>
+              </select>
+            </div>
+            <div className="form-actions">
+              <button type="button" className="secondary-button" onClick={() => setShowRoleModal(false)}>Cancel</button>
+              <button type="button" className="primary-button" onClick={() => void handleUpdateRole()} disabled={processing}>
+                {processing ? 'Updating…' : 'Update role'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRemoveModal && selectedMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(12,36,60,0.45)] p-4">
+          <div className="panel w-full max-w-md p-6">
+            <div className="section-header">
+              <div><h2>Remove team member</h2><p>This action cannot be undone.</p></div>
+              <button type="button" className="icon-btn" aria-label="Close remove member dialog" onClick={() => setShowRemoveModal(false)}><span aria-hidden>×</span></button>
+            </div>
+            {message && <p className={message.type === 'success' ? 'notice success' : 'notice error'} role="status">{message.text}</p>}
+            <p className="muted small">
+              Remove <strong>{selectedMember.users.email}</strong> from this workspace? They will immediately lose access to the inbox and campaigns.
+            </p>
+            <div className="form-actions">
+              <button type="button" className="secondary-button" onClick={() => setShowRemoveModal(false)}>Cancel</button>
+              <button type="button" className="primary-button btn-danger" onClick={() => void handleRemoveMember()} disabled={processing}>
+                {processing ? 'Removing…' : 'Remove member'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </MarketingChrome>
   );
-}
+};
+
+export default TeamPage;

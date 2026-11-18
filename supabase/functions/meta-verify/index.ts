@@ -12,7 +12,7 @@ Deno.serve(async (request) => {
     const tenantId = String(body.tenant_id ?? "");
     if (!tenantId) return json({ error: "tenant_id is required." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner", "admin"]);
-    const { data: integration, error } = await auth.admin.from("meta_integrations").select("tenant_id,phone_number_id,waba_id,encrypted_access_token").eq("tenant_id", tenantId).maybeSingle();
+    const { data: integration, error } = await auth.admin.from("meta_integrations").select("tenant_id,phone_number_id,waba_id,encrypted_access_token,encrypted_app_secret").eq("tenant_id", tenantId).maybeSingle();
     if (error || !integration?.encrypted_access_token || !integration.phone_number_id || !integration.waba_id) return json({ error: "Save Meta credentials before verifying." }, 409);
     const token = await decryptToken(integration.encrypted_access_token);
     const response = await fetch("https://graph.facebook.com/" + GRAPH_VERSION + "/" + integration.phone_number_id + "?fields=id,display_phone_number,verified_name", {
@@ -36,6 +36,16 @@ Deno.serve(async (request) => {
         last_health_check_at: new Date().toISOString(), api_version: GRAPH_VERSION, updated_at: new Date().toISOString(),
       }).eq("tenant_id", tenantId);
       return json({ error: "Credentials are valid, but Meta could not subscribe this app to the WhatsApp Business Account. Check that the access token has WhatsApp Business Management permission, then retry." }, 400);
+    }
+    // Meta signs every webhook with the app secret. Enabling messaging without
+    // it produces a "connected" number whose inbound events are all rejected.
+    if (!integration.encrypted_app_secret) {
+      await auth.admin.from("meta_integrations").update({
+        verified: true, enabled: false, display_phone_number: result.display_phone_number ?? null,
+        verified_name: result.verified_name ?? null, last_error_code: "meta_app_secret_missing",
+        last_health_check_at: new Date().toISOString(), api_version: GRAPH_VERSION, updated_at: new Date().toISOString(),
+      }).eq("tenant_id", tenantId);
+      return json({ error: "Save this account's Meta app secret before enabling messaging. Meta signs every webhook with it, so inbound events are rejected without it." }, 409);
     }
     const { error: updateError } = await auth.admin.from("meta_integrations").update({
       verified: true, enabled: true, display_phone_number: result.display_phone_number ?? null,

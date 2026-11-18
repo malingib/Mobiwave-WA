@@ -14,3 +14,15 @@ verify_jwt = false
 
 [functions.notification-center]
 verify_jwt = true
+
+# These run both from the browser (user JWT checked in code) and from the
+# internal campaign scheduler (shared token checked in code). The gateway must
+# not require a user JWT before the function can choose which check applies.
+[functions.campaign-launch]
+verify_jwt = false
+
+[functions.meta-send]
+verify_jwt = false
+
+[functions.campaign-worker]
+verify_jwt = false

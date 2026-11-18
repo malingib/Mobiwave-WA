@@ -77,5 +77,20 @@ as $$
   order by t.created_at desc;
 $$;
 
+create or replace function public.is_platform_admin(p_user_id uuid)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  return exists (
+    select 1 from public.platform_admins pa
+    where pa.user_id = p_user_id
+  );
+end;
+$$;
+
 revoke all on function public.platform_tenant_overview() from public, anon;
 grant execute on function public.platform_tenant_overview() to authenticated;

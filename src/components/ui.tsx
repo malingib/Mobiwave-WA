@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { Activity, Check, MessageCircle } from "lucide-react";
+import { Check, MessageCircle } from "lucide-react";
 
 /* Brand lockup used across sidebar, auth and error screens. */
 export function Brand({ compact = false, iconOnly = false, tone = "onLight" }: { compact?: boolean; iconOnly?: boolean; tone?: "onDark" | "onLight" }) {
@@ -32,10 +32,7 @@ export function PageHeading({ eyebrow, title, description, actions }: { eyebrow:
   return (
     <div className="page-heading">
       <div>
-        <div className="eyebrow">
-          <Activity size={12} />
-          {eyebrow}
-        </div>
+        <span className="eyebrow">{eyebrow}</span>
         <h1>{title}</h1>
         <p className="page-description">{description}</p>
       </div>
@@ -44,8 +41,8 @@ export function PageHeading({ eyebrow, title, description, actions }: { eyebrow:
   );
 }
 
-const SUCCESS = ["approved", "indexed", "completed", "delivered", "read", "connected", "opted_in", "sent", "verified", "active", "enabled"];
-const DANGER = ["failed", "rejected", "opted_out", "paused", "revoked", "dead", "disabled", "not connected"];
+const SUCCESS = ["approved", "indexed", "completed", "delivered", "read", "connected", "opted_in", "sent", "verified", "active", "enabled", "paid"];
+const DANGER = ["failed", "rejected", "opted_out", "paused", "revoked", "dead", "disabled", "not connected", "overdue"];
 const WARNING = ["needs_review", "suggested", "pending", "running", "queued", "unknown", "draft"];
 
 export function Status({ status }: { status: string }) {
@@ -98,7 +95,8 @@ export function SetupRow({ done = false, label, detail }: { done?: boolean; labe
   );
 }
 
-/* KPI card for the Overview dashboard. */
+/* KPI card matching the reference dashboard: pastel circular icon on the
+   left, quiet label and one strong value. */
 export function KpiCard({
   label,
   value,
@@ -106,6 +104,7 @@ export function KpiCard({
   deltaTone = "neutral",
   hint,
   icon,
+  tone = "brand",
   action,
   trend,
   children,
@@ -116,36 +115,30 @@ export function KpiCard({
   deltaTone?: "positive" | "negative" | "neutral";
   hint?: string;
   icon?: ReactNode;
+  tone?: "brand" | "success" | "warning" | "danger";
   action?: ReactNode;
   trend?: ReactNode;
   children?: ReactNode;
 }) {
   const deltaClass =
     deltaTone === "positive"
-      ? "bg-success-soft text-success ring-1 ring-success/20"
+      ? "bg-success-soft text-success"
       : deltaTone === "negative"
-        ? "bg-danger-soft text-danger ring-1 ring-danger/20"
-        : "bg-raised text-text-muted ring-1 ring-hairline";
+        ? "bg-danger-soft text-danger"
+        : "bg-raised text-text-muted";
   return (
-    <article className="kpi-card panel group relative flex min-w-0 flex-col overflow-hidden">
-      <div className="flex items-start justify-between gap-3 px-5 pt-5">
-        <div className="min-w-0">
-          <span className="block text-[11px] font-semibold uppercase tracking-[.075em] text-text-muted">{label}</span>
-          <div className="mt-3 flex flex-wrap items-end gap-2">
-            <strong className="kpi-value font-display text-[32px] font-bold leading-none tracking-[-0.045em] text-text">{value}</strong>
-            {delta && <span className={"mb-0.5 rounded-full px-2 py-1 text-[10px] font-semibold " + deltaClass}>{delta}</span>}
-          </div>
+    <article className={"kpi-card panel kpi-tone-" + tone}>
+      <div className="kpi-body">
+        {icon && <span className="kpi-icon">{icon}</span>}
+        <div className="kpi-copy">
+          <span className="kpi-label">{label}</span>
+          <strong className="kpi-value">{value}</strong>
+          {hint && <span className="kpi-hint">{hint}</span>}
         </div>
-        {icon && <span className="kpi-icon flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-100">{icon}</span>}
+        {delta && <span className={"kpi-delta " + deltaClass}>{delta}</span>}
       </div>
-      {trend && <div className="mt-2 h-[58px] px-1">{trend}</div>}
-      {(hint || action || children) && (
-        <div className="mt-auto flex min-h-[42px] items-center justify-between gap-3 border-t border-hairline px-5 py-3">
-          {hint && <span className="min-w-0 truncate text-[11.5px] text-text-muted">{hint}</span>}
-          {action}
-          {children}
-        </div>
-      )}
+      {trend && <div className="kpi-trend">{trend}</div>}
+      {(action || children) && <div className="kpi-foot">{action}{children}</div>}
     </article>
   );
 }

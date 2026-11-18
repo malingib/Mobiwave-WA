@@ -16,6 +16,13 @@ export function replayResponse(attempt: Record<string, unknown>): Response {
   }
   if (status === "rejected") {
     const limited = attempt.error_code === "monthly_limit_reached";
+    if (attempt.error_code === "usage_check_unavailable") {
+      return json({
+        error: "The original attempt was never submitted because usage limits could not be verified. Use a new idempotency key.",
+        status: "rejected",
+        idempotent_replay: true,
+      }, 409);
+    }
     return json({
       error: limited
         ? "The original request was rejected because the workspace reached its monthly message limit."
