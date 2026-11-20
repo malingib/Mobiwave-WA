@@ -20,15 +20,13 @@ serve(async (req) => {
     // Log webhook payload for debugging
     console.log('M-Pesa webhook received:', JSON.stringify(body, null, 2));
     
-    // Handle different M-Pesa webhook types
-    if (body.BodystkCallbackResult || body.BodystkCallbackResult !== undefined) {
-      // STK Push callback
-      await handleStkCallback(body);
-    } else if (body.BodycallbackConfirmationResult || body.BodycallbackConfirmationResult !== undefined) {
-      // Payment confirmation callback
-      await handlePaymentConfirmation(body);
+    // Daraja STK Push callbacks: { Body: { stkCallback: {...} } }
+    if (body?.Body?.stkCallback) {
+      await handleStkCallback(body.Body.stkCallback);
+    } else if (body?.Body?.callbackConfirmationResult) {
+      await handlePaymentConfirmation(body.Body.callbackConfirmationResult);
     } else {
-      console.log('Unknown M-Pesa webhook type:', body);
+      console.error('Unknown M-Pesa webhook type:', body);
       return new Response(
         JSON.stringify({ error: 'Unknown webhook type' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
@@ -48,10 +46,8 @@ serve(async (req) => {
   }
 });
 
-async function handleStkCallback(body: any): Promise<void> {
-  const callbackResult = body.BodystkCallbackResult;
-  
-  if (!callbackResult || !callbackResult.ResultCode) {
+async function handleStkCallback(callbackResult: any): Promise<void> {
+  if (!callbackResult || callbackResult.ResultCode === undefined) {
     throw new Error('Invalid STK callback payload');
   }
   
@@ -107,10 +103,8 @@ async function handleStkCallback(body: any): Promise<void> {
   console.log(`STK callback processed: ${status} for transaction ${transaction.id}`);
 }
 
-async function handlePaymentConfirmation(body: any): Promise<void> {
-  const callbackResult = body.BodycallbackConfirmationResult;
-  
-  if (!callbackResult || !callbackResult.ResultCode) {
+async function handlePaymentConfirmation(callbackResult: any): Promise<void> {
+  if (!callbackResult || callbackResult.ResultCode === undefined) {
     throw new Error('Invalid payment confirmation payload');
   }
   

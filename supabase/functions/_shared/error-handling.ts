@@ -205,6 +205,8 @@ export function createErrorResponse(error: CommercialError): Response {
       status,
       headers: {
         'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key, idempotency-key',
         ...(error.retry_after && { 'Retry-After': error.retry_after.toString() })
       }
     }

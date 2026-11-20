@@ -55,6 +55,8 @@ interface PaymentRequest {
   amount: number;
   phone_number: string;
   invoice_id?: string;
+  action?: string;
+  transaction_id?: string;
 }
 
 // Helper function to check if user is team member
@@ -205,34 +207,32 @@ serve(async (req) => {
       throw new CommercialError(ErrorCode.MISSING_REQUIRED_FIELD, 'Missing tenant_id');
     }
 
-    // Check if user has access to this tenant
-    const { data: tenant, error: tenantError } = await supabase
-      .from('tenants')
-      .select('id, owner_id')
-      .eq('id', tenant_id)
-      .single();
+    // Access is granted via workspace membership (tenants has no owner_id column).
+    const { data: membership, error: membershipError } = await supabase
+      .from('tenant_members')
+      .select('role')
+      .eq('tenant_id', tenant_id)
+      .eq('user_id', user.id)
+      .maybeSingle();
 
-    if (tenantError || !tenant) {
-      throw new CommercialError(ErrorCode.INVALID_TENANT, 'Tenant not found');
-    }
-
-    if (tenant.owner_id !== user.id && !await isTeamMember(user.id, tenant_id)) {
+    if (membershipError || !membership || !['owner', 'admin'].includes(membership.role)) {
       throw new CommercialError(ErrorCode.FORBIDDEN, 'No access to this tenant');
     }
 
-    // Get action from URL
-    const url = new URL(req.url);
-    const action = url.pathname.split('/').pop() || '';
+    // Supabase invokes the bare function path; the action comes from the JSON body.
+    // (Path-style actions remain supported for direct callers.)
+    const pathAction = new URL(req.url).pathname.split('/').filter(Boolean).pop() ?? '';
+    const action = String(body.action ?? (pathAction === 'mpesa-integrate' ? '' : pathAction));
 
     switch (action) {
       case 'initiate':
-        return await initiatePayment(req, tenant_id);
+        return await initiatePayment(req, tenant_id, body);
       case 'status':
-        return await checkPaymentStatus(req, tenant_id);
+        return await checkPaymentStatus(body, tenant_id);
       case 'config':
         return await getMpesaConfig(tenant_id);
       case 'save-config':
-        return await saveMpesaConfig(req, tenant_id, user.id);
+        return await saveMpesaConfig(body as unknown as MpesaConfig & { id?: string }, tenant_id, user.id);
       default:
         throw new CommercialError(ErrorCode.API_ENDPOINT_NOT_FOUND, 'Invalid action');
     }
@@ -250,9 +250,7 @@ serve(async (req) => {
   }
 });
 
-async function initiatePayment(req: Request, tenant_id: string): Promise<Response> {
-  const paymentRequest = await req.json() as PaymentRequest;
-
+async function initiatePayment(_req: Request, tenant_id: string, paymentRequest: PaymentRequest): Promise<Response> {
   // Validate required fields
   if (!paymentRequest.amount) {
     throw new CommercialError(ErrorCode.MISSING_REQUIRED_FIELD, 'Missing amount');
@@ -302,7 +300,7 @@ async function initiatePayment(req: Request, tenant_id: string): Promise<Respons
     const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
 
     // Generate password
-    const password = Buffer.from(`${mpesaConfig.shortcode}${mpesaConfig.passkey}${timestamp}`).toString('base64');
+    const password = btoa(`${mpesaConfig.shortcode}${mpesaConfig.passkey}${timestamp}`);
 
     // Create STK Push request
     const stkPushUrl = mpesaConfig.environment === 'production'
@@ -417,8 +415,7 @@ async function initiatePayment(req: Request, tenant_id: string): Promise<Respons
   }
 }
 
-async function checkPaymentStatus(req: Request, tenant_id: string): Promise<Response> {
-  const body = await req.json() as { transaction_id?: string };
+async function checkPaymentStatus(body: PaymentRequest, tenant_id: string): Promise<Response> {
   const { transaction_id } = body;
 
   if (!transaction_id) {
@@ -454,7 +451,7 @@ async function checkPaymentStatus(req: Request, tenant_id: string): Promise<Resp
     // Query transaction status with retry logic
     const statusData = await withRetry(async () => {
       const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-      const password = Buffer.from(`${mpesaConfig.shortcode}${mpesaConfig.passkey}${timestamp}`).toString('base64');
+      const password = btoa(`${mpesaConfig.shortcode}${mpesaConfig.passkey}${timestamp}`);
 
       const statusUrl = mpesaConfig.environment === 'production'
         ? 'https://api.safaricom.co.ke/mpesa/stkpushquery/v1/query'
@@ -566,17 +563,16 @@ async function getMpesaConfig(tenant_id: string): Promise<Response> {
   );
 }
 
-async function saveMpesaConfig(req: Request, tenant_id: string, user_id: string): Promise<Response> {
-  const config = await req.json() as MpesaConfig & { id?: string };
+async function saveMpesaConfig(config: MpesaConfig & { id?: string }, tenant_id: string, user_id: string): Promise<Response> {
+  // Only workspace owners may change payment credentials.
+  const { data: membership } = await supabase
+    .from('tenant_members')
+    .select('role')
+    .eq('tenant_id', tenant_id)
+    .eq('user_id', user_id)
+    .maybeSingle();
 
-  // Check if user owns the tenant
-  const { data: tenant } = await supabase
-    .from('tenants')
-    .select('owner_id')
-    .eq('id', tenant_id)
-    .single();
-
-  if (!tenant || tenant.owner_id !== user_id) {
+  if (membership?.role !== 'owner') {
     throw new CommercialError(ErrorCode.FORBIDDEN, 'Only tenant owners can configure M-Pesa');
   }
 
@@ -633,7 +629,7 @@ async function getAccessToken(config: MpesaConfig): Promise<string> {
   const response = await fetch(authUrl, {
     method: 'POST',
     headers: {
-      'Authorization': `Basic ${Buffer.from(`${config.consumer_key}:${config.consumer_secret}`).toString('base64')}`
+      'Authorization': `Basic ${btoa(`${config.consumer_key}:${config.consumer_secret}`)}`
     }
   });
 

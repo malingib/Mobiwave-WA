@@ -20,10 +20,11 @@ interface UsageStat {
 }
 
 interface MetaAllowance {
-  meta_allowance_remaining: number;
-  meta_allowance_reset_date: string;
-  meta_allowance_used: number;
-  meta_allowance_limit: number;
+  free_limit: number;
+  free_service_used: number;
+  free_service_remaining: number;
+  period_end: string;
+  connected: boolean;
 }
 
 const UsagePage: React.FC = () => {
@@ -42,36 +43,62 @@ const UsagePage: React.FC = () => {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) throw authError;
 
-      // Get usage statistics
-      const { data: statsData, error: statsError } = await supabase.functions.invoke('unified-api', {
-        body: {
-          action: 'usage',
-          tenant_id: (user as any).tenant_id ?? '' // tenant id from user context
-        }
-      });
+      const { data: membership, error: membershipError } = await supabase
+        .from('tenant_members')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .limit(1)
+        .maybeSingle();
+      if (membershipError) throw membershipError;
+      if (!membership) throw new Error('No workspace membership found for this account.');
+      const tenantId = membership.tenant_id;
 
-      if (statsError) throw statsError;
+      // Build period totals from workspace-scoped tables. The old
+      // `unified-api` function is not deployed and referenced a view
+      // (`tenant_usage_stats`) that does not exist.
+      const days = selectedPeriod === '7d' ? 7 : selectedPeriod === '30d' ? 30 : selectedPeriod === '90d' ? 90 : 365;
+      const since = new Date(Date.now() - days * 86400000).toISOString();
+      const { data: events, error: eventsError } = await supabase
+        .from('usage_events')
+        .select('event_type, quantity, occurred_at')
+        .eq('tenant_id', tenantId)
+        .gte('occurred_at', since);
+      if (eventsError) console.error('Could not load usage events:', eventsError);
 
-      setUsageStats(statsData.stats || []);
+      const { count: campaignsLaunched } = await supabase
+        .from('campaigns')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .gte('created_at', since);
+      const { count: templatesCreated } = await supabase
+        .from('wa_templates')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .gte('created_at', since);
 
-      // Get Meta allowance
-      const { data: tenantData, error: tenantError } = await supabase
-        .from('tenants')
-        .select(`
-          *,
-          tenant_meta_allowance (
-            meta_allowance_remaining,
-            meta_allowance_reset_date,
-            meta_allowance_used,
-            meta_allowance_limit
-          )
-        `)
-        .eq('owner_id', user.id)
-        .single();
+      const messagesSent = (events ?? []).filter(e => e.event_type !== 'inbound')
+        .reduce((sum, e) => sum + (Number(e.quantity) || 1), 0);
+      const messagesReceived = (events ?? []).filter(e => e.event_type === 'inbound')
+        .reduce((sum, e) => sum + (Number(e.quantity) || 1), 0);
 
+      setUsageStats([{
+        id: tenantId,
+        period_start: since,
+        period_end: new Date().toISOString(),
+        messages_sent: messagesSent,
+        messages_received: messagesReceived,
+        campaigns_launched: campaignsLaunched ?? 0,
+        templates_created: templatesCreated ?? 0,
+        meta_cost: 0,
+        storage_used: 0,
+        storage_limit: 0,
+      }]);
+
+      // tenant_meta_allowance is an RPC, not a related table of `tenants`.
+      const { data: allowance, error: tenantError } = await supabase
+        .rpc('tenant_meta_allowance', { p_tenant_id: membership.tenant_id });
       if (tenantError) throw tenantError;
-
-      setMetaAllowance(tenantData.tenant_meta_allowance);
+      setMetaAllowance(allowance);
     } catch (error) {
       console.error('Error fetching usage data:', error);
     } finally {
@@ -104,8 +131,8 @@ const UsagePage: React.FC = () => {
 
   const getMetaProgress = () => {
     if (!metaAllowance) return 0;
-    const used = metaAllowance.meta_allowance_used || 0;
-    const limit = metaAllowance.meta_allowance_limit || 1000;
+    const used = metaAllowance.free_service_used || 0;
+    const limit = metaAllowance.free_limit || 1000;
     return getUsagePercentage(used, limit);
   };
 
@@ -130,7 +157,7 @@ const UsagePage: React.FC = () => {
 
   const metaProgress = getMetaProgress();
   const storageProgress = getStorageProgress();
-  const metaUsed = metaAllowance?.meta_allowance_used || 0;
+  const metaUsed = metaAllowance?.free_service_used || 0;
   const storageUsed = usageStats[0]?.storage_used || 0;
   const storageLimit = usageStats[0]?.storage_limit || 0;
 
@@ -167,7 +194,7 @@ const UsagePage: React.FC = () => {
           <KpiCard
             label="Meta messages used"
             value={formatNumber(metaUsed)}
-            hint={`${formatNumber(metaAllowance?.meta_allowance_remaining || 0)} remaining · resets ${metaAllowance?.meta_allowance_reset_date ? formatDate(metaAllowance.meta_allowance_reset_date) : 'N/A'}`}
+            hint={`${formatNumber(metaAllowance?.free_service_remaining || 0)} remaining · resets ${metaAllowance?.period_end ? formatDate(metaAllowance.period_end) : 'N/A'}`}
             icon={<MessageSquare size={20} />}
             tone={metaProgress >= 90 ? 'danger' : 'brand'}
           >
@@ -247,9 +274,9 @@ const UsagePage: React.FC = () => {
           </div>
         )}
 
-        {(metaProgress >= 90 || storageProgress >= 90 || (metaAllowance && metaAllowance.meta_allowance_remaining <= 0)) && (
+        {(metaProgress >= 90 || storageProgress >= 90 || (metaAllowance && metaAllowance.free_service_remaining <= 0)) && (
           <div className="flex flex-col gap-3">
-            {metaAllowance && metaAllowance.meta_allowance_remaining <= 0 ? (
+            {metaAllowance && metaAllowance.free_service_remaining <= 0 ? (
               <div className="notice error">
                 <strong>Meta message allowance exceeded</strong>
                 <p>You have exceeded your monthly Meta message allowance. Upgrade your plan to continue sending messages.</p>

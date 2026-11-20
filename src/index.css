@@ -3696,9 +3696,11 @@
     padding: 0 1.25rem;
     border-bottom: 1px solid #eeeef3;
   }
-  .app-shell > aside nav { padding: .05rem .75rem .75rem; }
+  .app-shell > aside nav { padding: .05rem .75rem .5rem; }
+  .app-shell .nav-section { padding-top: .35rem; }
+  .app-shell .nav-section:first-child { padding-top: 0; }
   .app-shell .nav-heading {
-    padding: .7rem .6rem .35rem;
+    padding: .45rem .6rem .25rem;
     color: #5955d1;
     font-size: .75rem;
     font-weight: 500;
@@ -3706,9 +3708,9 @@
     text-transform: uppercase;
   }
   .app-shell .nav-item {
-    min-height: 2.3rem;
-    margin: 0 0 2px;
-    padding: .5rem .75rem;
+    min-height: 2.05rem;
+    margin: 0 0 1px;
+    padding: .4rem .75rem;
     gap: .7rem;
     border-radius: 8px;
     color: #0c243c;
@@ -3746,18 +3748,18 @@
   .app-shell .nav-item.is-unavailable { opacity: .48; }
 
   /* Sidebar footer + workspace switcher */
-  .app-shell aside .rounded-lg.border.border-hairline.bg-raised { background: #f8f9fc; border-color: #eeeef3; }
+  .app-shell aside .rounded-lg.border.border-hairline.bg-raised { padding: .4rem; background: #f8f9fc; border-color: #eeeef3; }
   .app-shell .upgrade-card {
-    padding: .85rem .9rem;
+    padding: .65rem .8rem;
     border-radius: 10px;
     border-color: #e9e7ff;
     background: #f7f6ff;
   }
   .app-shell .upgrade-card strong { font-size: .8125rem; }
-  .app-shell .upgrade-card > span { font-size: .6875rem; line-height: 1.5; }
+  .app-shell .upgrade-card > span:not(.btn) { display: none !important; }
   .app-shell .upgrade-card .btn {
-    height: 2rem;
-    margin-top: .6rem;
+    height: 1.85rem;
+    margin-top: .45rem;
     border-radius: 8px;
     padding-inline: .75rem;
     font-size: .75rem;
@@ -4237,6 +4239,17 @@
   .app-shell .inline-notice strong { display: block; font-size: .8125rem; font-weight: 600; }
   .app-shell .notice p,
   .app-shell .inline-notice p { margin-top: .15rem; font-size: .75rem; font-weight: 400; line-height: 1.5; }
+  .app-shell .billing-note {
+    padding: .8rem 1.1rem;
+    border: 1px solid #eeeef3;
+    border-radius: 10px;
+    background: #f8f9fc;
+    color: #696981;
+    font-size: .8125rem;
+    font-weight: 400;
+    line-height: 1.55;
+  }
+  .app-shell .billing-note strong { color: #475467; font-weight: 600; }
   .app-shell .panel-grid-2 {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4331,9 +4344,11 @@
     .app-shell > aside { width: min(290px, calc(100vw - 3rem)); }
   }
   @media (max-width: 767px) {
-    .app-shell .topbar { height: 4rem; padding-inline: 1rem; }
-    .app-shell .topbar-search { width: auto; flex: 1; }
+    .app-shell .topbar { height: 4rem; padding-inline: 1rem; gap: .5rem; }
+    .app-shell .topbar-search { width: auto; flex: 1; min-width: 0; }
     .app-shell .topbar-status-pill { display: none; }
+    .app-shell .top-actions { min-width: 0; overflow: hidden; }
+    .app-shell .topbar-profile-copy { display: none; }
     .app-shell .page-crumbs { padding: .9rem 1rem 0; }
     .app-shell .content { padding: .85rem 1rem 1.75rem; }
     .app-shell .inbox-layout { height: auto; min-height: 0; }

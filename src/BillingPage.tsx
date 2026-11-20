@@ -35,10 +35,10 @@ interface Tenant {
   subscription_status: string;
   subscription_period_ends: string;
   tenant_meta_allowance: {
-    meta_allowance_remaining: number;
-    meta_allowance_reset_date: string;
-    meta_allowance_used: number;
-  };
+    free_service_remaining: number;
+    period_end: string;
+    free_service_used: number;
+  } | null;
 }
 
 interface MpesaConfig {
@@ -74,22 +74,32 @@ const BillingPage: React.FC = () => {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) throw authError;
 
-      // Get tenant data
+      // Get the workspace this user belongs to. `tenants` has no owner_id
+      // column and tenant_meta_allowance is an RPC, not a related table.
+      const { data: membership, error: membershipError } = await supabase
+        .from('tenant_members')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (membershipError) throw membershipError;
+      if (!membership) throw new Error('No workspace membership found for this account.');
+
+      const tenantId = membership.tenant_id;
       const { data: tenantData, error: tenantError } = await supabase
         .from('tenants')
-        .select(`
-          *,
-          tenant_meta_allowance (
-            meta_allowance_remaining,
-            meta_allowance_reset_date,
-            meta_allowance_used
-          )
-        `)
-        .eq('owner_id', user.id)
+        .select('*')
+        .eq('id', tenantId)
         .single();
 
       if (tenantError) throw tenantError;
-      setTenant(tenantData);
+
+      const { data: allowance, error: allowanceError } = await supabase
+        .rpc('tenant_meta_allowance', { p_tenant_id: tenantId });
+      if (allowanceError) console.error('Could not load Meta allowance:', allowanceError);
+
+      setTenant({ ...tenantData, tenant_meta_allowance: allowance ?? null });
 
       // Get invoices
       const { data: invoicesData, error: invoicesError } = await supabase
@@ -334,16 +344,16 @@ const BillingPage: React.FC = () => {
               <span className="kpi-icon"><MessageSquare size={20} /></span>
               <div className="kpi-copy">
                 <span className="kpi-label">Meta messages left</span>
-                <strong className="kpi-value">{(tenant?.tenant_meta_allowance?.meta_allowance_remaining || 0).toLocaleString()}</strong>
+                <strong className="kpi-value">{(tenant?.tenant_meta_allowance?.free_service_remaining || 0).toLocaleString()}</strong>
                 <span className="kpi-hint">
-                  Resets {tenant?.tenant_meta_allowance?.meta_allowance_reset_date ? formatDate(tenant.tenant_meta_allowance.meta_allowance_reset_date) : 'N/A'}
+                  Resets {tenant?.tenant_meta_allowance?.period_end ? formatDate(tenant.tenant_meta_allowance.period_end) : 'N/A'}
                 </span>
               </div>
             </div>
           </article>
         </div>
 
-        <div className="inline-notice">
+        <div className="billing-note">
           <strong>Pricing model:</strong> Your platform fee covers workspace management and team collaboration. Meta message charges are billed separately by WhatsApp according to their published rates.
         </div>
 

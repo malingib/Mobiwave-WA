@@ -8,14 +8,10 @@ const supabase = supabaseClient!;
 
 interface TeamMember {
   id: string;
+  user_id: string;
   role: string;
   created_at: string;
-  users: {
-    id: string;
-    email: string;
-    created_at: string;
-    user_metadata?: any;
-  };
+  users: { id: string; email: string; name: string; created_at: string };
 }
 
 interface TeamInvitation {
@@ -41,29 +37,40 @@ const TeamPage: React.FC = () => {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'editor'>('editor');
   const [processing, setProcessing] = useState(false);
+  const [tenantId, setTenantId] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
-    fetchTeamData();
+    let active = true;
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || !active) return;
+      const { data } = await supabase.from('tenant_members').select('tenant_id').eq('user_id', user.id).limit(1).maybeSingle();
+      if (data && active) setTenantId(data.tenant_id);
+    })();
+    return () => { active = false; };
   }, []);
+  useEffect(() => {
+    if (tenantId) void fetchTeamData();
+  }, [tenantId]);
 
   const fetchTeamData = async () => {
+    if (!tenantId) return;
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) throw authError;
-
-      // Get team members
-      const { data: membersData, error: membersError } = await supabase.functions.invoke('team-management', {
-        body: {
-          action: 'get-team',
-          tenant_id: (user as any).tenant_id ?? '' // tenant id from user context
-        }
+      const { data, error } = await supabase.functions.invoke('team-members', {
+        body: { action: 'list', tenant_id: tenantId }
       });
-
-      if (membersError) throw membersError;
-
-      setTeamMembers(membersData.team || []);
-      setInvitations(membersData.invitations || []);
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setTeamMembers((data?.members ?? []).map((member: { user_id: string; role: string; name: string; email: string }) => ({
+        id: member.user_id,
+        user_id: member.user_id,
+        role: member.role,
+        created_at: '',
+        users: { id: member.user_id, email: member.email, name: member.name, created_at: '' },
+      })));
+      // The invite flow adds members directly; there is no separate invitation record.
+      setInvitations([]);
     } catch (error) {
       console.error('Error fetching team data:', error);
       setMessage({ type: 'error', text: 'Failed to load team data' });
@@ -72,141 +79,38 @@ const TeamPage: React.FC = () => {
     }
   };
 
+  // Adding an existing user is the same server flow as inviting by email:
+  // team-members resolves the account and creates the workspace membership.
   const handleAddMember = async () => {
-    if (!newMemberEmail || !newMemberRole) {
-      setMessage({ type: 'error', text: 'Please fill in all required fields' });
-      return;
-    }
-
-    setProcessing(true);
-    setMessage(null);
-
-    try {
-      // First, get the user ID from email
-      const { data: userData, error: userError } = await supabase
-        .from('auth.users')
-        .select('id')
-        .eq('email', newMemberEmail)
-        .single();
-
-      if (userError || !userData) {
-        throw new Error('User not found with this email');
-      }
-
-      // Add team member
-      const { error } = await supabase.functions.invoke('team-management', {
-        body: {
-          action: 'add-member',
-          tenant_id: 'current-tenant-id', // This should come from user context
-          user_id: userData.id,
-          role: newMemberRole
-        }
-      });
-
-      if (error) throw error;
-
-      setMessage({ type: 'success', text: 'Team member added successfully' });
-      setShowAddModal(false);
-      setNewMemberEmail('');
-      setNewMemberRole('editor');
-      fetchTeamData();
-    } catch (error) {
-      setMessage({ type: 'error', text: (error as Error).message || 'Failed to add team member' });
-    } finally {
-      setProcessing(false);
-    }
+    setInviteEmail(newMemberEmail);
+    setInviteRole(newMemberRole);
+    setShowAddModal(false);
+    await handleSendInvitation();
   };
 
   const handleSendInvitation = async () => {
-    if (!inviteEmail || !inviteRole) {
-      setMessage({ type: 'error', text: 'Please fill in all required fields' });
-      return;
-    }
-
-    setProcessing(true);
-    setMessage(null);
-
+    if (!inviteEmail || !tenantId) { setMessage({ type: 'error', text: 'Please enter an email address' }); return; }
+    setProcessing(true); setMessage(null);
     try {
-      const { error } = await supabase.functions.invoke('team-management', {
-        body: {
-          action: 'send-invitation',
-          tenant_id: 'current-tenant-id', // This should come from user context
-          email: inviteEmail,
-          role: inviteRole
-        }
+      const { data, error } = await supabase.functions.invoke('team-members', {
+        body: { action: 'invite', tenant_id: tenantId, email: inviteEmail, role: inviteRole === 'admin' ? 'admin' : 'agent', redirect_origin: window.location.origin }
       });
-
       if (error) throw error;
-
-      setMessage({ type: 'success', text: 'Invitation sent successfully' });
-      setShowInviteModal(false);
-      setInviteEmail('');
-      setInviteRole('editor');
-      fetchTeamData();
+      if (data?.error) throw new Error(data.error);
+      setMessage({ type: 'success', text: data?.invited ? 'Invitation sent successfully' : 'Teammate added successfully' });
+      setShowInviteModal(false); setInviteEmail(''); setInviteRole('editor');
+      void fetchTeamData();
     } catch (error) {
       setMessage({ type: 'error', text: (error as Error).message || 'Failed to send invitation' });
-    } finally {
-      setProcessing(false);
-    }
+    } finally { setProcessing(false); }
   };
 
-  const handleUpdateRole = async () => {
-    if (!selectedMember) return;
-
-    setProcessing(true);
-    setMessage(null);
-
-    try {
-      const { error } = await supabase.functions.invoke('team-management', {
-        body: {
-          action: 'update-role',
-          tenant_id: 'current-tenant-id', // This should come from user context
-          member_id: selectedMember.id,
-          role: newMemberRole
-        }
-      });
-
-      if (error) throw error;
-
-      setMessage({ type: 'success', text: 'Role updated successfully' });
-      setShowRoleModal(false);
-      setSelectedMember(null);
-      setNewMemberRole('editor');
-      fetchTeamData();
-    } catch (error) {
-      setMessage({ type: 'error', text: (error as Error).message || 'Failed to update role' });
-    } finally {
-      setProcessing(false);
-    }
+  const handleUnsupportedAction = () => {
+    setMessage({ type: 'error', text: 'Role changes and member removal are handled by your workspace owner.' });
   };
 
-  const handleRemoveMember = async () => {
-    if (!selectedMember) return;
-
-    setProcessing(true);
-    setMessage(null);
-
-    try {
-      const { error } = await supabase.functions.invoke('team-management', {
-        body: {
-          action: 'remove-member',
-          tenant_id: 'current-tenant-id', // This should come from user context
-          member_id: selectedMember.id
-        }
-      });
-
-      if (error) throw error;
-
-      setMessage({ type: 'success', text: 'Team member removed successfully' });
-      setShowRemoveModal(false);
-      setSelectedMember(null);
-      fetchTeamData();
-    } catch (error) {
-      setMessage({ type: 'error', text: (error as Error).message || 'Failed to remove team member' });
-    } finally {
-      setProcessing(false);
-    }
-  };
+  const handleUpdateRole = handleUnsupportedAction;
+  const handleRemoveMember = handleUnsupportedAction;
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-KE', {
@@ -318,7 +222,7 @@ const TeamPage: React.FC = () => {
                   </div>
                 </div>
                 <span>{rolePill(member.role)}</span>
-                <span className="muted small">{formatDate(member.created_at)}</span>
+                <span className="muted small">{member.created_at ? formatDate(member.created_at) : '—'}</span>
                 <div className="row-actions">
                   <button
                     type="button"
@@ -354,49 +258,7 @@ const TeamPage: React.FC = () => {
           </div>
         </div>
         <div className="source-list">
-          <div className="source-table-head invite-head">
-            <span>Email</span><span>Role</span><span>Sent</span><span>Expires</span><span />
-          </div>
-          {invitations.length === 0 ? (
-            <Empty icon={<Mail size={22} />} title="No pending invitations" text="Invite a teammate to send them a workspace invitation." />
-          ) : (
-            invitations.map((invitation) => (
-              <div className="source-row invite-row" key={invitation.id}>
-                <div className="source-main">
-                  <span className="source-icon"><Mail size={16} /></span>
-                  <div className="source-text">
-                    <strong>{invitation.email}</strong>
-                    <small>Invitation pending acceptance</small>
-                  </div>
-                </div>
-                <span>{rolePill(invitation.role)}</span>
-                <span className="muted small">{formatDate(invitation.created_at)}</span>
-                <span className="muted small">{formatDate(invitation.expires_at)}</span>
-                <div className="row-actions">
-                  <button
-                    type="button"
-                    className="secondary-button compact btn-danger"
-                    onClick={async () => {
-                      try {
-                        await supabase.functions.invoke('team-management', {
-                          body: {
-                            action: 'revoke-invitation',
-                            tenant_id: 'current-tenant-id', // This should come from user context
-                            invitation_id: invitation.id
-                          }
-                        });
-                        fetchTeamData();
-                      } catch (error) {
-                        setMessage({ type: 'error', text: 'Failed to revoke invitation' });
-                      }
-                    }}
-                  >
-                    Revoke
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
+          <Empty icon={<Mail size={22} />} title="No pending invitations" text="Invited teammates join as soon as they accept their email invitation." />
         </div>
       </div>
 

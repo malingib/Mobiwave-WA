@@ -152,10 +152,10 @@ export default function TemplatesPage({ tenantId, isAdmin, metaConnected, onNoti
     {!metaConnected && <div className="inline-notice template-connection-notice" role="status">Connect and verify your WhatsApp Cloud API in Integrations before creating or synchronizing templates.</div>}
 
     <div className="template-management-stats">
-      <button type="button" className={statusFilter === "all" ? "template-stat active" : "template-stat"} onClick={() => setStatusFilter("all")}><strong>{counts.all}</strong><span>All templates</span></button>
-      <button type="button" className={statusFilter === "approved" ? "template-stat active" : "template-stat"} onClick={() => setStatusFilter("approved")}><strong>{counts.approved}</strong><span>Approved</span></button>
-      <button type="button" className={statusFilter === "pending" ? "template-stat active" : "template-stat"} onClick={() => setStatusFilter("pending")}><strong>{counts.pending}</strong><span>Pending review</span></button>
-      <button type="button" className={statusFilter === "rejected" ? "template-stat active" : "template-stat"} onClick={() => setStatusFilter("rejected")}><strong>{counts.rejected}</strong><span>Rejected</span></button>
+      <button type="button" className={statusFilter === "all" ? "template-stat active" : "template-stat"} onClick={() => setStatusFilter("all")}><span className="template-stat-icon tone-brand"><FileText size={18}/></span><span className="template-stat-copy"><strong>{counts.all}</strong><span>All templates</span></span></button>
+      <button type="button" className={statusFilter === "approved" ? "template-stat active" : "template-stat"} onClick={() => setStatusFilter("approved")}><span className="template-stat-icon tone-success"><CheckCircle2 size={18}/></span><span className="template-stat-copy"><strong>{counts.approved}</strong><span>Approved</span></span></button>
+      <button type="button" className={statusFilter === "pending" ? "template-stat active" : "template-stat"} onClick={() => setStatusFilter("pending")}><span className="template-stat-icon tone-warning"><Clock3 size={18}/></span><span className="template-stat-copy"><strong>{counts.pending}</strong><span>Pending review</span></span></button>
+      <button type="button" className={statusFilter === "rejected" ? "template-stat active" : "template-stat"} onClick={() => setStatusFilter("rejected")}><span className="template-stat-icon tone-danger"><XCircle size={18}/></span><span className="template-stat-copy"><strong>{counts.rejected}</strong><span>Rejected</span></span></button>
     </div>
 
     {showComposer && isAdmin && <form className="panel form-panel template-composer" onSubmit={submitTemplate}>

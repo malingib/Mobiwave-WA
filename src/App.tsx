@@ -219,6 +219,12 @@ function relativeTime(value?: string): string {
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [routeVersion, setRouteVersion] = useState(0);
+  const navigate = useCallback((path: string) => {
+    if (window.location.pathname + window.location.search === path) return;
+    window.history.pushState({}, "", path);
+    setRouteVersion((value) => value + 1);
+  }, []);
   const [authMode, setAuthMode] = useState<"signin" | "signup">(() => new URLSearchParams(window.location.search).get("mode") === "signup" ? "signup" : "signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -330,10 +336,13 @@ export default function App() {
   useEffect(() => {
     if (!supabase) { setAuthLoading(false); return; }
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setUser(data.session?.user ?? null); setAuthLoading(false); }).catch((error: unknown) => { console.error("MobiWave WA session check failed:", error); setNotice("We could not verify your session. Check your connection and reload the page."); setAuthLoading(false); });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next); setUser(next?.user ?? null);
+      if (event === "SIGNED_OUT" && !next && window.location.pathname !== "/login") navigate("/login");
     });
-    return () => listener.subscription.unsubscribe();
+    const onPopState = () => setRouteVersion((value) => value + 1);
+    window.addEventListener("popstate", onPopState);
+    return () => { listener.subscription.unsubscribe(); window.removeEventListener("popstate", onPopState); };
   }, []);
   const loadTenants = useCallback(async () => {
     const requestId = ++tenantRequestId.current;
@@ -698,7 +707,10 @@ export default function App() {
         : await supabase.auth.signUp({ email: email.trim(), password });
       if (result.error) setNotice(result.error.message);
       else if (authMode === "signup" && !result.data.session) setNotice("Check your email to confirm your account, then sign in.");
-      else setNotice(authMode === "signup" ? "Account created." : "Signed in.");
+      else {
+        setNotice(authMode === "signup" ? "Account created." : "Signed in.");
+        navigate("/dashboard");
+      }
     } catch (error) {
       console.error("MobiWave WA sign-in request failed:", error);
       setNotice("Could not reach the authentication service. Check your connection and try again.");
@@ -1093,7 +1105,7 @@ export default function App() {
   const selectedTemplateParts = getTemplateParts(selectedTemplate);
   const unsupportedMediaHeader = Boolean(selectedTemplate?.components?.some((component) => String(component?.type).toLowerCase() === "header" && component?.format && String(component.format).toUpperCase() !== "TEXT"));
   // Public routes are available without authentication; account access starts at /login.
-  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  const pathname = useMemo(() => window.location.pathname.replace(/\/+$/, "") || "/", [routeVersion]);
   if (pathname === "/pricing") return <Suspense fallback={<div className="auth-screen" role="status">Loading pricing…</div>}><PricingPage /></Suspense>;
   if (pathname === "/") return <Suspense fallback={<div className="auth-screen" role="status">Loading MobiWave WA…</div>}><LandingPage /></Suspense>;
   const knownRoute = pathname === "/login" || ["/dashboard", "/admin", "/workspace", "/settings"].some((prefix) => pathname === prefix || pathname.startsWith(prefix + "/"));
@@ -1159,7 +1171,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
     <aside
       id="primary-navigation"
       className={
-        "fixed inset-y-0 left-0 z-40 flex w-[250px] shrink-0 flex-col border-r border-hairline bg-surface transition-transform duration-200 ease-out lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 " +
+        "fixed inset-y-0 left-0 z-40 flex h-dvh w-[250px] shrink-0 flex-col border-r border-hairline bg-surface transition-transform duration-200 ease-out lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 " +
         (mobileNavOpen ? "translate-x-0 shadow-raised" : "-translate-x-full")
       }
     >
@@ -1200,9 +1212,9 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
         )}
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-4 pb-4" aria-label="Workspace navigation">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-4 pb-4" aria-label="Workspace navigation">
         {navigation.map(({ section, items }) => (
-          <div key={section} className="pt-4 first:pt-2">
+          <div key={section} className="nav-section">
             <div className="nav-heading">{section}</div>
             {items.map((item) => {
               const feature = viewTierFeature[item.label];
@@ -1318,6 +1330,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
       <div className="page-crumbs" aria-label="Breadcrumb">
         <span>Home</span>
         <ChevronRight aria-hidden />
+        {activeTenant && <><span>{activeTenant.name}</span><ChevronRight aria-hidden /></>}
         <strong>{view}</strong>
       </div>
       {view === "Overview" && <section className="content"><Suspense fallback={<div className="panel" role="status">Loading overview…</div>}>

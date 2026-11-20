@@ -73,6 +73,8 @@ async function mockBackend(page: Page, role = "admin") {
     if (request.method() === "OPTIONS") return json(route, {}, 200);
 
     if (table === "tenant_members") return json(route, tenantMembership.map((membership) => ({ ...membership, role })));
+    if (table === "tenants") return json(route, tenantMembership.map((membership) => membership.tenants));
+    if (table === "platform_admins") return json(route, []);
     if (table === "conversations") return json(route, [conversation]);
     if (table === "meta_integrations") return json(route, {
       tenant_id: "e2e-tenant-1",
@@ -135,7 +137,7 @@ async function signIn(page: Page) {
   await page.getByRole("button", { name: /sign in securely/i }).click();
   await expect(page.getByRole("heading", { name: "Your messaging at a glance", exact: true })).toBeVisible();
   await expect(page.locator('#primary-navigation [aria-current="page"]')).toHaveAttribute("aria-label", "Overview");
-  await expect(page.locator(".breadcrumbs").getByText("Demo Business")).toBeVisible();
+  await expect(page.locator(".page-crumbs").getByText("Demo Business")).toBeVisible();
 }
 
 /* Opens a dashboard view from either the desktop sidebar or the mobile drawer. */
@@ -150,10 +152,10 @@ test.beforeEach(async ({ page }, testInfo) => {
   await mockBackend(page, testInfo.title.includes("agent role") ? "agent" : "admin");
 });
 
-test("public landing page loads and labels preview metrics as sample data", async ({ page }) => {
+test("public landing page loads without horizontal overflow", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText(/Product preview · illustrative sample data/i)).toBeVisible();
-  await expect(page.getByText(/WhatsApp business messaging for Kenya/i).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Reach every customer with MobiWave/i })).toBeVisible();
+  await expect(page.getByText(/WhatsApp business messaging in one calm console/i).first()).toBeVisible();
   const dimensions = await page.evaluate(() => ({
     viewport: window.innerWidth,
     document: document.documentElement.scrollWidth,
@@ -297,7 +299,7 @@ test("workspace navigation exposes all eight sections without losing the active 
   for (const [navigationLabel, heading] of sections) {
     await navigateTo(page, navigationLabel);
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
-    await expect(page.locator(".breadcrumbs").getByText("Demo Business")).toBeVisible();
+    await expect(page.locator(".page-crumbs").getByText("Demo Business")).toBeVisible();
   }
 });
 

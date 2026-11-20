@@ -104,6 +104,7 @@ async function mockPlatformBackend(
     const table = path.split("/").pop() ?? "";
     if (table === "platform_admins") return json(route, platformRole ? [{ role: platformRole }] : []);
     if (table === "tenant_members") return json(route, memberships);
+    if (table === "tenants") return json(route, memberships.map((membership) => membership.tenants));
     if (table === "meta_integrations") return json(route, {
       tenant_id: "client-2",
       phone_number_id: "e2e-phone-id",
@@ -135,8 +136,8 @@ async function signIn(page: Page) {
 
 async function signInToClientWorkspace(page: Page) {
   await signIn(page);
-  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
-  await expect(page.locator(".breadcrumbs").getByText("Bluewave Logistics")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your messaging at a glance", exact: true })).toBeVisible();
+  await expect(page.locator(".page-crumbs").getByText("Bluewave Logistics")).toBeVisible();
 }
 
 test("platform owner sees a separate client-workspace console instead of the client dashboard", async ({ page }) => {
@@ -161,6 +162,8 @@ test("platform owner with a client membership can switch into that client worksp
   await mockPlatformBackend(page, { memberships: clientMembership });
   await signInToClientWorkspace(page);
 
+  const menu = page.getByRole("button", { name: "Open navigation" });
+  if (await menu.isVisible()) await menu.click();
   await expect(page.getByRole("link", { name: /Platform console/ })).toBeVisible();
   await page.getByRole("link", { name: /Platform console/ }).click();
 
@@ -174,8 +177,8 @@ test("platform owner with a client membership can switch into that client worksp
   await page.getByRole("link", { name: /Open client workspace/ }).click();
 
   await expect(page).toHaveURL(/\/dashboard\?tenant=client-2/);
-  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
-  await expect(page.locator(".breadcrumbs").getByText("Bluewave Logistics")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your messaging at a glance", exact: true })).toBeVisible();
+  await expect(page.locator(".page-crumbs").getByText("Bluewave Logistics")).toBeVisible();
 });
 
 test("client users receive a 403 when they try to open the platform console", async ({ page }) => {
