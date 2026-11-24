@@ -42,7 +42,7 @@ Deno.serve(async (request) => {
       return json({ error: "The Meta app secret must be 32 hexadecimal characters." }, 400);
     }
     const { data: existing, error: existingError } = await auth.admin.from("meta_integrations")
-      .select("encrypted_access_token,encrypted_app_secret")
+      .select("encrypted_access_token,encrypted_app_secret,phone_number_id,waba_id,verified,enabled")
       .eq("tenant_id", tenantId)
       .maybeSingle();
     if (existingError) throw existingError;
@@ -58,11 +58,17 @@ Deno.serve(async (request) => {
       token ? encryptToken(token) : Promise.resolve(existing?.encrypted_access_token as string),
       appSecret ? encryptToken(appSecret) : Promise.resolve(existing?.encrypted_app_secret as string),
     ]);
+    // A timezone-only edit must not disconnect a healthy WhatsApp integration.
+    // Replacing credentials or changing either Meta ID requires verification again.
+    const unchangedConnection = existing?.phone_number_id === phoneNumberId
+      && existing?.waba_id === wabaId && !token && !appSecret;
     const { error } = await auth.admin.from("meta_integrations").upsert({
       tenant_id: tenantId, phone_number_id: phoneNumberId, waba_id: wabaId,
       waba_timezone: wabaTimezone,
       encrypted_access_token: encryptedToken, encrypted_app_secret: encryptedAppSecret,
-      enabled: false, verified: false, updated_at: new Date().toISOString(),
+      enabled: unchangedConnection ? Boolean(existing.enabled) : false,
+      verified: unchangedConnection ? Boolean(existing.verified) : false,
+      updated_at: new Date().toISOString(),
     });
     if (error) throw error;
     return json({ ok: true, enabled: false, app_secret_configured: true, message: "Client Meta credentials encrypted and saved. Verify connectivity before enabling messaging." });
