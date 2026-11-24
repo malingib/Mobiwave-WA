@@ -28,12 +28,12 @@ export function MarketingNav({ items = defaultNav, current }: { items?: NavItem[
   const [open, setOpen] = useState(false);
   return (
     <header className="absolute inset-x-0 top-0 z-40">
-      <div className="mx-auto flex h-[76px] max-w-[80rem] items-center justify-between gap-4 px-5 lg:px-8">
-        <a href="/" aria-label="MobiWave WA home">
+      <div className="mx-auto grid h-[76px] max-w-[80rem] grid-cols-[1fr_auto_1fr] items-center gap-4 px-5 lg:px-8">
+        <a href="/" aria-label="MobiWave WA home" className="justify-self-start">
           <BrandLockup />
         </a>
 
-        <nav className="hidden items-center gap-6 lg:flex" aria-label="Main navigation">
+        <nav className="hidden items-center gap-7 lg:flex" aria-label="Main navigation">
           {items.map((item) => (
             <a
               key={item.label}
@@ -52,15 +52,21 @@ export function MarketingNav({ items = defaultNav, current }: { items?: NavItem[
           ))}
         </nav>
 
-        <button
-          type="button"
-          className="icon-btn lg:hidden"
-          aria-label={open ? "Close menu" : "Open menu"}
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? <X size={18} /> : <Menu size={18} />}
-        </button>
+        <div className="col-start-3 flex items-center justify-self-end gap-2">
+          <div className="hidden items-center gap-2 lg:flex">
+            <a href="/login?mode=signup" className="btn btn-secondary btn-pill btn-sm">Get started <ArrowUpRight size={14} /></a>
+            <a href="/login" className="btn btn-primary btn-pill btn-sm">Login</a>
+          </div>
+          <button
+            type="button"
+            className="icon-btn lg:hidden"
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+            onClick={() => setOpen((value) => !value)}
+          >
+            {open ? <X size={18} /> : <Menu size={18} />}
+          </button>
+        </div>
       </div>
 
       {open && (
@@ -75,6 +81,10 @@ export function MarketingNav({ items = defaultNav, current }: { items?: NavItem[
               {item.label}
             </a>
           ))}
+          <div className="mt-2 flex items-center gap-2 px-2">
+            <a href="/login?mode=signup" onClick={() => setOpen(false)} className="btn btn-secondary btn-pill btn-sm flex-1">Get started</a>
+            <a href="/login" onClick={() => setOpen(false)} className="btn btn-primary btn-pill btn-sm flex-1">Login</a>
+          </div>
         </nav>
       )}
     </header>

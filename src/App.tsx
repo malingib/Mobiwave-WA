@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import {
   Activity, ArrowLeft, ArrowUpRight, Bell, Check, ChevronDown, ChevronRight, CreditCard,
@@ -6,6 +6,7 @@ import {
   Send, Settings2, ShieldCheck, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail, FileText,
 } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
+import { clearWorkspaceUiState, readWorkspaceUiState, withTimeout, writeWorkspaceUiState } from "./lib/runtime";
 import { ErrorPage } from "./ErrorPages";
 import type { DailyMessagePoint, OverviewMetrics } from "./dashboard/Overview";
 
@@ -18,7 +19,7 @@ const ContactCsvImport = lazy(() => import("./ContactCsvImport"));
 const BillingPage = lazy(() => import("./BillingPage"));
 const TeamPage = lazy(() => import("./TeamPage"));
 const UsagePage = lazy(() => import("./UsagePage"));
-import { Brand } from "./components/ui";
+import { Brand, Empty, Modal, PageHeading, SetupRow, Status, useConfirm } from "./components/ui";
 
 // Canonical public origin used for user-facing callback URLs (e.g. the Meta
 // webhook). The webhook is served by the Vercel edge function deployed on the
@@ -35,7 +36,8 @@ const viewTierFeature: Partial<Record<View, TierFeature>> = {
 type Tenant = { id: string; name: string; slug: string; role: string };
 type TenantPlan = {
   subscription_status: string | null;
-  entitlement_state?: "exempt" | "unassigned" | "active" | "trialing" | "grace" | "past_due" | "suspended" | "paused" | "canceled";
+  /** Mirrors the `state` key returned by public.platform_tenant_plan. */
+  state?: "exempt" | "unassigned" | "active" | "trialing" | "grace" | "past_due" | "suspended" | "paused" | "canceled";
   can_send?: boolean;
   trial_ends_on?: string | null;
   grace_ends_on?: string | null;
@@ -149,17 +151,42 @@ function MessageMedia({ mediaId, type, filename, tenantId }: { mediaId: string; 
   return <a className="message-media-download" href={source} download={filename || "WhatsApp attachment"}>{filename || "Download attachment"}</a>;
 }
 function planStateLabel(plan: TenantPlan | null) {
-  switch (plan?.entitlement_state) {
+  switch (plan?.state) {
     case "exempt": return "Legacy access · no plan assigned";
     case "trialing": return plan.days_remaining === 0 ? "Trial ends today" : `Trial · ${plan.days_remaining ?? 0} day(s) left`;
     case "grace": return plan.days_remaining === 0 ? "Grace period ends today" : `Payment grace · ${plan.days_remaining ?? 0} day(s) left`;
     case "active": return "Active subscription";
+    case "past_due": return "Payment overdue · sending paused";
     case "suspended": return "Sending paused · suspended";
     case "paused": return "Sending paused · plan paused";
     case "canceled": return "Subscription canceled";
     case "unassigned": return "No subscription assigned";
     default: return plan?.subscription_status ?? "No plan assigned";
   }
+}
+
+/* Every dashboard view has a URL. The path is the source of truth, so a
+   teammate can be sent straight to the Inbox or a campaign and the browser
+   back button works. */
+const VIEW_PATHS: Record<View, string> = {
+  Overview: "/dashboard",
+  Inbox: "/dashboard/inbox",
+  Contacts: "/dashboard/contacts",
+  Templates: "/dashboard/templates",
+  Campaigns: "/dashboard/campaigns",
+  Alerts: "/dashboard/alerts",
+  Integrations: "/dashboard/integrations",
+  Billing: "/dashboard/billing",
+  Team: "/dashboard/team",
+  Usage: "/dashboard/usage",
+  Profile: "/dashboard/profile",
+  Settings: "/dashboard/settings",
+};
+
+function viewFromPath(pathname: string): View | null {
+  const normalised = pathname.replace(/\/+$/, "") || "/";
+  const match = (Object.entries(VIEW_PATHS) as [View, string][]).find(([, path]) => path === normalised);
+  return match ? match[0] : null;
 }
 
 const navigation: { section: string; items: { label: View; icon: typeof MessageCircle }[] }[] = [
@@ -173,7 +200,6 @@ const navigation: { section: string; items: { label: View; icon: typeof MessageC
       { label: "Campaigns", icon: Zap },
     ],
   },
-  { section: "Monitoring", items: [{ label: "Alerts", icon: Bell }] },
   { section: "Administration", items: [{ label: "Integrations", icon: Settings2 }] },
   {
     section: "Account",
@@ -217,6 +243,10 @@ function relativeTime(value?: string): string {
   return new Date(value).toLocaleDateString();
 }
 export default function App() {
+  // Restored once per mount. sessionStorage survives a reload of this tab (for
+  // example after the browser discards and restores it) without leaking the
+  // workspace position into other tabs.
+  const restoredUi = useMemo(() => readWorkspaceUiState(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [routeVersion, setRouteVersion] = useState(0);
@@ -234,28 +264,63 @@ export default function App() {
   const [newPassword, setNewPassword] = useState("");
   const [user, setUser] = useState<User | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [tenantId, setTenantId] = useState("");
+  const [tenantId, setTenantId] = useState(() => typeof restoredUi.tenantId === "string" ? restoredUi.tenantId : "");
   const [tenantLoading, setTenantLoading] = useState(true);
   const [tenantError, setTenantError] = useState("");
   const [tenantPlan, setTenantPlan] = useState<TenantPlan | null>(null);
   const [tenantPlanLoading, setTenantPlanLoading] = useState(false);
   const [metaAllowance, setMetaAllowance] = useState<MetaAllowance | null>(null);
   const [platformRole, setPlatformRole] = useState<string | null>(null);
-  const [view, setView] = useState<View>("Overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [alertsDropdownOpen, setAlertsDropdownOpen] = useState(false);
+  // The URL is the source of truth for which screen is open. `routeVersion`
+  // is bumped on pushState and popstate so the memo re-reads location.
+  const pathname = useMemo(() => window.location.pathname.replace(/\/+$/, "") || "/", [routeVersion]);
+  const routedView = useMemo(() => viewFromPath(pathname), [pathname]);
+  const view: View = routedView ?? "Overview";
+  const goTo = useCallback((next: View) => {
+    navigate(VIEW_PATHS[next]);
+    setMobileNavOpen(false);
+    setAlertsDropdownOpen(false);
+  }, [navigate]);
+  const [desktopNav, setDesktopNav] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const onChange = () => setDesktopNav(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
   useEffect(() => {
     if (!mobileNavOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setMobileNavOpen(false); };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [mobileNavOpen]);
+  
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (alertsDropdownOpen && !(event.target as Element).closest('.alerts-dropdown') && !(event.target as Element).closest('button[aria-label="Open alerts"]')) {
+        setAlertsDropdownOpen(false);
+      }
+    };
+    
+    if (alertsDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [alertsDropdownOpen]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const { confirm, confirmElement } = useConfirm();
   const noticeIsError = /(^could not\b|^failed\b|^error\b|^unable\b|^invalid\b|^not found\b|^not configured\b|^not allowed\b|\b(?:rejected|denied|unavailable|could not|cannot|not allowed|not configured|not found|invalid|permission denied|duplicate|violates|did not|was not|not confirmed|no changes|edge function returned|non-2xx|network|unauthorized|forbidden|bad request|conflict|request failed|function invocation failed|failed to|fetch error|internal server error)\b|\b[1-9]\d* failed\b)/i.test(notice);
   useEffect(() => {
     if (!notice) return;
-    const needsManualAttention = /could not|failed|error|unknown|unavailable|not available|copy|secret|token|api key|select|enter|record|consent|opted out|suppressed|retry|must|not found|edge function|non-2xx|unauthorized|forbidden|network|conflict/i.test(notice);
+    // Only messages that ask the user to *do* something stay on screen.
+    // Matching broad nouns such as "record" or "consent" kept harmless
+    // confirmations ("Opt-in recorded and added to the consent history")
+    // visible forever.
+    const needsManualAttention = /^(could not|failed|error|unable|invalid|not found|not configured|not allowed|enter|select|record)\b|copy it now|copy the signing secret|copy the value|select and copy|will not be shown again|won't be shown again|record how and when|edge function|non-2xx|unauthorized|forbidden|network error/i.test(notice);
     if (needsManualAttention) return;
     const timeout = window.setTimeout(() => setNotice(""), 4500);
     return () => window.clearTimeout(timeout);
@@ -264,30 +329,36 @@ export default function App() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(false);
   const [totalContacts, setTotalContacts] = useState(0);
-  const [contactPage, setContactPage] = useState(0);
+  const [contactPage, setContactPage] = useState(() => Number.isInteger(restoredUi.contactPage) && (restoredUi.contactPage ?? 0) >= 0 ? restoredUi.contactPage as number : 0);
   const [contactHasMore, setContactHasMore] = useState(false);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [campaignCounts, setCampaignCounts] = useState<{ total: number; queued: number; failed: number } | null>(null);
   const [campaignCountsLoading, setCampaignCountsLoading] = useState(false);
+  const [campaignCountsError, setCampaignCountsError] = useState("");
   const [campaignFailures, setCampaignFailures] = useState<CampaignFailure[]>([]);
   const [dailyMessages, setDailyMessages] = useState<DailyMessagePoint[]>([]);
   const [overviewMetrics, setOverviewMetrics] = useState<OverviewMetrics | null>(null);
+  const [overviewMetricsLoading, setOverviewMetricsLoading] = useState(false);
   const [overviewMetricsError, setOverviewMetricsError] = useState("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationLimit, setConversationLimit] = useState(100);
   const [conversationHasMore, setConversationHasMore] = useState(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
-  const [teamInviteEmail, setTeamInviteEmail] = useState("");
-  const [teamInviteRole, setTeamInviteRole] = useState<"admin" | "agent" | "viewer">("agent");
-  const [conversationStatusFilter, setConversationStatusFilter] = useState("open");
-  const [conversationAssigneeFilter, setConversationAssigneeFilter] = useState("all");
+  const [conversationStatusFilter, setConversationStatusFilter] = useState(() => typeof restoredUi.statusFilter === "string" ? restoredUi.statusFilter : "open");
+  const [conversationAssigneeFilter, setConversationAssigneeFilter] = useState(() => typeof restoredUi.assigneeFilter === "string" ? restoredUi.assigneeFilter : "all");
   const [conversationSearch, setConversationSearch] = useState("");
+  const [debouncedConversationSearch, setDebouncedConversationSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedConversationSearch(conversationSearch), 300);
+    return () => clearTimeout(timer);
+  }, [conversationSearch]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageHasMore, setMessageHasMore] = useState(false);
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement | null>(null);
   const scrollToLatestMessage = useRef(false);
   const tenantRequestId = useRef(0);
   const contactsRequestId = useRef(0);
@@ -296,8 +367,31 @@ export default function App() {
   const notificationRequestId = useRef(0);
   const messageRequestId = useRef(0);
   const overviewRequestId = useRef(0);
-  const [selectedConversation, setSelectedConversation] = useState("");
-  const [search, setSearch] = useState("");
+  const [selectedConversation, setSelectedConversation] = useState(() => typeof restoredUi.selectedConversation === "string" ? restoredUi.selectedConversation : "");
+  useEffect(() => {
+    writeWorkspaceUiState({
+      tenantId,
+      selectedConversation,
+      statusFilter: conversationStatusFilter,
+      assigneeFilter: conversationAssigneeFilter,
+      contactPage,
+    });
+  }, [tenantId, selectedConversation, conversationStatusFilter, conversationAssigneeFilter, contactPage]);
+  // The workspace search bar, the contact list and the campaign recipient
+  // picker each own their query. A single shared value leaked the campaign
+  // search term into the contact list when the user navigated back.
+  const [contactSearch, setContactSearch] = useState("");
+  const [debouncedContactSearch, setDebouncedContactSearch] = useState("");
+  const [campaignSearch, setCampaignSearch] = useState("");
+  const [debouncedCampaignSearch, setDebouncedCampaignSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedContactSearch(contactSearch), 300);
+    return () => clearTimeout(timer);
+  }, [contactSearch]);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedCampaignSearch(campaignSearch), 300);
+    return () => clearTimeout(timer);
+  }, [campaignSearch]);
   const [contactPhone, setContactPhone] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactOptIn, setContactOptIn] = useState(false);
@@ -333,17 +427,54 @@ export default function App() {
   const [webhookUrl, setWebhookUrl] = useState("");
   const [webhookEvents, setWebhookEvents] = useState<string[]>(["message.inbound","message.status"]);
   const [newWebhookSecret, setNewWebhookSecret] = useState("");
+  // Supabase Auth emits SIGNED_IN again whenever a tab is refocused (its
+  // `_recoverAndRefresh` runs on `visibilitychange`). Replacing the `user`
+  // object on every event would cascade into a full tenant + workspace reload.
+  // Only a genuine identity change should invalidate workspace state.
+  const signedInUserIdRef = useRef<string | null>(null);
+  const applyAuthState = useCallback((next: Session | null) => {
+    setSession((previous) => (
+      previous?.access_token === next?.access_token
+      && previous?.refresh_token === next?.refresh_token
+      && previous?.expires_at === next?.expires_at
+        ? previous
+        : next
+    ));
+    const nextUserId = next?.user?.id ?? null;
+    if (nextUserId !== signedInUserIdRef.current) {
+      signedInUserIdRef.current = nextUserId;
+      setUser(next?.user ?? null);
+    }
+  }, []);
   useEffect(() => {
     if (!supabase) { setAuthLoading(false); return; }
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setUser(data.session?.user ?? null); setAuthLoading(false); }).catch((error: unknown) => { console.error("MobiWave WA session check failed:", error); setNotice("We could not verify your session. Check your connection and reload the page."); setAuthLoading(false); });
+    supabase.auth.getSession().then(({ data }) => { applyAuthState(data.session); setAuthLoading(false); }).catch((error: unknown) => { console.error("MobiWave WA session check failed:", error); setNotice("We could not verify your session. Check your connection and reload the page."); setAuthLoading(false); });
     const { data: listener } = supabase.auth.onAuthStateChange((event, next) => {
-      setSession(next); setUser(next?.user ?? null);
+      applyAuthState(next);
       if (event === "SIGNED_OUT" && !next && window.location.pathname !== "/login") navigate("/login");
     });
     const onPopState = () => setRouteVersion((value) => value + 1);
     window.addEventListener("popstate", onPopState);
-    return () => { listener.subscription.unsubscribe(); window.removeEventListener("popstate", onPopState); };
-  }, []);
+    const onRejection = (event: PromiseRejectionEvent) => {
+      // A failed background request should warn, never blank the entire app.
+      console.error("MobiWave WA background request failed:", event.reason);
+      setNotice("A background request failed. Refresh if something looks out of date.");
+    };
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      listener.subscription.unsubscribe();
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, [applyAuthState, navigate]);
+  // Legacy dashboard paths redirect to the overview.
+  useEffect(() => {
+    if (pathname === "/workspace" || pathname === "/settings") navigate("/dashboard");
+  }, [pathname, navigate]);
+  // The browser tab title follows the open screen.
+  useEffect(() => {
+    document.title = view === "Overview" ? "MobiWave WA" : `${view} · MobiWave WA`;
+  }, [view]);
   const loadTenants = useCallback(async () => {
     const requestId = ++tenantRequestId.current;
     if (!supabase || !user) {
@@ -357,10 +488,10 @@ export default function App() {
     setTenantLoading(true);
     setTenantError("");
     try {
-      const [membershipResult, platformResult] = await Promise.all([
+      const [membershipResult, platformResult] = await withTimeout(Promise.all([
         supabase.from("tenant_members").select("tenant_id,role").eq("user_id", user.id),
         supabase.from("platform_admins").select("role").eq("user_id", user.id).limit(1),
-      ]);
+      ]), "Loading business accounts");
       if (requestId !== tenantRequestId.current) return;
       if (platformResult.error) console.warn("Platform access lookup unavailable:", platformResult.error.message);
       setPlatformRole(platformResult.data?.[0]?.role ?? null);
@@ -373,7 +504,7 @@ export default function App() {
       const memberships = membershipResult.data ?? [];
       const tenantIds = [...new Set(memberships.map((row) => row.tenant_id))];
       const tenantResult = tenantIds.length
-        ? await supabase.from("tenants").select("id,name,slug").in("id", tenantIds)
+        ? await withTimeout(supabase.from("tenants").select("id,name,slug").in("id", tenantIds), "Loading business accounts")
         : { data: [], error: null };
       if (requestId !== tenantRequestId.current) return;
       if (tenantResult.error) {
@@ -403,67 +534,141 @@ export default function App() {
       setTenantLoading(false);
     }
   }, [user]);
-  useEffect(() => { void loadTenants(); }, [loadTenants]);
+  // Wait for the session check: running with a not-yet-loaded user would clear
+  // the restored tenant and force a second full workspace load on every mount.
+  useEffect(() => { if (!authLoading) void loadTenants(); }, [loadTenants, authLoading]);
   useEffect(() => { setProfileName(String(user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "")); }, [user]);
-  useEffect(() => { setNewApiKey(""); setNewWebhookSecret(""); setMetaWebhookToken(""); setMetaAppSecret(""); setMetaAppSecretSaved(false); setContactPage(0); setSearch(""); setConsentTarget(""); setSearchContactHistory(null); setSelectedConversation(""); setConversationLimit(100); setConversationHasMore(false); setConversations([]); setMessages([]); setDailyMessages([]); setSelectedCampaign(null); setCampaignCounts(null); setCampaignFailures([]); }, [tenantId]);
+  const previousTenantRef = useRef<string | null>(null);
+  useEffect(() => {
+    const previous = previousTenantRef.current;
+    previousTenantRef.current = tenantId;
+    // On the first run after a reload `tenantId` is the restored value, so
+    // there is nothing to clear. Only an actual workspace switch resets state.
+    // Only a genuine switch between two real workspaces resets the view state.
+    if (!previous || !tenantId || previous === tenantId) return;
+    setNewApiKey(""); setNewWebhookSecret(""); setMetaWebhookToken(""); setMetaAppSecret(""); setMetaAppSecretSaved(false); setContactPage(0); setContactSearch(""); setCampaignSearch(""); setCampaignRecipientsPage(0); setConsentTarget(""); setSearchContactHistory(null); setSelectedConversation(""); setConversationLimit(100); setConversationHasMore(false); setConversations([]); setMessages([]); setDailyMessages([]); setSelectedCampaign(null); setCampaignCounts(null); setCampaignFailures([]);
+  }, [tenantId]);
   useEffect(() => {
     let current = true;
     if (!supabase || !tenantId) { setTenantPlan(null); return; }
     setTenantPlanLoading(true);
-    supabase.rpc("platform_tenant_plan", { p_tenant_id: tenantId }).then(({ data, error }) => {
-      if (!current) return;
-      setTenantPlan(error ? null : data as TenantPlan);
-      setTenantPlanLoading(false);
-    });
+    withTimeout(supabase.rpc("platform_tenant_plan", { p_tenant_id: tenantId }), "Loading plan")
+      .then(({ data, error }) => {
+        if (!current) return;
+        setTenantPlan(error ? null : data as TenantPlan);
+        setTenantPlanLoading(false);
+      })
+      .catch(() => { if (current) { setTenantPlan(null); setTenantPlanLoading(false); } });
     return () => { current = false; };
   }, [tenantId]);
   useEffect(() => {
     let current = true;
     if (!supabase || !tenantId) { setMetaAllowance(null); return; }
-    supabase.rpc("tenant_meta_allowance", { p_tenant_id: tenantId }).then(({ data, error }) => {
-      if (!current) return;
-      setMetaAllowance(error ? null : data as MetaAllowance);
-    });
+    withTimeout(supabase.rpc("tenant_meta_allowance", { p_tenant_id: tenantId }), "Loading message allowance")
+      .then(({ data, error }) => {
+        if (!current) return;
+        setMetaAllowance(error ? null : data as MetaAllowance);
+      })
+      .catch(() => { if (current) setMetaAllowance(null); });
     return () => { current = false; };
   }, [tenantId]);
   const activeTenant = tenants.find((t) => t.id === tenantId);
   const isAdmin = activeTenant ? ["owner", "admin"].includes(activeTenant.role) : false;
   const canAgent = activeTenant ? ["owner", "admin", "agent"].includes(activeTenant.role) : false;
   const tierFeatureAvailable = useCallback((feature: TierFeature) => {
-    if (tenantPlanLoading || !tenantPlan || !tenantPlan.tier) return true;
-    const state = tenantPlan.entitlement_state;
-    if (state && !["active", "trialing", "grace", "exempt"].includes(state)) return true;
-    return tenantPlan.tier.feature_flags?.[feature] !== false;
+    // Mirror private.tenant_feature_enabled exactly, so the navigation never
+    // offers a screen the database would refuse to load.
+    if (tenantPlanLoading || !tenantPlan) return true;
+    if (tenantPlan.state === "exempt") return true;
+    if (!tenantPlan.state || !["active", "trialing", "grace", "past_due"].includes(tenantPlan.state)) return false;
+    return tenantPlan.tier?.feature_flags?.[feature] === true;
   }, [tenantPlan, tenantPlanLoading]);
   useEffect(() => {
     const feature = viewTierFeature[view];
     if (feature && !tierFeatureAvailable(feature)) {
-      setView("Overview");
+      navigate("/dashboard");
       setNotice("That capability is not included in this workspace’s active tier.");
     }
-  }, [view, tierFeatureAvailable]);
+  }, [view, tierFeatureAvailable, navigate]);
   const loadContacts = useCallback(async () => {
     const requestId = ++contactsRequestId.current;
     if (!supabase || !tenantId) { setContacts([]); setContactHasMore(false); setTotalContacts(0); setContactsLoading(false); return; }
     setContactsLoading(true);
     const start = contactPage * 100;
     let query = supabase.from("contacts").select("id,phone_e164,display_name,consent_status,consent_source,consent_at,opted_out_at", { count: "exact" }).eq("tenant_id", tenantId).order("created_at", { ascending: false }).range(start, start + 99);
-    const term = search.trim().replace(/[(),.*%_\\]/g, " ").trim();
+    const term = debouncedContactSearch.trim().replace(/[(),.*%_\\]/g, " ").trim();
     if (term) query = query.or(`display_name.ilike.%${term}%,phone_e164.ilike.%${term}%`);
-    const { data, error, count } = await query;
-    if (requestId !== contactsRequestId.current) return;
-    if (error) { setNotice("Could not load contacts: " + error.message); setContactsLoading(false); return; }
-    setContacts((data ?? []) as Contact[]);
-    setTotalContacts(count ?? 0);
-    setContactHasMore(start + (data?.length ?? 0) < (count ?? 0));
-    setContactsLoading(false);
-  }, [tenantId, contactPage, search]);
+    try {
+      const { data, error, count } = await withTimeout(query, "Loading contacts");
+      if (requestId !== contactsRequestId.current) return;
+      if (error) { setNotice("Could not load contacts: " + error.message); return; }
+      setContacts((data ?? []) as Contact[]);
+      setTotalContacts(count ?? 0);
+      setContactHasMore(start + (data?.length ?? 0) < (count ?? 0));
+    } catch (cause) {
+      if (requestId !== contactsRequestId.current) return;
+      console.error("MobiWave WA contact load failed:", cause);
+      setNotice(cause instanceof Error ? cause.message : "Contacts could not be loaded. Check your connection and refresh.");
+      setContacts([]);
+      setTotalContacts(0);
+      setContactHasMore(false);
+    } finally {
+      if (requestId === contactsRequestId.current) setContactsLoading(false);
+    }
+  }, [tenantId, contactPage, debouncedContactSearch]);
   useEffect(() => { void loadContacts(); }, [loadContacts]);
+  // The campaign composer needs its own list: only contacts with recorded
+  // opt-in are eligible, and it must not be affected by the contact list's
+  // search term or page.
+  const [campaignRecipients, setCampaignRecipients] = useState<Contact[]>([]);
+  const [campaignRecipientsTotal, setCampaignRecipientsTotal] = useState(0);
+  const [campaignRecipientsHasMore, setCampaignRecipientsHasMore] = useState(false);
+  const [campaignRecipientsPage, setCampaignRecipientsPage] = useState(0);
+  const [campaignRecipientsLoading, setCampaignRecipientsLoading] = useState(false);
+  const campaignRecipientsRequestId = useRef(0);
+  const loadCampaignRecipients = useCallback(async () => {
+    const requestId = ++campaignRecipientsRequestId.current;
+    if (!supabase || !tenantId) {
+      setCampaignRecipients([]);
+      setCampaignRecipientsTotal(0);
+      setCampaignRecipientsHasMore(false);
+      setCampaignRecipientsLoading(false);
+      return;
+    }
+    setCampaignRecipientsLoading(true);
+    const start = campaignRecipientsPage * 100;
+    let query = supabase
+      .from("contacts")
+      .select("id,phone_e164,display_name,consent_status", { count: "exact" })
+      .eq("tenant_id", tenantId)
+      .eq("consent_status", "opted_in")
+      .order("created_at", { ascending: false })
+      .range(start, start + 99);
+    const term = debouncedCampaignSearch.trim().replace(/[(),.*%_\\]/g, " ").trim();
+    if (term) query = query.or(`display_name.ilike.%${term}%,phone_e164.ilike.%${term}%`);
+    try {
+      const { data, error, count } = await withTimeout(query, "Loading campaign recipients");
+      if (requestId !== campaignRecipientsRequestId.current) return;
+      if (error) { setNotice("Could not load campaign recipients: " + error.message); return; }
+      setCampaignRecipients((data ?? []) as Contact[]);
+      setCampaignRecipientsTotal(count ?? 0);
+      setCampaignRecipientsHasMore(start + (data?.length ?? 0) < (count ?? 0));
+    } catch (cause) {
+      if (requestId !== campaignRecipientsRequestId.current) return;
+      console.error("MobiWave WA campaign recipient load failed:", cause);
+      setNotice(cause instanceof Error ? cause.message : "Campaign recipients could not be loaded. Check your connection and refresh.");
+      setCampaignRecipients([]);
+    } finally {
+      if (requestId === campaignRecipientsRequestId.current) setCampaignRecipientsLoading(false);
+    }
+  }, [tenantId, campaignRecipientsPage, debouncedCampaignSearch]);
+  useEffect(() => { void loadCampaignRecipients(); }, [loadCampaignRecipients]);
   const loadOverviewMetrics = useCallback(async () => {
     const requestId = ++overviewRequestId.current;
-    if (!supabase || !tenantId) { setOverviewMetrics(null); setOverviewMetricsError(""); setDailyMessages([]); return; }
+    if (!supabase || !tenantId) { setOverviewMetrics(null); setOverviewMetricsError(""); setDailyMessages([]); setOverviewMetricsLoading(false); return; }
+    setOverviewMetricsLoading(true);
     try {
-      const { data, error } = await supabase.rpc("get_tenant_overview", { p_tenant_id: tenantId });
+      const { data, error } = await withTimeout(supabase.rpc("get_tenant_overview", { p_tenant_id: tenantId }), "Loading dashboard metrics");
       if (requestId !== overviewRequestId.current) return;
       const result = data as (OverviewMetrics & { daily_messages?: Array<{ date: string; label: string; inbound: number; outbound: number }> }) | null;
       if (error || !result || !result.contacts || !result.conversations || !Array.isArray(result.daily_messages)) {
@@ -489,8 +694,11 @@ export default function App() {
       if (requestId !== overviewRequestId.current) return;
       console.error("MobiWave WA overview metrics request failed:", cause);
       setOverviewMetrics(null); setOverviewMetricsError("Dashboard metrics could not be loaded. Refresh or ask an administrator to check database access."); setDailyMessages([]);
+    } finally {
+      if (requestId === overviewRequestId.current) setOverviewMetricsLoading(false);
     }
   }, [tenantId]);
+  const validatedRestoredConversationRef = useRef(false);
   const loadWorkspace = useCallback(async () => {
     const requestId = ++workspaceRequestId.current;
     if (!supabase || !tenantId) {
@@ -502,76 +710,88 @@ export default function App() {
     setOverviewMetricsError("");
     const overviewPromise = loadOverviewMetrics();
     setLoading(true);
-    const results = await Promise.all([
-      supabase.from("wa_templates").select("id,meta_template_name,language_code,category,meta_status,components").eq("tenant_id", tenantId).order("meta_template_name"),
-      supabase.from("campaigns").select("id,name,status,created_at,scheduled_at,template_id,template_parameters").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
-      supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts!conversations_contact_same_tenant_fk(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
-      supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at,waba_timezone,messaging_limit_tier,quality_rating").eq("tenant_id", tenantId).maybeSingle(),
-      supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
-      supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
-    ]).catch((cause: unknown) => {
-      if (requestId !== workspaceRequestId.current) return null;
+    try {
+      const results = await withTimeout(Promise.all([
+        supabase.from("wa_templates").select("id,meta_template_name,language_code,category,meta_status,components").eq("tenant_id", tenantId).order("meta_template_name"),
+        supabase.from("campaigns").select("id,name,status,created_at,scheduled_at,template_id,template_parameters").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
+        supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts!conversations_contact_same_tenant_fk(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
+        supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at,waba_timezone,messaging_limit_tier,quality_rating").eq("tenant_id", tenantId).maybeSingle(),
+        supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+        supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+      ]), "Loading workspace");
+      if (requestId !== workspaceRequestId.current) return;
+      const [t, ca, co, mi, ak, wh] = results;
+      if (t.error || ca.error || co.error || mi.error || ak.error || wh.error) setNotice("Could not load business account data. Please refresh and try again.");
+      setTemplates((t.data ?? []) as Template[]);
+      setCampaigns((ca.data ?? []) as Campaign[]);
+      const [teamResponse, readResponse] = await withTimeout(Promise.all([
+        supabase.functions.invoke("team-members", { body: { tenant_id: tenantId } }),
+        user ? supabase.from("conversation_reads").select("conversation_id,last_read_at").eq("tenant_id", tenantId).eq("user_id", user.id) : Promise.resolve({ data: [], error: null }),
+      ]), "Loading collaboration details");
+      if (requestId !== workspaceRequestId.current) return;
+      const readAt = new Map((readResponse.data ?? []).map((row: any) => [row.conversation_id, new Date(row.last_read_at).getTime()]));
+      setTeamMembers((teamResponse.data?.members ?? []) as TeamMember[]);
+      const freshConversations = ((co.data ?? []) as any[]).map((conversation) => ({
+        ...conversation,
+        unread: Boolean(conversation.last_message_at && new Date(conversation.last_message_at).getTime() > (readAt.get(conversation.id) ?? 0)),
+      })) as Conversation[];
+      setConversations((current) => {
+        const rows = [...freshConversations, ...current.filter((row) => !freshConversations.some((fresh) => fresh.id === row.id))];
+        return [...new Map(rows.map((row) => [row.id, row])).values()].sort((a, b) => new Date(b.last_message_at ?? 0).getTime() - new Date(a.last_message_at ?? 0).getTime()).slice(0, Math.max(100, current.length));
+      });
+      setConversationHasMore((current) => current || (co.data?.length ?? 0) === 100);
+      if (teamResponse.error || readResponse.error) setNotice("Inbox collaboration details could not be loaded. Refresh and try again.");
+      setMetaStatus(mi.data);
+      setMetaPhoneId(mi.data?.phone_number_id ?? "");
+      setMetaWabaId(mi.data?.waba_id ?? "");
+      setMetaWabaTimezone(mi.data?.waba_timezone ?? "Africa/Nairobi");
+      setApiKeys((ak.data ?? []) as ApiKey[]);
+      setWebhooks((wh.data ?? []) as TenantWebhook[]);
+      const { data: deliveryRows, error: deliveryError } = await withTimeout(supabase.from("webhook_deliveries").select("id,webhook_id,event_type,status,attempt_count,response_status,last_error,created_at,delivered_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(50), "Loading webhook history");
+      if (requestId !== workspaceRequestId.current) return;
+      if (deliveryError) setNotice("Could not load webhook delivery history: " + deliveryError.message);
+      setWebhookDeliveries((deliveryRows ?? []) as WebhookDelivery[]);
+      if (!validatedRestoredConversationRef.current) {
+        validatedRestoredConversationRef.current = true;
+        setSelectedConversation((current) => current && freshConversations.some((fresh) => fresh.id === current) ? current : "");
+      }
+      await overviewPromise;
+    } catch (cause) {
+      if (requestId !== workspaceRequestId.current) return;
       console.error("MobiWave WA workspace load failed:", cause);
-      setNotice("We could not load business account data. Check your connection and refresh.");
-      setLoading(false);
-      return null;
-    });
-    if (!results || requestId !== workspaceRequestId.current) return;
-    const [t, ca, co, mi, ak, wh] = results;
-    if (t.error || ca.error || co.error || mi.error) setNotice("Could not load business account data. Please refresh and try again.");
-    setTemplates((t.data ?? []) as Template[]);
-    setCampaigns((ca.data ?? []) as Campaign[]);
-    await overviewPromise;
-    const [teamResponse, readResponse] = await Promise.all([
-      supabase.functions.invoke("team-members", { body: { tenant_id: tenantId } }),
-      user ? supabase.from("conversation_reads").select("conversation_id,last_read_at").eq("tenant_id", tenantId).eq("user_id", user.id) : Promise.resolve({ data: [], error: null }),
-    ]);
-    if (requestId !== workspaceRequestId.current) return;
-    const readAt = new Map((readResponse.data ?? []).map((row: any) => [row.conversation_id, new Date(row.last_read_at).getTime()]));
-    setTeamMembers((teamResponse.data?.members ?? []) as TeamMember[]);
-    const freshConversations = ((co.data ?? []) as any[]).map((conversation) => ({
-      ...conversation,
-      unread: Boolean(conversation.last_message_at && new Date(conversation.last_message_at).getTime() > (readAt.get(conversation.id) ?? 0)),
-    })) as Conversation[];
-    setConversations((current) => {
-      const rows = [...freshConversations, ...current.filter((row) => !freshConversations.some((fresh) => fresh.id === row.id))];
-      return [...new Map(rows.map((row) => [row.id, row])).values()].sort((a, b) => new Date(b.last_message_at ?? 0).getTime() - new Date(a.last_message_at ?? 0).getTime()).slice(0, Math.max(100, current.length));
-    });
-    setConversationHasMore((current) => current || (co.data?.length ?? 0) === 100);
-    if (teamResponse.error || readResponse.error) setNotice("Inbox collaboration details could not be loaded. Refresh and try again.");
-    setMetaStatus(mi.data);
-    setMetaPhoneId(mi.data?.phone_number_id ?? "");
-    setMetaWabaId(mi.data?.waba_id ?? "");
-    setMetaWabaTimezone(mi.data?.waba_timezone ?? "Africa/Nairobi");
-    setApiKeys((ak.data ?? []) as ApiKey[]);
-    setWebhooks((wh.data ?? []) as TenantWebhook[]);
-    const { data: deliveryRows, error: deliveryError } = await Promise.resolve(supabase.from("webhook_deliveries").select("id,webhook_id,event_type,status,attempt_count,response_status,last_error,created_at,delivered_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(50)).catch((cause: unknown) => { console.error("MobiWave WA webhook history load failed:", cause); return { data: null, error: { message: "Could not load webhook history. Refresh and try again." } }; });
-    if (requestId !== workspaceRequestId.current) return;
-    if (deliveryError) setNotice("Could not load webhook delivery history: " + deliveryError.message);
-    setWebhookDeliveries((deliveryRows ?? []) as WebhookDelivery[]);
-    void loadContacts();
-    setLoading(false);
-  }, [tenantId, user, loadContacts, loadOverviewMetrics]);
+      setNotice(cause instanceof Error ? cause.message : "We could not load business account data. Check your connection and refresh.");
+    } finally {
+      if (requestId === workspaceRequestId.current) setLoading(false);
+    }
+  }, [tenantId, user, loadOverviewMetrics]);
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
   useEffect(() => {
     if (!supabase || !tenantId || !isAdmin) { setMetaAppSecretSaved(false); setMetaTokenSaved(false); return; }
     let active = true;
-    supabase.functions.invoke("meta-config", { body: { tenant_id: tenantId, action: "status" } }).then(({ data, error }) => {
-      if (active && !error && data?.ok === true) {
-        setMetaAppSecretSaved(data.app_secret_configured === true);
-        setMetaTokenSaved(data.access_token_configured === true);
-      }
-    });
+    withTimeout(supabase.functions.invoke("meta-config", { body: { tenant_id: tenantId, action: "status" } }), "Loading connection status")
+      .then(({ data, error }) => {
+        if (active && !error && data?.ok === true) {
+          setMetaAppSecretSaved(data.app_secret_configured === true);
+          setMetaTokenSaved(data.access_token_configured === true);
+        }
+      })
+      .catch(() => { if (active) { setMetaAppSecretSaved(false); setMetaTokenSaved(false); } });
     return () => { active = false; };
   }, [tenantId, isAdmin]);
   const loadNotifications = useCallback(async () => {
     const requestId = ++notificationRequestId.current;
     if (!supabase || !tenantId) { setNotifications([]); setNotificationUnread(0); return; }
-    const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "list", limit: 50 } });
-    if (requestId !== notificationRequestId.current) return;
-    if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not load workspace alerts."); return; }
-    setNotifications((data?.notifications ?? []) as WorkspaceNotification[]);
-    setNotificationUnread(Number(data?.unread_count ?? 0));
+    try {
+      const { data, error } = await withTimeout(supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "list", limit: 50 } }), "Loading alerts");
+      if (requestId !== notificationRequestId.current) return;
+      if (error || data?.error) { setNotice(data?.error ?? error?.message ?? "Could not load workspace alerts."); return; }
+      setNotifications((data?.notifications ?? []) as WorkspaceNotification[]);
+      setNotificationUnread(Number(data?.unread_count ?? 0));
+    } catch (cause) {
+      if (requestId !== notificationRequestId.current) return;
+      console.error("MobiWave WA alert load failed:", cause);
+      setNotice(cause instanceof Error ? cause.message : "Could not load workspace alerts.");
+    }
   }, [tenantId]);
   useEffect(() => { void loadNotifications(); }, [loadNotifications]);
   useEffect(() => {
@@ -598,49 +818,75 @@ export default function App() {
     const { data, error } = await supabase.functions.invoke("notification-center", { body: { tenant_id: tenantId, action: "mark_all_read" } });
     if (error || data?.error || !Array.isArray(data?.notifications) || !Number.isFinite(Number(data?.unread_count))) { setNotice(data?.error ?? error?.message ?? "Bulk alert acknowledgement was not confirmed. Refresh the alerts list before retrying."); return; }
     await loadNotifications();
+    setAlertsDropdownOpen(false);
   }
+  
+  const handleViewAllAlerts = () => {
+    goTo("Alerts");
+    setAlertsDropdownOpen(false);
+  };
+  
+  const handleMarkAsRead = () => {
+    if (notificationUnread > 0) {
+      markAllNotificationsRead();
+    }
+  };
   const loadInbox = useCallback(async (limit = conversationLimit, append = false) => {
     const requestId = ++inboxRequestId.current;
     if (!supabase || !tenantId || !user) return;
     const start = append ? Math.max(0, limit - 100) : 0;
     const pageSize = limit - start;
-    const [conversationResult] = await Promise.all([
-      supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts!conversations_contact_same_tenant_fk(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).range(start, limit),
-    ]);
-    if (requestId !== inboxRequestId.current) return;
-    if (conversationResult.error) { setNotice("Could not refresh the inbox. Check your connection and retry."); return; }
-    const pageRows = (conversationResult.data ?? []).slice(0, pageSize) as any[];
-    setConversationHasMore((conversationResult.data?.length ?? 0) > pageSize);
-    const { data: readRows, error: readError } = pageRows.length
-      ? await supabase.from("conversation_reads").select("conversation_id,last_read_at").eq("tenant_id", tenantId).eq("user_id", user.id).in("conversation_id", pageRows.map((row) => row.id))
-      : { data: [], error: null };
-    if (requestId !== inboxRequestId.current) return;
-    if (readError) { setNotice("Could not refresh inbox read state. Check your connection and retry."); return; }
-    const readAt = new Map((readRows ?? []).map((row: any) => [row.conversation_id, new Date(row.last_read_at).getTime()]));
-    const loaded = pageRows.map((conversation) => ({
-      ...conversation,
-      unread: Boolean(conversation.last_message_at && new Date(conversation.last_message_at).getTime() > (readAt.get(conversation.id) ?? 0)),
-    })) as Conversation[];
-    setConversations((current) => {
-      const rows = append ? [...current, ...loaded] : [...loaded, ...current.filter((row) => !loaded.some((fresh) => fresh.id === row.id))];
-      return [...new Map(rows.map((row) => [row.id, row])).values()].sort((a, b) => new Date(b.last_message_at ?? 0).getTime() - new Date(a.last_message_at ?? 0).getTime()).slice(0, limit);
-    });
+    try {
+      const [conversationResult] = await withTimeout(Promise.all([
+        supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts!conversations_contact_same_tenant_fk(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).range(start, limit),
+      ]), "Refreshing the inbox");
+      if (requestId !== inboxRequestId.current) return;
+      if (conversationResult.error) { setNotice("Could not refresh the inbox. Check your connection and retry."); return; }
+      const pageRows = (conversationResult.data ?? []).slice(0, pageSize) as any[];
+      setConversationHasMore((conversationResult.data?.length ?? 0) > pageSize);
+      const { data: readRows, error: readError } = pageRows.length
+        ? await withTimeout(supabase.from("conversation_reads").select("conversation_id,last_read_at").eq("tenant_id", tenantId).eq("user_id", user.id).in("conversation_id", pageRows.map((row) => row.id)), "Refreshing inbox read state")
+        : { data: [], error: null };
+      if (requestId !== inboxRequestId.current) return;
+      if (readError) { setNotice("Could not refresh inbox read state. Check your connection and retry."); return; }
+      const readAt = new Map((readRows ?? []).map((row: any) => [row.conversation_id, new Date(row.last_read_at).getTime()]));
+      const loaded = pageRows.map((conversation) => ({
+        ...conversation,
+        unread: Boolean(conversation.last_message_at && new Date(conversation.last_message_at).getTime() > (readAt.get(conversation.id) ?? 0)),
+      })) as Conversation[];
+      setConversations((current) => {
+        const rows = append ? [...current, ...loaded] : [...loaded, ...current.filter((row) => !loaded.some((fresh) => fresh.id === row.id))];
+        return [...new Map(rows.map((row) => [row.id, row])).values()].sort((a, b) => new Date(b.last_message_at ?? 0).getTime() - new Date(a.last_message_at ?? 0).getTime()).slice(0, limit);
+      });
+    } catch (cause) {
+      if (requestId !== inboxRequestId.current) return;
+      console.error("MobiWave WA inbox refresh failed:", cause);
+      setNotice(cause instanceof Error ? cause.message : "Could not refresh the inbox. Check your connection and retry.");
+    }
   }, [tenantId, user?.id, conversationLimit]);
   const loadMessages = useCallback(async () => {
     const requestId = ++messageRequestId.current;
     setLoadingOlderMessages(false);
     if (!supabase || !tenantId || !selectedConversation) { setMessages([]); setMessageHasMore(false); return; }
-    const [messageResult, noteResult] = await Promise.all([
-      supabase.from("messages").select("id,direction,actor_type,body,status,created_at,message_type,metadata").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).order("created_at", { ascending: false }).limit(200),
-      supabase.from("conversation_notes").select("id,body,author_id,created_at").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).order("created_at", { ascending: false }).limit(200),
-    ]);
-    if (requestId !== messageRequestId.current) return;
-    if (messageResult.error || noteResult.error) setNotice(messageResult.error?.message ?? noteResult.error?.message ?? "Could not load conversation history.");
-    setMessageHasMore((messageResult.data?.length ?? 0) === 200 || (noteResult.data?.length ?? 0) === 200);
-    const messageRows = (messageResult.data ?? []).reverse().map((message: any) => ({ ...message, is_note: false, media_id: message.metadata?.media_id, filename: message.metadata?.filename })) as ChatMessage[];
-    const noteRows = (noteResult.data ?? []).reverse().map((note: any) => ({ ...note, direction: "inbound", actor_type: "Internal note", status: "", is_note: true })) as ChatMessage[];
-    scrollToLatestMessage.current = true;
-    setMessages([...messageRows, ...noteRows].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+    try {
+      const [messageResult, noteResult] = await withTimeout(Promise.all([
+        supabase.from("messages").select("id,direction,actor_type,body,status,created_at,message_type,metadata").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).order("created_at", { ascending: false }).limit(200),
+        supabase.from("conversation_notes").select("id,body,author_id,created_at").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).order("created_at", { ascending: false }).limit(200),
+      ]), "Loading conversation history");
+      if (requestId !== messageRequestId.current) return;
+      if (messageResult.error || noteResult.error) setNotice(messageResult.error?.message ?? noteResult.error?.message ?? "Could not load conversation history.");
+      setMessageHasMore((messageResult.data?.length ?? 0) === 200 || (noteResult.data?.length ?? 0) === 200);
+      const messageRows = (messageResult.data ?? []).reverse().map((message: any) => ({ ...message, is_note: false, media_id: message.metadata?.media_id, filename: message.metadata?.filename })) as ChatMessage[];
+      const noteRows = (noteResult.data ?? []).reverse().map((note: any) => ({ ...note, direction: "inbound", actor_type: "Internal note", status: "", is_note: true })) as ChatMessage[];
+      scrollToLatestMessage.current = true;
+      setMessages([...messageRows, ...noteRows].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+    } catch (cause) {
+      if (requestId !== messageRequestId.current) return;
+      console.error("MobiWave WA conversation load failed:", cause);
+      setNotice(cause instanceof Error ? cause.message : "Could not load conversation history. Check your connection and retry.");
+      setMessages([]);
+      setMessageHasMore(false);
+    }
   }, [tenantId, selectedConversation]);
   useEffect(() => {
     if (!scrollToLatestMessage.current || !chatMessagesRef.current) return;
@@ -652,51 +898,75 @@ export default function App() {
     const requestId = ++messageRequestId.current;
     setLoadingOlderMessages(true);
     const before = messages[0].created_at;
-    const [messageResult, noteResult] = await Promise.all([
-      supabase.from("messages").select("id,direction,actor_type,body,status,created_at,message_type,metadata").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).lt("created_at", before).order("created_at", { ascending: false }).limit(200),
-      supabase.from("conversation_notes").select("id,body,author_id,created_at").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).lt("created_at", before).order("created_at", { ascending: false }).limit(200),
-    ]);
-    if (requestId !== messageRequestId.current) return;
-    if (messageResult.error || noteResult.error) setNotice(messageResult.error?.message ?? noteResult.error?.message ?? "Could not load earlier conversation history.");
-    const messageRows = (messageResult.data ?? []).reverse().map((message: any) => ({ ...message, is_note: false, media_id: message.metadata?.media_id, filename: message.metadata?.filename })) as ChatMessage[];
-    const noteRows = (noteResult.data ?? []).reverse().map((note: any) => ({ ...note, direction: "inbound", actor_type: "Internal note", status: "", is_note: true })) as ChatMessage[];
-    setMessages((current) => [...messageRows, ...noteRows, ...current].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
-    setMessageHasMore((messageResult.data?.length ?? 0) === 200 || (noteResult.data?.length ?? 0) === 200);
-    setLoadingOlderMessages(false);
+    try {
+      const [messageResult, noteResult] = await withTimeout(Promise.all([
+        supabase.from("messages").select("id,direction,actor_type,body,status,created_at,message_type,metadata").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).lt("created_at", before).order("created_at", { ascending: false }).limit(200),
+        supabase.from("conversation_notes").select("id,body,author_id,created_at").eq("tenant_id", tenantId).eq("conversation_id", selectedConversation).lt("created_at", before).order("created_at", { ascending: false }).limit(200),
+      ]), "Loading earlier messages");
+      if (requestId !== messageRequestId.current) return;
+      if (messageResult.error || noteResult.error) setNotice(messageResult.error?.message ?? noteResult.error?.message ?? "Could not load earlier conversation history.");
+      const messageRows = (messageResult.data ?? []).reverse().map((message: any) => ({ ...message, is_note: false, media_id: message.metadata?.media_id, filename: message.metadata?.filename })) as ChatMessage[];
+      const noteRows = (noteResult.data ?? []).reverse().map((note: any) => ({ ...note, direction: "inbound", actor_type: "Internal note", status: "", is_note: true })) as ChatMessage[];
+      setMessages((current) => [...messageRows, ...noteRows, ...current].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+      setMessageHasMore((messageResult.data?.length ?? 0) === 200 || (noteResult.data?.length ?? 0) === 200);
+    } catch (cause) {
+      if (requestId !== messageRequestId.current) return;
+      console.error("MobiWave WA earlier-message load failed:", cause);
+      setNotice(cause instanceof Error ? cause.message : "Could not load earlier conversation history. Check your connection and retry.");
+    } finally {
+      if (requestId === messageRequestId.current) setLoadingOlderMessages(false);
+    }
   }, [tenantId, selectedConversation, messages, loadingOlderMessages]);
   useEffect(() => { void loadMessages(); }, [loadMessages]);
+  // The subscription is scoped to the tenant only. Keeping selectedConversation
+  // out of the dependency list avoids tearing down and re-subscribing the whole
+  // channel on every conversation click; refs give handlers the latest values.
+  const selectedConversationRef = useRef(selectedConversation);
+  selectedConversationRef.current = selectedConversation;
+  const loadInboxRef = useRef(loadInbox);
+  loadInboxRef.current = loadInbox;
+  const loadOverviewMetricsRef = useRef(loadOverviewMetrics);
+  loadOverviewMetricsRef.current = loadOverviewMetrics;
+  const loadMessagesRef = useRef(loadMessages);
+  loadMessagesRef.current = loadMessages;
+  const markConversationReadRef = useRef<(id: string) => void>(() => {});
+  markConversationReadRef.current = markConversationRead;
+  const realtimeRefreshTimer = useRef<number | null>(null);
+  const scheduleRealtimeRefresh = useCallback(() => {
+    if (realtimeRefreshTimer.current !== null) window.clearTimeout(realtimeRefreshTimer.current);
+    realtimeRefreshTimer.current = window.setTimeout(() => {
+      realtimeRefreshTimer.current = null;
+      void loadInboxRef.current();
+      void loadOverviewMetricsRef.current();
+    }, 250);
+  }, []);
   useEffect(() => {
     if (!supabase || !tenantId) return;
     const client = supabase;
     const channel = client.channel(`inbox-${tenantId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversations", filter: `tenant_id=eq.${tenantId}` }, () => { void loadInbox(); void loadOverviewMetrics(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversations", filter: `tenant_id=eq.${tenantId}` }, () => { scheduleRealtimeRefresh(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: `tenant_id=eq.${tenantId}` }, (payload) => {
         const row = payload.new as { conversation_id?: string; direction?: string; created_at?: string };
         if (payload.eventType === "INSERT") setDailyMessages((series) => bumpDailyMessageSeries(series, row));
-        if (payload.eventType === "INSERT") void loadOverviewMetrics();
-        void loadInbox();
-        if (row?.conversation_id === selectedConversation) { void loadMessages(); void markConversationRead(selectedConversation); }
+        scheduleRealtimeRefresh();
+        const currentId = selectedConversationRef.current;
+        if (row?.conversation_id === currentId) { void loadMessagesRef.current(); void markConversationReadRef.current(currentId); }
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "contacts", filter: `tenant_id=eq.${tenantId}` }, () => { void loadOverviewMetrics(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "campaigns", filter: `tenant_id=eq.${tenantId}` }, () => { void loadOverviewMetrics(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "wa_templates", filter: `tenant_id=eq.${tenantId}` }, () => { void loadOverviewMetrics(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversation_reads", filter: `tenant_id=eq.${tenantId}` }, () => { void loadOverviewMetrics(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "contacts", filter: `tenant_id=eq.${tenantId}` }, () => { void loadOverviewMetricsRef.current(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "campaigns", filter: `tenant_id=eq.${tenantId}` }, () => { void loadOverviewMetricsRef.current(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "wa_templates", filter: `tenant_id=eq.${tenantId}` }, () => { void loadOverviewMetricsRef.current(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversation_reads", filter: `tenant_id=eq.${tenantId}` }, () => { void loadOverviewMetricsRef.current(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "conversation_notes", filter: `tenant_id=eq.${tenantId}` }, (payload) => {
         const row = payload.new as { conversation_id?: string };
-        if (row?.conversation_id === selectedConversation) void loadMessages();
+        if (row?.conversation_id === selectedConversationRef.current) void loadMessagesRef.current();
       })
       .subscribe();
-    return () => { void client.removeChannel(channel); };
-  }, [tenantId, selectedConversation, loadInbox, loadMessages, loadOverviewMetrics]);
+    return () => {
+      if (realtimeRefreshTimer.current !== null) window.clearTimeout(realtimeRefreshTimer.current);
+      void client.removeChannel(channel);
+    };
+  }, [tenantId, scheduleRealtimeRefresh]);
   useEffect(() => { if (selectedConversation) void markConversationRead(selectedConversation); }, [selectedConversation, tenantId, user?.id]);
-  useEffect(() => {
-    if (!selectedCampaign) return;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setSelectedCampaign(null); };
-    window.addEventListener("keydown", onKeyDown);
-    return () => { document.body.style.overflow = original; window.removeEventListener("keydown", onKeyDown); };
-  }, [selectedCampaign]);
   useEffect(() => { window.scrollTo(0, 0); }, [view]);
   async function signIn(event: FormEvent) {
     event.preventDefault(); if (!supabase) return;
@@ -739,22 +1009,6 @@ export default function App() {
     if (error || data?.error || data?.ok !== true || !data?.tenant?.id) { setNotice(data?.error ?? error?.message ?? "Business setup did not return a confirmed workspace. Refresh and check your accounts before retrying."); return; }
     setWorkspaceName(""); setNotice("Business account created."); await loadTenants();
   }
-  async function inviteTeamMember(event: FormEvent) {
-    event.preventDefault();
-    if (!supabase || !tenantId || !teamInviteEmail.trim()) return;
-    setBusy(true); setNotice("");
-    const { data, error } = await supabase.functions.invoke("team-members", {
-      body: { tenant_id: tenantId, action: "invite", email: teamInviteEmail.trim(), role: teamInviteRole, redirect_origin: window.location.origin },
-    });
-    setBusy(false);
-    if (error || data?.error || data?.ok !== true) {
-      setNotice(data?.error ?? error?.message ?? "The teammate could not be added.");
-      return;
-    }
-    setTeamInviteEmail("");
-    setNotice(data.invited ? "Invitation sent. They can access the workspace after accepting it." : "Existing account added. They can access the workspace next time they sign in.");
-    await loadWorkspace();
-  }
   async function addContact(event: FormEvent) {
     event.preventDefault(); if (!supabase) return;
     if (contactOptIn && !contactConsentSource.trim()) { setNotice("Record how and when consent was obtained before marking a contact opted in."); return; }
@@ -769,7 +1023,14 @@ export default function App() {
     await loadWorkspace();
   }
   async function optOut(contact: Contact) {
-    if (!supabase || !confirm("Suppress " + (contact.display_name || contact.phone_e164) + " from campaigns?")) return;
+    if (!supabase) return;
+    const confirmed = await confirm({
+      title: "Suppress this contact?",
+      description: `${contact.display_name || contact.phone_e164} will be excluded from every campaign and their consent status becomes opted out.`,
+      confirmLabel: "Suppress contact",
+      destructive: true,
+    });
+    if (!confirmed) return;
     const { data, error } = await supabase.rpc("record_contact_consent", {
       p_tenant_id: tenantId, p_contact_id: contact.id, p_status: "opted_out",
       p_source: "Suppressed by business account user",
@@ -832,7 +1093,13 @@ export default function App() {
     await loadWorkspace();
   }
   async function launchCampaign(campaignId: string) {
-    if (!supabase || !confirm("Send this campaign now using the selected approved Meta template?")) return;
+    if (!supabase) return;
+    const confirmed = await confirm({
+      title: "Send this campaign now?",
+      description: "The next batch is sent with the selected approved Meta template. Consent is re-checked immediately before every delivery.",
+      confirmLabel: "Send batch",
+    });
+    if (!confirmed) return;
     setBusy(true);
     const { data, error } = await supabase.functions.invoke("campaign-launch", { body: { tenant_id: tenantId, campaign_id: campaignId } });
     setBusy(false);
@@ -856,10 +1123,15 @@ export default function App() {
   }
   async function controlCampaign(campaignId: string, action: "pause" | "cancel") {
     if (!supabase) return;
-    const confirmation = action === "pause"
-      ? "Pause this campaign after the current recipient finishes? Remaining recipients will stay queued."
-      : "Cancel this campaign? Queued recipients will be skipped and cannot be sent by continuing this campaign.";
-    if (!confirm(confirmation)) return;
+    const confirmed = await confirm({
+      title: action === "pause" ? "Pause this campaign?" : "Cancel this campaign?",
+      description: action === "pause"
+        ? "The campaign pauses after the current recipient finishes. Remaining recipients stay queued."
+        : "Queued recipients are skipped and cannot be sent by continuing this campaign.",
+      confirmLabel: action === "pause" ? "Pause campaign" : "Cancel campaign",
+      destructive: action === "cancel",
+    });
+    if (!confirmed) return;
     setBusy(true);
     const { data, error } = await supabase.functions.invoke("campaign-control", { body: { tenant_id: tenantId, campaign_id: campaignId, action } });
     setBusy(false);
@@ -875,6 +1147,7 @@ export default function App() {
     setSelectedCampaign(campaign);
     setCampaignCounts(null);
     setCampaignFailures([]);
+    setCampaignCountsError("");
     if (!supabase || !tenantId) return;
     const client = supabase;
     setCampaignCountsLoading(true);
@@ -889,8 +1162,17 @@ export default function App() {
           .eq("tenant_id", tenantId).eq("campaign_id", campaign.id).in("status", ["failed", "outcome_unknown"])
           .order("updated_at", { ascending: false }).limit(5),
       ]);
+      const queryError = total.error ?? queued.error ?? needsReview.error ?? failures.error;
+      if (queryError) {
+        // A failed count must not masquerade as "no recipients queued".
+        setCampaignCountsError("Recipient counts could not be loaded: " + queryError.message);
+        return;
+      }
       setCampaignCounts({ total: total.count ?? 0, queued: queued.count ?? 0, failed: needsReview.count ?? 0 });
       setCampaignFailures((failures.data ?? []) as CampaignFailure[]);
+    } catch (cause) {
+      console.error("MobiWave WA campaign detail load failed:", cause);
+      setCampaignCountsError(cause instanceof Error ? cause.message : "Recipient counts could not be loaded. Close and reopen this campaign to retry.");
     } finally {
       setCampaignCountsLoading(false);
     }
@@ -1024,7 +1306,15 @@ export default function App() {
   }
   async function manageWebhook(webhook: TenantWebhook, action: "enable" | "disable" | "delete") {
     if (!supabase) return;
-    if (action === "delete" && !confirm("Delete this webhook subscription and its delivery history?")) return;
+    if (action === "delete") {
+      const deletionConfirmed = await confirm({
+        title: "Delete this webhook?",
+        description: "The subscription and its delivery history are removed. Events will no longer be delivered to this endpoint.",
+        confirmLabel: "Delete webhook",
+        destructive: true,
+      });
+      if (!deletionConfirmed) return;
+    }
     const { data, error } = await supabase.functions.invoke("manage-webhook", { body: { tenant_id: tenantId, action, webhook_id: webhook.id } });
     const confirmed = action === "delete" ? data?.deleted === true : data?.enabled === (action === "enable");
     setNotice(error || data?.error || data?.ok !== true || !confirmed ? (data?.error ?? error?.message ?? "Webhook change was not confirmed. Refresh the list before retrying.") : action === "delete" ? "Webhook deleted." : "Webhook updated.");
@@ -1039,7 +1329,13 @@ export default function App() {
     await loadWorkspace();
   }
   async function retryWebhookDelivery(delivery: WebhookDelivery) {
-    if (!supabase || !confirm("Retry this failed webhook delivery?")) return;
+    if (!supabase) return;
+    const confirmed = await confirm({
+      title: "Retry this delivery?",
+      description: "The event is queued and delivered again. If the endpoint already processed it, the receiver must deduplicate on X-MobiWave-Delivery.",
+      confirmLabel: "Retry delivery",
+    });
+    if (!confirmed) return;
     setBusy(true);
     const { data, error } = await supabase.functions.invoke("manage-webhook", { body: { tenant_id: tenantId, action: "retry", delivery_id: delivery.id } });
     setBusy(false);
@@ -1058,7 +1354,14 @@ export default function App() {
     else { setNewApiKey(data.api_key); setApiKeyName("Production integration"); setNotice("API key created. Copy it now; the secret will not be shown again."); await loadWorkspace(); }
   }
   async function revokeApiKey(key: ApiKey) {
-    if (!supabase || !confirm("Revoke API key " + key.name + "? Requests using it will stop working.")) return;
+    if (!supabase) return;
+    const confirmed = await confirm({
+      title: `Revoke “${key.name}”?`,
+      description: "Requests using this key stop working immediately. The key cannot be restored.",
+      confirmLabel: "Revoke key",
+      destructive: true,
+    });
+    if (!confirmed) return;
     const { data, error } = await supabase.from("tenant_api_keys").update({ revoked_at: new Date().toISOString() }).eq("id", key.id).eq("tenant_id", tenantId).select("id").maybeSingle();
     setNotice(error ? error.message : data ? "API key revoked." : "API key was not found in this workspace; no changes were made."); await loadWorkspace();
   }
@@ -1082,13 +1385,13 @@ export default function App() {
     if (!supabase) return;
     const { error } = await supabase.auth.signOut();
     if (error) { setNotice("Could not sign out: " + error.message); return; }
+    clearWorkspaceUiState();
     setTenants([]);
     setTenantId("");
     setPlatformRole(null);
     setTenantLoading(false);
   }
   const filteredContacts = contacts;
-  const visibleCampaignContacts = contacts.filter((contact) => contact.consent_status === "opted_in");
   const unreadCount = conversations.filter((conversation) => conversation.unread).length;
   const pageConsent = contacts.reduce<Record<string, number>>((counts, contact) => {
     counts[contact.consent_status] = (counts[contact.consent_status] ?? 0) + 1;
@@ -1096,19 +1399,22 @@ export default function App() {
   }, {});
   const filteredConversations = useMemo(() => conversations.filter((conversation) => {
     const matchesStatus = conversationStatusFilter === "all" || (conversationStatusFilter === "unread" ? Boolean(conversation.unread) : conversation.status === conversationStatusFilter);
-    const matchesAssignee = conversationAssigneeFilter === "all" || (conversationAssigneeFilter === "mine" ? conversation.assigned_to === user?.id : conversationAssigneeFilter === "unassigned" ? !conversation.assigned_to : conversation.assigned_to === conversationAssigneeFilter);
+    const matchesAssignee = conversationAssigneeFilter === "all" || (conversationAssigneeFilter === "mine" ? conversation.assigned_to === user?.id : conversationAssigneeFilter === "unassigned" ? !conversation.assigned_to : conversationAssigneeFilter === conversationAssigneeFilter ? conversation.assigned_to === conversationAssigneeFilter : true);
     const haystack = `${conversation.contacts?.display_name ?? ""} ${conversation.contacts?.phone_e164 ?? ""}`.toLowerCase();
-    return matchesStatus && matchesAssignee && haystack.includes(conversationSearch.toLowerCase());
-  }), [conversations, conversationStatusFilter, conversationAssigneeFilter, conversationSearch, user?.id]);
+    return matchesStatus && matchesAssignee && haystack.includes(debouncedConversationSearch.toLowerCase());
+  }), [conversations, conversationStatusFilter, conversationAssigneeFilter, debouncedConversationSearch, user?.id]);
   const approvedTemplates = templates.filter((t) => t.meta_status === "approved");
   const selectedTemplate = templates.find((template) => template.id === campaignTemplate);
   const selectedTemplateParts = getTemplateParts(selectedTemplate);
   const unsupportedMediaHeader = Boolean(selectedTemplate?.components?.some((component) => String(component?.type).toLowerCase() === "header" && component?.format && String(component.format).toUpperCase() !== "TEXT"));
   // Public routes are available without authentication; account access starts at /login.
-  const pathname = useMemo(() => window.location.pathname.replace(/\/+$/, "") || "/", [routeVersion]);
   if (pathname === "/pricing") return <Suspense fallback={<div className="auth-screen" role="status">Loading pricing…</div>}><PricingPage /></Suspense>;
   if (pathname === "/") return <Suspense fallback={<div className="auth-screen" role="status">Loading MobiWave WA…</div>}><LandingPage /></Suspense>;
-  const knownRoute = pathname === "/login" || ["/dashboard", "/admin", "/workspace", "/settings"].some((prefix) => pathname === prefix || pathname.startsWith(prefix + "/"));
+  const knownRoute = pathname === "/login"
+    || pathname === "/dashboard"
+    || (pathname.startsWith("/dashboard/") && routedView !== null)
+    || pathname === "/admin"
+    || pathname.startsWith("/admin/");
   if (!knownRoute) return <ErrorPage kind="not-found" />;
   if (!isSupabaseConfigured) return <div className="auth-screen"><div className="auth-card"><Brand/><h1 className="mt-6 text-[24px] font-extrabold text-text">Connect your account</h1><p className="mt-2 text-sm leading-relaxed text-text-muted">Configure the Supabase URL and publishable/anon key in <code className="rounded-md bg-raised px-1.5 py-0.5 text-[13px] text-text">.env.local</code> before running the dashboard.</p><pre className="mt-4 overflow-x-auto rounded-xl bg-midnight-950 p-4 text-[12.5px] leading-relaxed text-brand-200">{`VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary mt-5" href="https://github.com/malingib/Mobiwave-WA/blob/main/docs/environment-and-deployment.md">Deployment guide <ArrowUpRight size={14} /></a></div></div>;
@@ -1121,21 +1427,14 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
         <section className="auth-story">
           <a className="auth-story-brand" href="/" aria-label="MobiWave WA home"><img src="/branding/mw-logo.svg" alt="MobiWave" /></a>
           <div className="auth-story-content">
-            <div className="auth-story-kicker"><span/> WHATSAPP BUSINESS, IN ONE PLACE</div>
             <h1>Better conversations.<br/><em>Stronger relationships.</em></h1>
             <p>Manage customer conversations from one official WhatsApp number, organize contacts and send approved-template campaigns.</p>
-            <div className="auth-story-list">
-              <div><span><Check size={15}/></span><section><strong>One number for your customers</strong><small>Keep every WhatsApp conversation easy to find.</small></section></div>
-              <div><span><Check size={15}/></span><section><strong>Messaging with safeguards</strong><small>Use official Meta Cloud API and recorded consent.</small></section></div>
-              <div><span><Check size={15}/></span><section><strong>Your business stays yours</strong><small>Your team's contacts, settings and messaging data stay in their own business account.</small></section></div>
-            </div>
           </div>
           <div className="auth-story-footer"><ShieldCheck size={15}/> Official Meta Cloud API connectivity <span>·</span> Built by MobiWave Innovations Ltd</div>
         </section>
         <section className="auth-form-side">
           <form className="auth-form-card" onSubmit={forgotMode ? sendPasswordReset : signIn}>
             <div className="auth-mobile-brand"><Brand /></div>
-            <div className="auth-form-topline"><span className="auth-eyebrow">{forgotMode ? "ACCOUNT RECOVERY" : authMode === "signin" ? "SECURE SIGN-IN" : "GET STARTED"}</span><span className="auth-secure"><LockKeyhole size={13}/> Encrypted session</span></div>
             <h2>{forgotMode ? "Reset your password" : authMode === "signin" ? "Welcome back" : "Create your account"}</h2>
             <p className="auth-form-description">{forgotMode ? "Enter the email address linked to your account and we’ll send a password-reset link if it exists." : authMode === "signin" ? "Pick up where your team left off." : "Create an account to set up your business account."}</p>
             <label htmlFor="auth-email">Work email</label>
@@ -1165,11 +1464,12 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
     onSignOut={() => void signOut()}
   /></Suspense>;
   if (tenantError) return <div className="auth-screen"><div className="auth-card"><Brand /><h1>Could not load your account</h1><p>We couldn’t verify your business access. Your account setup has not been changed.</p><div className="inline-notice" role="alert">{tenantError}</div><button type="button" className="primary-button full" onClick={() => void loadTenants()}>Try again</button><button type="button" className="auth-switch" onClick={() => void signOut()}>Sign out</button></div></div>;
-  if (!tenants.length) return <div className="auth-screen"><form className="auth-card" onSubmit={createWorkspace}><Brand /><div className="auth-eyebrow">FIRST-TIME SETUP</div><h1>Set up your business</h1><p>Create your business account to keep contacts, WhatsApp connection, campaigns and team access separate.</p><label>Business name</label><input value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} required minLength={2} maxLength={160} placeholder="e.g. MobiWave Demo" /><button className="primary-button full" disabled={busy}>{busy ? "Setting up…" : "Set up business"}</button>{notice && <div className="inline-notice" role="status">{notice}</div>}<button type="button" className="auth-switch" onClick={signOut}>Sign out</button></form></div>;
+  if (!tenants.length) return <div className="auth-screen"><form className="auth-card" onSubmit={createWorkspace}><Brand /><div className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand-600">First-time setup</div><h1>Set up your business</h1><p>Create your business account to keep contacts, WhatsApp connection, campaigns and team access separate.</p><label htmlFor="workspace-name">Business name</label><input id="workspace-name" value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} required minLength={2} maxLength={160} placeholder="e.g. MobiWave Demo" /><button className="primary-button full" disabled={busy}>{busy ? "Setting up…" : "Set up business"}</button>{notice && <div className="inline-notice" role="status">{notice}</div>}<button type="button" className="auth-switch" onClick={signOut}>Sign out</button></form></div>;
   return <div className="app-shell">
-    {mobileNavOpen && <button type="button" className="fixed inset-0 z-30 bg-[#0c243c]/35 backdrop-blur-sm lg:hidden" aria-label="Close navigation menu" onClick={() => setMobileNavOpen(false)} />}
+    {mobileNavOpen && <button type="button" className="fixed inset-0 z-30 bg-[color:var(--color-midnight-950)]/35 backdrop-blur-sm lg:hidden" aria-label="Close navigation menu" onClick={() => setMobileNavOpen(false)} />}
     <aside
       id="primary-navigation"
+      ref={(node) => { navRef.current = node; if (node) node.inert = !desktopNav && !mobileNavOpen; }}
       className={
         "fixed inset-y-0 left-0 z-40 flex h-dvh w-[250px] shrink-0 flex-col border-r border-hairline bg-surface transition-transform duration-200 ease-out lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 " +
         (mobileNavOpen ? "translate-x-0 shadow-raised" : "-translate-x-full")
@@ -1229,16 +1529,13 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
                 title={available ? undefined : `${item.label} is not included in this active tier`}
                 onClick={() => {
                   if (!available) { setNotice(`${item.label} is not included in this workspace’s active tier.`); return; }
-                  setView(item.label); setMobileNavOpen(false);
+                  goTo(item.label);
                 }}
               >
                 <item.icon size={18} />
                 <span>{item.label}</span>
                 {item.label === "Inbox" && unreadCount > 0 && (
                   <span className="nav-count">{unreadCount}</span>
-                )}
-                {item.label === "Alerts" && notificationUnread > 0 && (
-                  <span className="nav-count is-warning">{notificationUnread}</span>
                 )}
                 {!available && <LockKeyhole className="ml-auto" size={13} aria-label="Not included in tier" />}
               </button>;
@@ -1293,10 +1590,10 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
         <div className="topbar-search">
           <Search size={15}/>
           <input
-            aria-label="Search workspace"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setContactPage(0); if (view !== "Contacts") setView("Contacts"); }}
-            placeholder="Search anything…"
+            aria-label="Search contacts"
+            value={contactSearch}
+            onChange={(e) => { setContactSearch(e.target.value); setContactPage(0); if (view !== "Contacts") goTo("Contacts"); }}
+            placeholder="Search contacts…"
           />
         </div>
         <span className="topbar-status-pill">
@@ -1307,18 +1604,92 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           <span className={metaStatus?.enabled && metaStatus?.verified ? "environment is-connected" : "environment is-disconnected"}>
             <span className="status-dot" /> {metaStatus?.enabled ? "WhatsApp connected" : "WhatsApp not connected"}
           </span>
-          <button type="button" className="icon-btn relative" aria-label="Open alerts" onClick={() => { setView("Alerts"); setMobileNavOpen(false); }}>
-            <Bell size={17} />
-            {notificationUnread > 0 && (
-              <span className="absolute right-1 top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-danger px-1 text-[8.5px] font-bold text-white">
-                {notificationUnread}
-              </span>
+          <div className="relative">
+            <button 
+              type="button" 
+              className="icon-btn relative" 
+              aria-label="Open alerts" 
+              onClick={() => setAlertsDropdownOpen(!alertsDropdownOpen)}
+            >
+              <Bell size={17} />
+              {notificationUnread > 0 && (
+                <span className="absolute right-1 top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-danger px-1 text-[8.5px] font-bold text-white">
+                  {notificationUnread}
+                </span>
+              )}
+            </button>
+            
+            {alertsDropdownOpen && (
+              <div className="alerts-dropdown">
+                <div className="alerts-dropdown-header">
+                  <div className="alerts-dropdown-title">
+                    <Bell size={14} />
+                    <span>Notifications</span>
+                  </div>
+                  <div className="alerts-dropdown-count">
+                    {notificationUnread > 0 && (
+                      <span className="alert-count">{notificationUnread} alerts</span>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="alerts-dropdown-content">
+                  {notificationUnread > 0 && (
+                    <div className="alerts-section">
+                      <div className="alerts-section-title">Alerts</div>
+                      {notifications.slice(0, 3).map((notification) => (
+                        <div 
+                          key={notification.id} 
+                          className={`alert-item ${notification.read_at ? "read" : "unread"}`}
+                          onClick={() => {
+                            if (!notification.read_at) {
+                              markNotificationRead(notification.id);
+                            }
+                          }}
+                        >
+                          <div className="alert-content">
+                            <div className="alert-text">{notification.body}</div>
+                            <div className="alert-time">{new Date(notification.created_at).toLocaleDateString()}</div>
+                          </div>
+                        </div>
+                      ))}
+                      {notifications.length > 3 && (
+                        <div className="alert-view-all">
+                          <button onClick={handleViewAllAlerts}>View all alerts</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+
+                  
+                  {notificationUnread === 0 && (
+                    <div className="no-alerts">
+                      <p>No new notifications</p>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="alerts-dropdown-footer">
+                  <button 
+                    className="alerts-dropdown-action" 
+                    onClick={handleMarkAsRead}
+                    disabled={notificationUnread === 0}
+                  >
+                    <Check size={14} />
+                    Mark all read
+                  </button>
+                  <button className="alerts-dropdown-action" onClick={handleViewAllAlerts}>
+                    View all
+                  </button>
+                </div>
+              </div>
             )}
-          </button>
+          </div>
           <button type="button" className="icon-btn" aria-label="Refresh" onClick={() => void loadWorkspace()}>
             <RefreshCw size={17} className={loading ? "spin" : ""} />
           </button>
-          <button type="button" className="topbar-profile" aria-label="Open profile" onClick={() => { setView("Profile"); setMobileNavOpen(false); }}>
+          <button type="button" className="topbar-profile" aria-label="Open profile" onClick={() => goTo("Profile")}>
             <span className="topbar-profile-copy">
               <strong>{user.email?.split("@")[0] ?? "Account"}</strong>
               <small className="capitalize">{activeTenant?.role ?? "Member"}</small>
@@ -1339,9 +1710,10 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           dailyMessages={dailyMessages}
           metrics={overviewMetrics}
           metricsError={overviewMetricsError}
+          metricsLoading={overviewMetricsLoading}
           metaStatus={metaStatus}
-          onNavigate={(next) => setView(next as View)}
-          onOpenConversation={(conversationId) => { setSelectedConversation(conversationId); setView("Inbox"); }}
+          onNavigate={(next) => goTo(next as View)}
+          onOpenConversation={(conversationId) => { setSelectedConversation(conversationId); goTo("Inbox"); }}
         />
       </Suspense></section>}
       {view === "Contacts" && <section className="content"><PageHeading eyebrow="CUSTOMER DATA" title="Contacts" description="Store consent and suppression status before using contacts for campaigns."/>
@@ -1353,21 +1725,21 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           <span className="consent-summary-note">Only opted-in contacts are eligible for campaign delivery.</span>
         </div>
         {isAdmin&&<div className="panel-grid-2"><Suspense fallback={<div className="panel" role="status">Loading contact import…</div>}><ContactCsvImport tenantId={tenantId} onImported={() => void loadWorkspace()}/></Suspense>
-        <form className="panel form-panel" onSubmit={addContact}><h2>Add contact</h2><div className="form-grid"><div className="field"><label>Phone number (E.164) *</label><input value={contactPhone} onChange={(e)=>setContactPhone(e.target.value)} required pattern="\+[1-9][0-9]{7,14}" placeholder="+2547XXXXXXXX"/></div><div className="field"><label>Display name</label><input value={contactName} onChange={(e)=>setContactName(e.target.value)} placeholder="Customer name"/></div></div><label className="checkbox-line"><input type="checkbox" checked={contactOptIn} onChange={(e)=>setContactOptIn(e.target.checked)}/> I have verifiable permission to send WhatsApp messages to this contact.</label>{contactOptIn&&<div className="field"><label>Consent source / record *</label><input value={contactConsentSource} onChange={(e)=>setContactConsentSource(e.target.value)} required placeholder="e.g. website signup form, 2026-10-16"/></div>}<div className="form-actions"><span className="muted small">Unconfirmed contacts are not eligible for campaigns.</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add contact</button></div></form></div>}
+        <form className="panel form-panel" onSubmit={addContact}><h2>Add contact</h2><div className="form-grid"><div className="field"><label htmlFor="contact-phone">Phone number (E.164) *</label><input id="contact-phone" value={contactPhone} onChange={(e)=>setContactPhone(e.target.value)} required pattern="\+[1-9][0-9]{7,14}" placeholder="+2547XXXXXXXX"/></div><div className="field"><label htmlFor="contact-name">Display name</label><input id="contact-name" value={contactName} onChange={(e)=>setContactName(e.target.value)} placeholder="Customer name"/></div></div><label className="checkbox-line"><input type="checkbox" checked={contactOptIn} onChange={(e)=>setContactOptIn(e.target.checked)}/> I have verifiable permission to send WhatsApp messages to this contact.</label>{contactOptIn&&<div className="field"><label htmlFor="contact-consent-source">Consent source / record *</label><input id="contact-consent-source" value={contactConsentSource} onChange={(e)=>setContactConsentSource(e.target.value)} required placeholder="e.g. website signup form, 2026-10-16"/></div>}<div className="form-actions"><span className="muted small">Unconfirmed contacts are not eligible for campaigns.</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add contact</button></div></form></div>}
         <div className="section-header">
           <div><h2>Contact list</h2><p>{contacts.length ? `Showing ${contactPage * 100 + 1}–${contactPage * 100 + contacts.length} of ${totalContacts} contact(s)` : `${totalContacts} contact(s)`}</p></div>
-          <div className="search-field"><Search size={16}/><input aria-label="Search contacts" value={search} onChange={(e)=>{setSearch(e.target.value);setContactPage(0);}} placeholder="Search all contacts…"/></div>
+          <div className="search-field"><Search size={16}/><input aria-label="Search contacts" value={contactSearch} onChange={(e)=>{setContactSearch(e.target.value);setContactPage(0);}} placeholder="Search all contacts…"/></div>
         </div>
         <div className="source-list">
           <div className="source-table-head contact-head"><span>CONTACT</span><span>CONSENT</span><span>SOURCE</span><span>HISTORY / ACTION</span></div>
-          {contactsLoading?<Empty icon={<LoaderCircle size={22} className="spin"/>} title={search.trim()?"Searching contacts":"Loading contacts"} text="Contact results will appear here."/>:filteredContacts.length===0?<Empty icon={<Users size={24}/>} title={search.trim()?"No matching contacts":"No contacts yet"} text={search.trim()?"Try a different name or phone number.":"Add a contact to start building your consent based audience."}/>:filteredContacts.map(c=><div className="source-row contact-row" key={c.id}>
+          {contactsLoading?<Empty icon={<LoaderCircle size={22} className="spin"/>} title={contactSearch.trim()?"Searching contacts":"Loading contacts"} text="Contact results will appear here."/>:filteredContacts.length===0?<Empty icon={<Users size={24}/>} title={contactSearch.trim()?"No matching contacts":"No contacts yet"} text={contactSearch.trim()?"Try a different name or phone number.":"Add a contact to start building your consent based audience."}/>:filteredContacts.map(c=><div className="source-row contact-row" key={c.id}>
             <div className="source-main"><div className="source-icon"><Users size={17}/></div><div className="source-text"><strong>{c.display_name||"Unnamed contact"}</strong><span className="contact-phone">{c.phone_e164}</span></div></div>
             <div><Status status={c.consent_status}/></div><div className="source-added">{c.consent_source||"No consent record"}</div>
             <div className="row-actions contact-actions">
               <button type="button" className="secondary-button compact" onClick={()=>void showConsentHistory(c)}>History</button>
               {isAdmin&&c.consent_status!=="opted_in"&&<button type="button" className="secondary-button compact" onClick={()=>{setConsentTarget(consentTarget===c.id?"":c.id);setConsentRecordSource("");}}>Record opt-in</button>}
               {isAdmin&&c.consent_status!=="opted_out"&&<button type="button" className="secondary-button compact" onClick={()=>void optOut(c)}>Suppress</button>}
-              {consentTarget===c.id&&<form className="consent-inline" onSubmit={(event)=>void recordOptIn(c,event)}><label>Evidence or source *</label><input required value={consentRecordSource} onChange={(event)=>setConsentRecordSource(event.target.value)} placeholder="Form, date, or recorded request"/><button className="primary-button compact">Save opt-in</button></form>}
+              {consentTarget===c.id&&<form className="consent-inline" onSubmit={(event)=>void recordOptIn(c,event)}><label htmlFor="consent-evidence">Evidence or source *</label><input id="consent-evidence" required value={consentRecordSource} onChange={(event)=>setConsentRecordSource(event.target.value)} placeholder="Form, date, or recorded request"/><button className="primary-button compact">Save opt-in</button></form>}
             </div>
           </div>)}
         </div>
@@ -1386,18 +1758,18 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
         {isAdmin&&<form className="panel form-panel" onSubmit={createCampaign}>
           <h2>Create campaign</h2>
           <div className="form-grid">
-            <div className="field"><label>Campaign name *</label><input value={campaignName} onChange={(e)=>setCampaignName(e.target.value)} required maxLength={180} placeholder="October customer update"/></div>
-            <div className="field"><label>Schedule (optional)</label><input type="datetime-local" value={campaignScheduledAt} onChange={(e)=>setCampaignScheduledAt(e.target.value)}/><small className="muted">Leave blank for a manual draft. Scheduled campaigns send in 10-recipient batches.</small></div>
+            <div className="field"><label htmlFor="campaign-name">Campaign name *</label><input id="campaign-name" value={campaignName} onChange={(e)=>setCampaignName(e.target.value)} required maxLength={180} placeholder="October customer update"/></div>
+            <div className="field"><label htmlFor="campaign-schedule">Schedule (optional)</label><input id="campaign-schedule" type="datetime-local" value={campaignScheduledAt} onChange={(e)=>setCampaignScheduledAt(e.target.value)}/><small className="muted">Leave blank for a manual draft. Scheduled campaigns send in 10-recipient batches.</small></div>
           </div>
-          <div className="field"><label>Approved template *</label><select value={campaignTemplate} onChange={(e)=>{setCampaignTemplate(e.target.value);setCampaignVariableValues({});}} required><option value="">Choose template…</option>{approvedTemplates.map(t=><option value={t.id} key={t.id}>{t.meta_template_name} · {t.language_code}</option>)}</select>{approvedTemplates.length===0&&<small className="muted">No approved templates found. Connect Meta and sync templates in Integrations.</small>}</div>
+          <div className="field"><label htmlFor="campaign-template">Approved template *</label><select id="campaign-template" value={campaignTemplate} onChange={(e)=>{setCampaignTemplate(e.target.value);setCampaignVariableValues({});}} required><option value="">Choose template…</option>{approvedTemplates.map(t=><option value={t.id} key={t.id}>{t.meta_template_name} · {t.language_code}</option>)}</select>{approvedTemplates.length===0&&<small className="muted">No approved templates found. Connect Meta and sync templates in Integrations.</small>}</div>
           {unsupportedMediaHeader&&<div className="inline-notice" role="status">This template has a media header. The campaign composer currently supports text headers, body variables, and URL button variables.</div>}
-          {selectedTemplateParts.length>0&&<div className="template-variable-panel"><strong>Personalize this template</strong><p>These values will be the same for every selected recipient.</p>{selectedTemplateParts.map(part=><div className="template-variable-part" key={part.componentIndex}><small>{part.type.toUpperCase()} preview</small><p>{(()=>{let placeholderIndex=0;return part.text.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,(match)=>campaignVariableValues[part.componentIndex+":"+(placeholderIndex++)]?.trim()||match);})()}</p>{part.variables.map((variable,index)=><div className="field" key={part.componentIndex+":"+index}><label>{part.type==="body"?"Body":part.type==="header"?"Header":"Button URL"} · {'{{'+variable+'}}'}</label><input required value={campaignVariableValues[part.componentIndex+":"+index]??""} onChange={(e)=>setCampaignVariableValues((values)=>({...values,[part.componentIndex+":"+index]:e.target.value}))} placeholder={'Value for '+variable}/></div>)}</div>)}</div>}
-          <div className="field campaign-recipient-field"><label>Find opted-in recipients</label><p className="field-hint">Only contacts with recorded opt-in can be selected. Selected contacts stay selected as you move between pages.</p><div className="search-field"><Search size={16}/><input aria-label="Search opted-in recipients" value={search} onChange={(e)=>{setSearch(e.target.value);setContactPage(0);}} placeholder="Search name or phone"/></div><div className="contact-select">{contactsLoading?<div className="contact-search-state"><LoaderCircle size={15} className="spin"/> Loading recipients…</div>:visibleCampaignContacts.map(c=><label key={c.id} className="checkbox-line"><input type="checkbox" checked={campaignContacts.includes(c.id)} onChange={(e)=>setCampaignContacts(list=>e.target.checked?[...list,c.id]:list.filter(id=>id!==c.id))}/><span className="campaign-contact-name">{c.display_name||"Unnamed contact"}<small>{c.phone_e164}</small></span></label>)}{!contactsLoading&&visibleCampaignContacts.length===0&&<div className="contact-search-state">{search.trim()?"No opted-in contacts match this search.":"No opted-in contacts on this page."}</div>}</div><div className="pagination-controls compact-pagination"><button type="button" className="secondary-button compact" disabled={contactPage===0} onClick={()=>setContactPage(page=>Math.max(0,page-1))}>Previous</button><span>Page {contactPage+1}</span><button type="button" className="secondary-button compact" disabled={!contactHasMore} onClick={()=>setContactPage(page=>page+1)}>Next</button></div></div>
+          {selectedTemplateParts.length>0&&<div className="template-variable-panel"><strong>Personalize this template</strong><p>These values will be the same for every selected recipient.</p>{selectedTemplateParts.map(part=><div className="template-variable-part" key={part.componentIndex}><small>{part.type.toUpperCase()} preview</small><p>{(()=>{let placeholderIndex=0;return part.text.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,(match)=>campaignVariableValues[part.componentIndex+":"+(placeholderIndex++)]?.trim()||match);})()}</p>{part.variables.map((variable,index)=><div className="field" key={part.componentIndex+":"+index}><label htmlFor={`campaign-variable-${part.componentIndex}-${index}`}>{part.type==="body"?"Body":part.type==="header"?"Header":"Button URL"} · {'{{'+variable+'}}'}</label><input id={`campaign-variable-${part.componentIndex}-${index}`} required value={campaignVariableValues[part.componentIndex+":"+index]??""} onChange={(e)=>setCampaignVariableValues((values)=>({...values,[part.componentIndex+":"+index]:e.target.value}))} placeholder={'Value for '+variable}/></div>)}</div>)}</div>}
+          <div className="field campaign-recipient-field"><label htmlFor="campaign-recipient-search">Find opted-in recipients</label><p className="field-hint">Only contacts with recorded opt-in are listed. Selected contacts stay selected as you move between pages.</p><div className="search-field"><Search size={16}/><input id="campaign-recipient-search" aria-label="Search opted-in recipients" value={campaignSearch} onChange={(e)=>{setCampaignSearch(e.target.value);setCampaignRecipientsPage(0);}} placeholder="Search name or phone"/></div><div className="contact-select">{campaignRecipientsLoading?<div className="contact-search-state"><LoaderCircle size={15} className="spin"/> Loading recipients…</div>:campaignRecipients.map(c=><label key={c.id} className="checkbox-line"><input type="checkbox" checked={campaignContacts.includes(c.id)} onChange={(e)=>setCampaignContacts(list=>e.target.checked?[...list,c.id]:list.filter(id=>id!==c.id))}/><span className="campaign-contact-name">{c.display_name||"Unnamed contact"}<small>{c.phone_e164}</small></span></label>)}{!campaignRecipientsLoading&&campaignRecipients.length===0&&<div className="contact-search-state">{campaignSearch.trim()?"No opted-in contacts match this search.":"No opted-in contacts on this page."}</div>}</div><div className="pagination-controls compact-pagination"><button type="button" className="secondary-button compact" disabled={campaignRecipientsPage===0} onClick={()=>setCampaignRecipientsPage(page=>Math.max(0,page-1))}>Previous</button><span>Page {campaignRecipientsPage+1} of {Math.max(1, Math.ceil(campaignRecipientsTotal/100))} · {campaignRecipientsTotal} eligible</span><button type="button" className="secondary-button compact" disabled={!campaignRecipientsHasMore} onClick={()=>setCampaignRecipientsPage(page=>page+1)}>Next</button></div></div>
           <div className="form-actions"><span className="muted small">{campaignContacts.length} recipient(s) selected</span><button className="primary-button" disabled={busy}><Plus size={15}/> Save draft</button></div>
         </form>}
         <div className="section-header"><div><h2>Campaign history</h2><p>Batches send automatically in groups of 10 until the campaign finishes.</p></div></div>
         <div className="campaign-safety-chips"><span><ShieldCheck size={12}/> Approved templates only</span><span><Users size={12}/> Opted-in audience</span><span><RefreshCw size={12}/> Auto-batched sending</span></div>
-        <div className="source-list"><div className="source-table-head campaign-head"><span>CAMPAIGN</span><span>STATUS</span><span>CREATED</span><span/></div>{campaigns.length===0?<Empty icon={<Zap size={24}/>} title="No campaigns" text="Create a campaign draft above."/>:campaigns.map(c=><div className="source-row campaign-row" key={c.id}><div className="source-main"><div className="source-icon"><Zap size={17}/></div><div className="source-text"><button type="button" className="campaign-name-button" onClick={()=>void openCampaign(c)}>{c.name}</button><small>{templates.find(t=>t.id===c.template_id)?.meta_template_name||"Template unavailable"}</small></div></div><div><Status status={c.status==="draft"&&c.scheduled_at?"scheduled":c.status}/></div><div className="source-added">{c.status==="draft"&&c.scheduled_at?new Date(c.scheduled_at).toLocaleString():new Date(c.created_at).toLocaleDateString()}</div><div className="row-actions"><button className="secondary-button compact" onClick={()=>void openCampaign(c)}>Details</button>{isAdmin&&["draft","paused","running"].includes(c.status)&&<button className="secondary-button compact" aria-label={`${c.status==="running"?"Continue":"Send"} campaign batch: ${c.name}`} onClick={()=>void launchCampaign(c.id)} disabled={busy}>{c.status==="running"?"Continue batch":"Send batch"} <ArrowUpRight size={13}/></button>}</div></div>)}</div>
+        <div className="source-list"><div className="source-table-head campaign-head"><span>CAMPAIGN</span><span>STATUS</span><span>CREATED</span><span/></div>{campaigns.length===0?<Empty icon={<Zap size={24}/>} title="No campaigns" text="Create a campaign draft above."/>:campaigns.map(c=><div className="source-row campaign-row" key={c.id}><div className="source-main"><div className="source-icon"><Zap size={17}/></div><div className="source-text"><button type="button" className="campaign-name-button" onClick={()=>void openCampaign(c)}>{c.name}</button><small>{templates.find(t=>t.id===c.template_id)?.meta_template_name||"Template unavailable"}</small></div></div><div><Status status={c.status==="draft"&&c.scheduled_at?"scheduled":c.status}/></div><div className="source-added">{c.status==="draft"&&c.scheduled_at?new Date(c.scheduled_at).toLocaleString():new Date(c.created_at).toLocaleDateString()}</div><div className="row-actions"><button className="secondary-button compact" onClick={()=>void openCampaign(c)}>Details</button>{isAdmin&&["draft","paused","running"].includes(c.status)&&<button className="secondary-button compact" aria-label={`${c.status==="running"?"Continue":"Send"} campaign batch: ${c.name}`} onClick={()=>void launchCampaign(c.id)} disabled={busy || tenantPlan?.can_send === false}>{c.status==="running"?"Continue batch":"Send batch"} <ArrowUpRight size={13}/></button>}</div></div>)}</div>
       </section>}
       {view === "Inbox" && <section className="content inbox-content">
         <div className="inbox-page-header"><div><h1>Inbox</h1><p>{metaStatus?.display_phone_number ? `WhatsApp conversations for ${metaStatus.display_phone_number}` : "Conversations with your WhatsApp contacts"}</p></div>{metaStatus?.enabled && <span className="inbox-number-pill"><span className="status-dot"/>{metaStatus.display_phone_number || "WhatsApp number connected"}</span>}</div>
@@ -1467,7 +1839,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           <p className="muted small">This business account's Meta access token and app secret are encrypted server-side and never returned to the browser. Saving credentials does not itself verify or enable the connection.</p>
           {isAdmin&&<form onSubmit={saveMeta} className="integration-form">
             <h2>1. Connect your WhatsApp number</h2>
-            <div className="form-grid"><div className="field"><label>Phone Number ID *</label><input value={metaPhoneId} onChange={(e)=>setMetaPhoneId(e.target.value)} required pattern="[0-9]{5,30}" placeholder="Numeric ID from Meta"/></div><div className="field"><label>WhatsApp Business Account ID *</label><input value={metaWabaId} onChange={(e)=>setMetaWabaId(e.target.value)} required pattern="[0-9]{5,30}" placeholder="Numeric WABA ID"/></div></div>
+            <div className="form-grid"><div className="field"><label htmlFor="meta-phone-id">Phone Number ID *</label><input id="meta-phone-id" value={metaPhoneId} onChange={(e)=>setMetaPhoneId(e.target.value)} required pattern="[0-9]{5,30}" placeholder="Numeric ID from Meta"/></div><div className="field"><label htmlFor="meta-waba-id">WhatsApp Business Account ID *</label><input id="meta-waba-id" value={metaWabaId} onChange={(e)=>setMetaWabaId(e.target.value)} required pattern="[0-9]{5,30}" placeholder="Numeric WABA ID"/></div></div>
             <div className="field"><label htmlFor="meta-waba-timezone">Messaging-account timezone</label><input id="meta-waba-timezone" value={metaWabaTimezone} onChange={(e)=>setMetaWabaTimezone(e.target.value)} maxLength={64} placeholder="Africa/Nairobi"/><small>Used for the monthly Meta service-message allowance reset. Match the timezone shown in WhatsApp Manager.</small></div>
             <div className="field"><label htmlFor="client-meta-access-token">Meta access token{metaTokenSaved ? "" : " *"}</label><input id="client-meta-access-token" type="password" value={metaToken} onChange={(e)=>setMetaToken(e.target.value)} required={!metaTokenSaved} minLength={metaToken ? 40 : undefined} autoComplete="off" placeholder={metaTokenSaved ? "Leave blank to keep the saved token" : "Paste Meta access token"}/><small>{metaTokenSaved ? "A token is saved for this business. Leave blank to keep it, or enter a replacement." : "Required for first setup."} The saved value is never shown again.</small></div>
             <div className="field"><label htmlFor="client-meta-app-secret">This client's Meta app secret{metaAppSecretSaved ? "" : " *"}</label><input id="client-meta-app-secret" type="password" value={metaAppSecret} onChange={(e)=>setMetaAppSecret(e.target.value)} required={!metaAppSecretSaved} minLength={metaAppSecret ? 32 : undefined} maxLength={32} pattern="[A-Fa-f0-9]{32}" autoComplete="new-password" spellCheck={false} placeholder="32-character secret from this client's Meta app"/><small>{metaAppSecretSaved ? "A secret is saved for this business. Leave blank to keep it, or enter a replacement." : "Enter the app secret from the Meta Developer app connected to this business. It is required for first setup."} The saved value is never shown again.</small></div>
@@ -1484,23 +1856,23 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           </p>
           <div className="form-grid">
             <div className="field">
-              <label>Free service messages used</label>
+              <span className="field-label">Free service messages used</span>
               <strong>{new Intl.NumberFormat("en-KE").format(metaAllowance.free_service_used ?? 0)} / {new Intl.NumberFormat("en-KE").format(metaAllowance.free_limit ?? 1000)}</strong>
               <small className="muted small">{new Intl.NumberFormat("en-KE").format(metaAllowance.free_service_remaining ?? 0)} free service message(s) remaining</small>
             </div>
             <div className="field">
-              <label>Billable delivered this month</label>
+              <span className="field-label">Billable delivered this month</span>
               <strong>{new Intl.NumberFormat("en-KE").format(metaAllowance.billable_delivered ?? 0)}</strong>
               <small className="muted small">{Object.keys(metaAllowance.billable_by_category ?? {}).length ? Object.entries(metaAllowance.billable_by_category ?? {}).map(([category, count]) => `${category}: ${new Intl.NumberFormat("en-KE").format(Number(count))}`).join(" · ") : "No billable template deliveries recorded"}</small>
             </div>
             <div className="field">
-              <label>Messaging limit</label>
+              <span className="field-label">Messaging limit</span>
               <strong>{metaAllowance.messaging_limit_tier ?? "Not reported yet"}</strong>
               <small className="muted small">Number quality: {metaAllowance.quality_rating ?? "Not reported yet"}</small>
             </div>
           </div>
-          <div aria-hidden style={{ height: 8, background: "var(--hairline, #e5e7eb)", borderRadius: 999, overflow: "hidden", marginTop: 8 }}>
-            <div style={{ width: `${Math.min(100, Math.round(((metaAllowance.free_service_used ?? 0) / Math.max(1, metaAllowance.free_limit ?? 1000)) * 100))}%`, height: "100%", background: "#16a34a" }} />
+          <div aria-hidden style={{ height: 8, background: "var(--color-hairline)", borderRadius: 999, overflow: "hidden", marginTop: 8 }}>
+            <div style={{ width: `${Math.min(100, Math.round(((metaAllowance.free_service_used ?? 0) / Math.max(1, metaAllowance.free_limit ?? 1000)) * 100))}%`, height: "100%", background: "var(--color-success)" }} />
           </div>
           <p className="muted small" style={{ marginTop: 8 }}>
             {metaAllowance.has_pricing_data === false
@@ -1513,8 +1885,8 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
         <div className="panel form-panel" id="integration-webhook">
           <h2>2. Configure Meta's webhook callback</h2>
           <p className="muted small">Meta requires a callback URL and verification token. Configure these in your Meta app and subscribe to the messages field before verifying the connection. The token is stored as a hash and shown only when generated; it cannot be retrieved after leaving this screen.</p>
-          <div className="field"><label>Callback URL</label><div className="copyable-value"><code>{META_WEBHOOK_CALLBACK_URL}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(META_WEBHOOK_CALLBACK_URL,"Callback URL")}>Copy URL</button></div></div>
-          <div className="field"><label>Webhook verification token</label>{metaWebhookToken?<div className="copyable-value"><code>{metaWebhookToken}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(metaWebhookToken,"Verification token")}>Copy token</button></div>:<p className="muted small">Generate this token before or after saving your Meta phone credentials. It is shown only once; copy it before leaving this screen.</p>}</div>
+          <div className="field"><span className="field-label">Callback URL</span><div className="copyable-value"><code>{META_WEBHOOK_CALLBACK_URL}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(META_WEBHOOK_CALLBACK_URL,"Callback URL")}>Copy URL</button></div></div>
+          <div className="field"><span className="field-label">Webhook verification token</span>{metaWebhookToken?<div className="copyable-value"><code>{metaWebhookToken}</code><button type="button" className="secondary-button compact" onClick={()=>void copyIntegrationValue(metaWebhookToken,"Verification token")}>Copy token</button></div>:<p className="muted small">Generate this token before or after saving your Meta phone credentials. It is shown only once; copy it before leaving this screen.</p>}</div>
           {isAdmin&&<div className="form-actions"><button type="button" className="primary-button" onClick={()=>void generateMetaWebhookToken()} disabled={busy}><ShieldCheck size={15}/>{metaWebhookToken?"Generate replacement token":"Generate verification token"}</button></div>}
           <ol className="setup-steps">
             <li>Open your app in Meta for Developers and select <strong>Webhooks</strong>.</li>
@@ -1527,7 +1899,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
         </div>
         {tierFeatureAvailable("api") && <div className="panel form-panel" id="integration-api">
           <h2>Developer API</h2><p className="muted small">Use business-account-scoped keys for server-to-server integrations. Never put API keys in browser code or public repositories.</p>
-          {isAdmin&&<form onSubmit={createApiKey} className="api-key-create"><div className="field"><label>Key name</label><input value={apiKeyName} onChange={(e)=>setApiKeyName(e.target.value)} required minLength={2} maxLength={120}/></div><button className="primary-button" disabled={busy}><Plus size={15}/> Create API key</button></form>}
+          {isAdmin&&<form onSubmit={createApiKey} className="api-key-create"><div className="field"><label htmlFor="api-key-name">Key name</label><input id="api-key-name" value={apiKeyName} onChange={(e)=>setApiKeyName(e.target.value)} required minLength={2} maxLength={120}/></div><button className="primary-button" disabled={busy}><Plus size={15}/> Create API key</button></form>}
           {newApiKey&&<div className="new-key-box"><strong>Copy your new key now</strong><code>{newApiKey}</code><button className="secondary-button" onClick={()=>void copyApiKey()}>Copy key</button><small>It will disappear if you refresh or leave this screen.</small></div>}
           <div className="api-key-list">{apiKeys.length===0?<p className="muted small">No API keys created.</p>:apiKeys.map(key=><div className="api-key-row" key={key.id}><div><strong>{key.name}</strong><code>{key.key_prefix}…</code><small>Created {new Date(key.created_at).toLocaleDateString()} · {key.last_used_at?"Last used "+new Date(key.last_used_at).toLocaleString():"Not used yet"}{key.expires_at?" · Expires "+new Date(key.expires_at).toLocaleDateString():""}</small></div><Status status={key.revoked_at?"revoked":"active"}/>{isAdmin&&!key.revoked_at&&<button className="secondary-button compact" onClick={()=>void revokeApiKey(key)}>Revoke</button>}</div>)}</div>
           <div className="api-example"><strong>Send an approved template</strong><pre>{`POST ${window.location.origin.replace(/\/$/,"")}/api/v1/messages/send
@@ -1539,7 +1911,7 @@ Content-Type: application/json
         {tierFeatureAvailable("webhooks") && <details className="panel form-panel" id="integration-customer-webhooks">
           <summary><strong>Advanced: customer event webhooks</strong><span className="muted small"> Send MobiWave events to your own HTTPS endpoints</span></summary>
           <p className="muted small">This is separate from the Meta callback above. Customer webhooks send signed MobiWave events to your server; they do not receive Meta's inbound WhatsApp webhook.</p>
-          {isAdmin&&<form className="webhook-create" onSubmit={createWebhook}><div className="form-grid"><div className="field"><label>Webhook name</label><input value={webhookName} onChange={(e)=>setWebhookName(e.target.value)} required minLength={2} maxLength={120}/></div><div className="field"><label>HTTPS endpoint URL</label><input type="url" value={webhookUrl} onChange={(e)=>setWebhookUrl(e.target.value)} required placeholder="https://api.yourbusiness.co.ke/hooks/mobiwave"/></div></div><div className="webhook-event-options">{[["message.inbound","Inbound message"],["message.status","Delivery status"],["message.outbound","Outbound message"],["campaign.completed","Campaign completed"],["conversation.updated","Conversation updated"]].map(([value,label])=><label key={value} className="checkbox-line"><input type="checkbox" checked={webhookEvents.includes(value)} onChange={(e)=>setWebhookEvents(current=>e.target.checked?[...current,value]:current.filter(item=>item!==value))}/>{label}</label>)}</div><div className="form-actions"><span className="muted small">HTTPS only · public host required</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add webhook</button></div></form>}
+          {isAdmin&&<form className="webhook-create" onSubmit={createWebhook}><div className="form-grid"><div className="field"><label htmlFor="webhook-name">Webhook name</label><input id="webhook-name" value={webhookName} onChange={(e)=>setWebhookName(e.target.value)} required minLength={2} maxLength={120}/></div><div className="field"><label htmlFor="webhook-url">HTTPS endpoint URL</label><input id="webhook-url" type="url" value={webhookUrl} onChange={(e)=>setWebhookUrl(e.target.value)} required placeholder="https://api.yourbusiness.co.ke/hooks/mobiwave"/></div></div><div className="webhook-event-options">{[["message.inbound","Inbound message"],["message.status","Delivery status"],["message.outbound","Outbound message"],["campaign.completed","Campaign completed"],["conversation.updated","Conversation updated"]].map(([value,label])=><label key={value} className="checkbox-line"><input type="checkbox" checked={webhookEvents.includes(value)} onChange={(e)=>setWebhookEvents(current=>e.target.checked?[...current,value]:current.filter(item=>item!==value))}/>{label}</label>)}</div><div className="form-actions"><span className="muted small">HTTPS only · public host required</span><button className="primary-button" disabled={busy}><Plus size={15}/> Add webhook</button></div></form>}
           {newWebhookSecret&&<div className="new-key-box"><strong>Copy your webhook signing secret now</strong><code>{newWebhookSecret}</code><button className="secondary-button" onClick={()=>void copyWebhookSecret()}>Copy secret</button><small>Use this secret to verify X-MobiWave-Signature. It cannot be retrieved again.</small></div>}
           <div className="api-key-list">{webhooks.length===0?<p className="muted small">No customer webhooks configured.</p>:webhooks.map(h=><div className="api-key-row" key={h.id}><div><strong>{h.name}</strong><code>{h.endpoint_url}</code><small>Events: {h.events.join(", ")}</small>{h.last_error&&<small className="error-text">{h.last_error}</small>}{h.last_delivery_at&&<small>Last delivery: {new Date(h.last_delivery_at).toLocaleString()}</small>}</div><Status status={h.enabled?(h.last_status||"active"):"disabled"}/>{isAdmin&&h.enabled&&<button className="secondary-button compact" onClick={()=>void testWebhook(h)} disabled={busy}>Send test</button>}{isAdmin&&<button className="secondary-button compact" onClick={()=>void manageWebhook(h,h.enabled?"disable":"enable")}>{h.enabled?"Disable":"Enable"}</button>}{isAdmin&&<button className="icon-button" onClick={()=>void manageWebhook(h,"delete")} aria-label="Delete webhook"><Trash2 size={15}/></button>}</div>)}</div>
           <div className="section-header"><div><h3>Recent delivery history</h3><p>Latest 50 attempts across this business account.</p></div></div>
@@ -1554,10 +1926,10 @@ Content-Type: application/json
           <div className="account-banner-meta"><span className="account-role">{activeTenant?.role ?? "Member"}</span><span>{activeTenant?.name ?? "No workspace"}</span></div>
           <button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button>
         </div>
-        <form className="panel form-panel profile-form" onSubmit={saveProfile}><h2>Personal details</h2><div className="field"><label>Full name</label><input value={profileName} onChange={(e)=>setProfileName(e.target.value)} maxLength={120} placeholder="Your name"/></div><div className="field"><label>Email address</label><input value={user.email ?? ""} readOnly aria-readonly="true"/><small className="muted small">Your sign-in email is managed by your authentication account.</small></div><div className="field"><label>New password <span className="muted small">(optional)</span></label><input type="password" value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} minLength={8} autoComplete="new-password" placeholder="At least 8 characters"/></div><div className="form-actions"><span className="muted small">Leave the password blank to keep it unchanged.</span><button className="primary-button" disabled={busy}>{busy?"Saving…":"Save profile"}</button></div></form><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Account security</strong><p>Use a unique password. Your profile is stored with your authenticated account and does not change workspace permissions.</p></div></div></section>}
-      {view === "Billing" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading billing…</div></section>}><BillingPage /></Suspense>}
-{view === "Team" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading team…</div></section>}><TeamPage /></Suspense>}
-{view === "Usage" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading usage…</div></section>}><UsagePage /></Suspense>}
+        <form className="panel form-panel profile-form" onSubmit={saveProfile}><h2>Personal details</h2><div className="field"><label htmlFor="profile-name">Full name</label><input id="profile-name" value={profileName} onChange={(e)=>setProfileName(e.target.value)} maxLength={120} placeholder="Your name"/></div><div className="field"><label htmlFor="profile-email">Email address</label><input id="profile-email" value={user.email ?? ""} readOnly aria-readonly="true"/><small className="muted small">Your sign-in email is managed by your authentication account.</small></div><div className="field"><label htmlFor="profile-password">New password <span className="muted small">(optional)</span></label><input id="profile-password" type="password" value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} minLength={8} autoComplete="new-password" placeholder="At least 8 characters"/></div><div className="form-actions"><span className="muted small">Leave the password blank to keep it unchanged.</span><button className="primary-button" disabled={busy}>{busy?"Saving…":"Save profile"}</button></div></form><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Account security</strong><p>Use a unique password. Your profile is stored with your authenticated account and does not change workspace permissions.</p></div></div></section>}
+      {view === "Billing" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading billing…</div></section>}><BillingPage tenantId={tenantId} role={activeTenant?.role ?? "viewer"} /></Suspense>}
+{view === "Team" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading team…</div></section>}><TeamPage tenantId={tenantId} role={activeTenant?.role ?? "viewer"} /></Suspense>}
+{view === "Usage" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading usage…</div></section>}><UsagePage tenantId={tenantId} /></Suspense>}
       {view === "Settings" && <section className="content"><PageHeading eyebrow="PREFERENCES" title="Settings" description="Review your business account, plan and account access."/><div className="panel settings-panel"><div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Active business account</strong><p>{activeTenant?.name ?? "No business account selected"} · Account ID and role are managed by business account membership.</p></div><span className="fixed-setting">{activeTenant?.role ?? "Member"}</span></div>
           <div className="setting-row">
             <div className="setting-icon"><CreditCard size={19}/></div>
@@ -1577,21 +1949,11 @@ Content-Type: application/json
             </div>
             <a className="secondary-button compact" href="/pricing">View available plans</a>
           </div>
-          <div className="setting-row"><div className="setting-icon"><MessageCircle size={19}/></div><div className="setting-copy"><strong>WhatsApp connection</strong><p>{metaStatus?.enabled ? "Meta Cloud API is enabled for this business account." : "Meta Cloud API is not enabled yet. Open Integrations to configure and verify it."}</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Integrations")}>Open integrations</button></div>
-          <div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Team access</strong><p>{teamMembers.length} member(s) can access this business account. Owners and admins can invite teammates.</p></div><span className="fixed-setting">{teamMembers.length} members</span></div>
-          <div className="setting-row"><div className="setting-icon"><Zap size={19}/></div><div className="setting-copy"><strong>Messaging readiness</strong><p>{approvedTemplates.length} approved template(s) · {webhooks.filter((webhook)=>webhook.enabled).length} customer webhook(s) enabled.</p></div><button type="button" className="secondary-button compact" onClick={()=>setView("Campaigns")}>Open campaigns</button></div>
+          <div className="setting-row"><div className="setting-icon"><MessageCircle size={19}/></div><div className="setting-copy"><strong>WhatsApp connection</strong><p>{metaStatus?.enabled ? "Meta Cloud API is enabled for this business account." : "Meta Cloud API is not enabled yet. Open Integrations to configure and verify it."}</p></div><button type="button" className="secondary-button compact" onClick={()=>goTo("Integrations")}>Open integrations</button></div>
+          <div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Team access</strong><p>{teamMembers.length} member(s) can access this business account. Owners and admins can invite teammates.</p></div><button type="button" className="secondary-button compact" onClick={()=>goTo("Team")}>Manage team</button></div>
+          <div className="setting-row"><div className="setting-icon"><Zap size={19}/></div><div className="setting-copy"><strong>Messaging readiness</strong><p>{approvedTemplates.length} approved template(s) · {webhooks.filter((webhook)=>webhook.enabled).length} customer webhook(s) enabled.</p></div><button type="button" className="secondary-button compact" onClick={()=>goTo("Campaigns")}>Open campaigns</button></div>
           <div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Customer-service window</strong><p>Free-form replies are allowed inside Meta's 24-hour customer-service window. Outside it, use an approved template.</p></div><span className="fixed-setting">Policy</span></div>
           <div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div className="setting-copy"><strong>Business account access</strong><p>Your current role is {activeTenant?.role ?? "Member"}. Administrative actions are restricted to business account owners and admins.</p></div><span className="fixed-setting">{isAdmin?"Admin access":"Member access"}</span></div><div className="setting-row"><div className="setting-icon"><LogOut size={19}/></div><div className="setting-copy"><strong>Sign out</strong><p>End this session on the current browser.</p></div><button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button></div></div>
-        {isAdmin && <form className="panel form-panel" onSubmit={inviteTeamMember}>
-          <h2>Invite a teammate</h2>
-          <p className="muted small">New users receive an email invitation. Existing MobiWave accounts are added directly to this workspace.</p>
-          <div className="field"><label htmlFor="team-invite-email">Work email</label><input id="team-invite-email" type="email" autoComplete="email" value={teamInviteEmail} onChange={(event) => setTeamInviteEmail(event.target.value)} required maxLength={254} placeholder="teammate@company.co.ke" /></div>
-          <div className="field"><label htmlFor="team-invite-role">Workspace role</label><select id="team-invite-role" value={teamInviteRole} onChange={(event) => setTeamInviteRole(event.target.value as "admin" | "agent" | "viewer")}>
-            {activeTenant?.role === "owner" && <option value="admin">Admin</option>}
-            <option value="agent">Agent</option><option value="viewer">Viewer</option>
-          </select><small className="field-hint">Only a workspace owner can invite admins.</small></div>
-          <div className="form-actions"><span className="muted small">Invitation delivery uses the Supabase Auth email configuration.</span><button type="submit" className="primary-button" disabled={busy || !teamInviteEmail.trim()}>{busy ? "Sending…" : "Invite teammate"}</button></div>
-        </form>}
         <div className="privacy-note"><ShieldCheck size={18}/><div><strong>Privacy and data separation</strong><p>Business account data is kept separate. Use Profile to update your account details; administrative actions are restricted by role.</p></div></div></section>}
       {loading&&<div className="loading-bar"><LoaderCircle className="spin" size={14}/> Loading workspace data…</div>}
       {notice&&<div className={"toast"+(noticeIsError?" is-error":"")} role={noticeIsError?"alert":"status"}><div className="toast-icon">{noticeIsError?<X size={15}/>:<Check size={15}/>}</div><span>{notice}</span><button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
@@ -1606,8 +1968,7 @@ Content-Type: application/json
       const canCancel = isAdmin && ["draft", "scheduled", "queued", "running", "paused"].includes(campaign.status);
       const queuedRecipients = campaignCounts?.queued ?? 0;
       return (
-        <div className="modal-backdrop" role="presentation" onClick={() => setSelectedCampaign(null)}>
-          <div className="modal-panel campaign-modal" role="dialog" aria-modal="true" aria-labelledby="campaign-modal-title" onClick={(event) => event.stopPropagation()}>
+        <Modal open onClose={() => setSelectedCampaign(null)} labelledBy="campaign-modal-title" className="campaign-modal">
             <div className="modal-head">
               <div className="modal-head-copy">
                 <span className="eyebrow"><Zap size={13}/> CAMPAIGN DETAIL</span>
@@ -1619,6 +1980,7 @@ Content-Type: application/json
                 <button type="button" className="icon-btn" aria-label="Close campaign details" onClick={() => setSelectedCampaign(null)}><X size={17}/></button>
               </div>
             </div>
+            {campaignCountsError && <div className="inline-notice" role="alert">{campaignCountsError}</div>}
             <div className="campaign-detail-stats">
               {[
                 ["Recipients", campaignCountsLoading ? "…" : String(campaignCounts?.total ?? 0)],
@@ -1681,17 +2043,13 @@ Content-Type: application/json
               {canLaunch && (
                 <>
                   {!campaignCountsLoading && campaignCounts && queuedRecipients === 0 && <span className="modal-action-hint">No recipients are currently queued.</span>}
-                  <button type="button" className="primary-button" onClick={() => void launchCampaign(campaign.id)} disabled={busy || campaignCountsLoading || queuedRecipients === 0}>{campaign.status === "running" ? "Continue batch" : "Send next batch"} <ArrowUpRight size={14}/></button>
+                  <button type="button" className="primary-button" onClick={() => void launchCampaign(campaign.id)} disabled={busy || campaignCountsLoading || campaignCountsError !== "" || queuedRecipients === 0}>{campaign.status === "running" ? "Continue batch" : "Send next batch"} <ArrowUpRight size={14}/></button>
                 </>
               )}
             </div>
-          </div>
-        </div>
+        </Modal>
       );
     })()}
+    {confirmElement}
   </div>;
 }
-function PageHeading({eyebrow,title,description}:{eyebrow:string;title:string;description:string}) { return <div className="page-heading"><div><div className="eyebrow"><Activity size={14}/>{eyebrow}</div><h1>{title}</h1><p className="page-description">{description}</p></div></div>; }
-function Status({status}:{status:string}) { const s=status.toLowerCase(); const tone=["approved","indexed","completed","accepted","delivered","read","connected","opted_in","sent","verified"].includes(s)?"success":["failed","rejected","opted_out","paused"].includes(s)?"danger":["needs_review","suggested","pending","running","queued","processing","outcome_unknown","unknown","not connected","draft","scheduled"].includes(s)?"warning":"neutral"; return <span className={"status-pill "+tone}><span/>{status.replaceAll("_"," ")}</span>; }
-function Empty({icon,title,text}:{icon:ReactNode;title:string;text:string}) { return <div className="empty-state">{icon}<strong>{title}</strong><span>{text}</span></div>; }
-function SetupRow({done=false,label,detail}:{done?:boolean;label:string;detail:string}) { return <div className="setup-row"><div className={done?"setup-check done":"setup-check"}>{done?<Check size={15}/>:<span/>}</div><div><strong>{label}</strong><p>{detail}</p></div><span className={done?"setup-status complete":"setup-status"}>{done?"Done":"Pending"}</span></div>; }

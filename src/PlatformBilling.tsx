@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Banknote, Building2, Check, ChevronRight, CircleDollarSign, CreditCard, FileText, LoaderCircle, Pencil, Plus, Printer, Receipt, RefreshCw, Save, ShieldCheck, X } from "lucide-react";
 import { supabase } from "./lib/supabase";
-import { Empty, KpiCard } from "./components/ui";
+import { Empty, KpiCard, Modal, useConfirm } from "./components/ui";
+import { BreakdownCard, CHART, TransactionTable, VolumeChart } from "./components/finance";
 
 type Tier = {
   id: string; name: string; description: string; currency: string;
@@ -47,19 +48,26 @@ const money = (minor: number | string | null | undefined, currency = "KES") => n
   style: "currency", currency, maximumFractionDigits: 2,
 }).format(Number(minor ?? 0) / 100);
 const minor = (amount: string) => Math.round(Number(amount) * 100);
-const today = () => new Date().toISOString().slice(0, 10);
+/* `due_on` is a calendar date in the platform's own billing timezone, so
+   comparing it to a UTC date flips invoices overdue by the EAT offset. */
+const today = () => new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Africa/Nairobi", year: "numeric", month: "2-digit", day: "2-digit",
+}).format(new Date());
 const localDate = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" });
 
 export default function PlatformBilling() {
+  const { confirm, confirmElement, prompt, promptElement } = useConfirm();
   const [data, setData] = useState<BillingData>(emptyData);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [view, setView] = useState<"customers" | "tiers" | "invoices">("customers");
+  const [view, setView] = useState<"overview" | "customers" | "tiers" | "invoices">("overview");
   const [showIssueForm, setShowIssueForm] = useState(false);
   const [search, setSearch] = useState("");
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [customerTier, setCustomerTier] = useState("");
+  const [customerStatus, setCustomerStatus] = useState("");
   const [tierForm, setTierForm] = useState<TierForm | null>(null);
   const [invoiceCustomer, setInvoiceCustomer] = useState("");
   const [dueOn, setDueOn] = useState("");
@@ -76,8 +84,20 @@ export default function PlatformBilling() {
     setLoading(true); setError("");
     try {
       const { data: response, error: rpcError } = await supabase.rpc("platform_billing_data");
-      if (rpcError) setError(rpcError.message);
-      else setData((response ?? emptyData) as unknown as BillingData);
+      if (rpcError) {
+        setError(rpcError.message);
+        setData(emptyData);
+      } else if (
+        !response || typeof response !== "object" ||
+        !Array.isArray((response as BillingData).tiers) ||
+        !Array.isArray((response as BillingData).customers) ||
+        !Array.isArray((response as BillingData).invoices)
+      ) {
+        setError("The billing service returned an unexpected response.");
+        setData(emptyData);
+      } else {
+        setData(response as unknown as BillingData);
+      }
     } catch (error) {
       setError(error instanceof Error ? error.message : "Billing records could not be loaded.");
     } finally {
@@ -92,10 +112,62 @@ export default function PlatformBilling() {
     if (!term) return data.customers;
     return data.customers.filter((item) => `${item.name} ${item.slug} ${item.billing_name} ${item.billing_email} ${item.tier_name ?? ""}`.toLowerCase().includes(term));
   }, [data.customers, search]);
-  const openInvoices = data.invoices.filter((invoice) => invoice.status === "issued" && Number(invoice.paid_minor) < Number(invoice.subtotal_minor));
+  const openInvoices = data.invoices.filter((invoice) => invoice.status !== "void" && Number(invoice.paid_minor) < Number(invoice.subtotal_minor));
   const outstanding = openInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal_minor) - Number(invoice.paid_minor), 0);
   const paid = data.invoices.reduce((sum, invoice) => sum + Number(invoice.paid_minor), 0);
   const activeSubscriptions = data.customers.filter((item) => item.subscription_status === "active").length;
+
+  // NexLink-style finance widgets, computed only from recorded billing data.
+  // With no invoices/payments yet these render designed empty states instead
+  // of invented revenue.
+  const monthlyFinance = useMemo(() => {
+    const buckets = new Map<string, { billed: number; paid: number; meta: number }>();
+    const now = new Date();
+    for (let offset = 5; offset >= 0; offset -= 1) {
+      const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      buckets.set(key, { billed: 0, paid: 0, meta: 0 });
+    }
+    for (const invoice of data.invoices) {
+      const key = String(invoice.issued_at ?? "").slice(0, 7);
+      const bucket = buckets.get(key);
+      if (!bucket) continue;
+      bucket.billed += Number(invoice.subtotal_minor ?? 0) / 100;
+      bucket.paid += Number(invoice.paid_minor ?? 0) / 100;
+      const isMetaCharge = invoice.items.some((item) => /meta|message|whatsapp/i.test(item.description ?? ""));
+      if (isMetaCharge) bucket.meta += Number(invoice.subtotal_minor ?? 0) / 100;
+    }
+    return [...buckets.entries()].map(([key, values]) => ({
+      label: new Date(`${key}-01T00:00:00`).toLocaleDateString("en-KE", { month: "short" }),
+      Billed: Math.round(values.billed),
+      Paid: Math.round(values.paid),
+      Meta: Math.round(values.meta),
+    }));
+  }, [data.invoices]);
+
+  const paymentMix = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const invoice of data.invoices) {
+      for (const payment of invoice.payments ?? []) {
+        if (payment.reversed_at) continue;
+        const key = payment.method || "other";
+        totals.set(key, (totals.get(key) ?? 0) + Number(payment.amount_minor ?? 0) / 100);
+      }
+    }
+    const colors = [CHART.positive, CHART.primary, CHART.warning, CHART.secondary, CHART.negative];
+    return [...totals.entries()]
+      .map(([name, value]) => ({ name: name.replaceAll("_", " "), value: Math.round(value) }))
+      .sort((a, b) => b.value - a.value)
+      .map((item, index) => ({ ...item, fill: colors[index % colors.length] }));
+  }, [data.invoices]);
+
+  const recentPayments = useMemo(
+    () => data.invoices
+      .flatMap((invoice) => (invoice.payments ?? []).map((payment) => ({ invoice, payment })))
+      .sort((a, b) => String(b.payment.paid_at).localeCompare(String(a.payment.paid_at)))
+      .slice(0, 12),
+    [data.invoices],
+  );
 
   const finishMutation = async (rpc: string, args: Record<string, unknown>, success: string) => {
     if (!supabase) return false;
@@ -129,21 +201,96 @@ export default function PlatformBilling() {
     if (ok) setTierForm(null);
   };
 
+  const openCustomer = (item: Customer) => {
+    setCustomerTier(item.tier_id ?? "");
+    setCustomerStatus("");
+    setError("");
+    setCustomer(item);
+  };
+
+  const closeCustomerModal = async () => {
+    // Check if there are unsaved changes
+    const hasChanges = customerTier !== (customer?.tier_id ?? "") ||
+      customerStatus !== (customer?.subscription_status ?? "") ||
+      String(document.querySelector<HTMLInputElement>("#billing-name")?.value || "") !== (customer?.billing_name || "") ||
+      String(document.querySelector<HTMLInputElement>("#billing-email")?.value || "") !== (customer?.billing_email || "") ||
+      String(document.querySelector<HTMLInputElement>("#billing-reference")?.value || "") !== (customer?.billing_reference || "") ||
+      String(document.querySelector<HTMLTextAreaElement>("#billing-address")?.value || "") !== (customer?.billing_address || "") ||
+      String(document.querySelector<HTMLTextAreaElement>("#billing-account-notes")?.value || "") !== (customer?.notes || "");
+
+    if (hasChanges) {
+      const confirmed = await confirm({
+        title: "Discard unsaved changes?",
+        description: "You have unsaved changes to this client account. These changes will be lost if you close now.",
+        confirmLabel: "Discard changes",
+        cancelLabel: "Continue editing",
+      });
+      if (!confirmed) return;
+    }
+    setCustomer(null);
+  };
+
   const saveCustomer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!customer) return;
+    if (!customer || busy) return;
     const form = new FormData(event.currentTarget);
-    const selectedTier = String(form.get("tier") ?? "");
-    const requestedStatus = String(form.get("subscription_status") ?? "");
+    
+    // Validate required fields
+    const billingName = String(form.get("billing_name") ?? "").trim();
+    const billingEmail = String(form.get("billing_email") ?? "").trim();
+    if (!billingName) {
+      setError("Legal/billing name is required.");
+      return;
+    }
+    if (!billingEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billingEmail)) {
+      setError("Enter a valid billing email address.");
+      return;
+    }
+    
+    const selectedTier = customerTier;
+    const requestedStatus = customerStatus;
+    if (requestedStatus === "active" && !selectedTier) {
+      setError("Choose a commercial tier before setting an active agreement.");
+      return;
+    }
+    
+    // Check if anything actually changed
     const tierChanged = selectedTier !== (customer.tier_id ?? "");
+    const statusChanged = requestedStatus !== (customer.subscription_status ?? "");
+    const billingNameChanged = billingName !== customer.billing_name;
+    const billingEmailChanged = billingEmail !== customer.billing_email;
+    const billingReferenceChanged = String(form.get("billing_reference") ?? "") !== (customer.billing_reference ?? "");
+    const billingAddressChanged = String(form.get("billing_address") ?? "") !== (customer.billing_address ?? "");
+    const notesChanged = String(form.get("notes") ?? "") !== (customer.notes ?? "");
+    
+    if (!tierChanged && !statusChanged && !billingNameChanged && !billingEmailChanged && 
+        !billingReferenceChanged && !billingAddressChanged && !notesChanged) {
+      setCustomer(null);
+      return;
+    }
+    
+    // Show confirmation for status changes
+    if (statusChanged && requestedStatus === "canceled") {
+      const confirmed = await confirm({
+        title: "Cancel client agreement?",
+        description: `This will cancel the billing agreement for ${customer.name}. The workspace will remain accessible but no further invoices will be generated until a new agreement is established.`,
+        confirmLabel: "Cancel agreement",
+        cancelLabel: "Keep current",
+      });
+      if (!confirmed) return;
+    }
+    
     const defaultStatus = selectedTier
       ? (customer.subscription_status ?? "active")
       : customer.tier_id ? "canceled" : "";
     const status = requestedStatus || (tierChanged ? defaultStatus : "");
+    
+    setBusy(true);
+    setError("");
     const ok = await finishMutation("platform_billing_save_customer", {
       p_tenant_id: customer.tenant_id,
-      p_billing_name: String(form.get("billing_name") ?? ""),
-      p_billing_email: String(form.get("billing_email") ?? ""),
+      p_billing_name: billingName,
+      p_billing_email: billingEmail,
       p_billing_reference: String(form.get("billing_reference") ?? ""),
       p_billing_address: String(form.get("billing_address") ?? ""),
       p_notes: String(form.get("notes") ?? ""),
@@ -180,12 +327,25 @@ export default function PlatformBilling() {
   };
 
   const voidInvoice = async (invoice: Invoice) => {
-    if (!window.confirm(`Void ${invoice.invoice_number}? This is available only when no payments are recorded.`)) return;
+    const confirmed = await confirm({
+      title: `Void ${invoice.invoice_number}?`,
+      description: "A voided invoice cannot be paid or credited. This is only available when no payments are recorded against it.",
+      confirmLabel: "Void invoice",
+      destructive: true,
+    });
+    if (!confirmed) return;
     await finishMutation("platform_billing_void_invoice", { p_invoice_id: invoice.id }, "Invoice voided.");
   };
 
   const reversePayment = async (payment: Payment) => {
-    const reason = window.prompt("Why are you reversing this payment entry? This will restore the invoice balance.");
+    const reason = await prompt({
+      title: "Reverse this payment entry?",
+      description: "The invoice balance is restored and the reversal is recorded in the billing audit log.",
+      label: "Reason for the reversal",
+      placeholder: "e.g. Duplicate settlement posted by mistake",
+      confirmLabel: "Reverse payment",
+      destructive: true,
+    });
     if (!reason?.trim()) return;
     const ok = await finishMutation("platform_billing_reverse_payment", { p_payment_id: payment.id, p_reason: reason.trim() }, "Payment entry reversed; the invoice balance has been restored.");
     if (ok) setPreviewInvoice(null);
@@ -208,10 +368,10 @@ export default function PlatformBilling() {
       </div>
 
       <div className="billing-tabs" role="tablist" aria-label="Billing sections">
-        {(["customers", "tiers", "invoices"] as const).map((item) => (
+        {(["overview", "customers", "tiers", "invoices"] as const).map((item) => (
           <button type="button" key={item} role="tab" aria-selected={view === item} className={view === item ? "is-active" : ""} onClick={() => setView(item)}>
-            {item === "customers" ? <Building2 size={15} /> : item === "tiers" ? <CreditCard size={15} /> : <Receipt size={15} />}
-            {item === "customers" ? "Clients" : item === "tiers" ? "Tiers" : "Invoices"}
+            {item === "overview" ? <Banknote size={15} /> : item === "customers" ? <Building2 size={15} /> : item === "tiers" ? <CreditCard size={15} /> : <Receipt size={15} />}
+            {item === "overview" ? "Overview" : item === "customers" ? "Clients" : item === "tiers" ? "Tiers" : "Invoices"}
           </button>
         ))}
       </div>
@@ -220,14 +380,58 @@ export default function PlatformBilling() {
       {notice && <div className="billing-success" role="status"><Check size={15} /> {notice}</div>}
 
       <div className="platform-kpi-grid billing-kpis">
-        <KpiCard label="Client accounts" value={String(data.customers.length)} icon={<Building2 size={16} />} hint="Across all workspaces" />
-        <KpiCard label="Active tier records" value={String(activeSubscriptions)} icon={<CreditCard size={16} />} hint="Commercial records only" />
+        <KpiCard label="Payments recorded" value={money(paid)} icon={<Banknote size={16} />} hint="Manual ledger, not gateway-collected" />
         <KpiCard label="Unpaid balance" value={money(outstanding)} icon={<Receipt size={16} />} hint={`${openInvoices.length} open invoice(s)`} />
-        <KpiCard label="Payments recorded" value={money(paid)} icon={<Banknote size={16} />} hint="Not gateway collected" />
+        <KpiCard label="Client accounts" value={String(data.customers.length)} icon={<Building2 size={16} />} hint="Across all workspaces" />
+        <KpiCard label="Active subscriptions" value={String(activeSubscriptions)} icon={<CreditCard size={16} />} hint="Commercial records only" />
       </div>
 
       {loading ? <div className="panel billing-loading"><LoaderCircle size={20} className="spin" /> Loading billing records…</div> : (
         <>
+          {view === "overview" && (
+            <>
+              <div className="grid gap-3 xl:grid-cols-3">
+                <div className="min-w-0 xl:col-span-2">
+                  <VolumeChart
+                    title="Billed vs paid"
+                    subtitle="Recorded invoice value against payments, by month"
+                    data={monthlyFinance}
+                    series={[
+                      { key: "Billed", name: "Billed", color: CHART.primary },
+                      { key: "Paid", name: "Paid", color: CHART.positive },
+                    ]}
+                    mode="bar"
+                    emptyText="No invoices have been issued yet. Amounts will appear once client workspaces are billed for the platform fee and Meta message charges."
+                    formatter={(value) => money(value * 100)}
+                  />
+                </div>
+                <BreakdownCard
+                  title="Payment methods"
+                  subtitle="Manually recorded settlements by method"
+                  data={paymentMix}
+                  emptyText="No payments recorded yet. Methods will appear when M-Pesa or manual settlements are posted against invoices."
+                  formatter={(value) => money(value * 100)}
+                />
+              </div>
+              <TransactionTable
+                title="Recent transactions"
+                subtitle="Latest recorded payments across all client workspaces"
+                head={["Invoice", "Client", "Method", "Reference", "Paid at", "Amount"]}
+                rows={recentPayments.map(({ invoice, payment }) => [
+                  <strong key="invoice">{invoice.invoice_number}</strong>,
+                  invoice.customer_name || invoice.tenant_name_snapshot,
+                  payment.method.replaceAll("_", " "),
+                  payment.reference || "—",
+                  new Date(payment.paid_at).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" }),
+                  <strong key="amount">{money(payment.amount_minor, invoice.currency)}</strong>,
+                ])}
+                empty={{ title: "No transactions yet", text: "Recorded M-Pesa and manual payments will appear here once they are posted against invoices." }}
+              />
+              <p className="billing-footnote">
+                Revenue here reflects the manual platform ledger only. Meta message charges are pass-through line items; this workspace is a bulk WhatsApp platform, so message volume and Meta cost are tracked separately in Usage.
+              </p>
+            </>
+          )}
           {view === "customers" && <section className="panel billing-section">
             <div className="platform-toolbar">
               <div><h2>Client accounts</h2><p>Billing contacts and assigned commercial tiers</p></div>
@@ -239,7 +443,7 @@ export default function PlatformBilling() {
                 <td>{item.tier_name ? <><strong>{item.tier_name}</strong><small>{item.subscription_status} · {money(item.monthly_price_minor, item.currency ?? "KES")}/mo</small></> : <span className="billing-muted">No tier assigned</span>}</td>
                 <td className={Number(item.outstanding_minor) > 0 ? "billing-amount-due" : ""}>{money(item.outstanding_minor)}</td>
                 <td>{money(item.paid_minor)}</td><td>{item.invoice_count}</td>
-                <td><button type="button" className="btn btn-secondary billing-small-btn" onClick={() => setCustomer(item)}><Pencil size={13} /> Manage <ChevronRight size={13} /></button></td>
+                <td><button type="button" className="btn btn-secondary billing-small-btn" onClick={() => openCustomer(item)}><Pencil size={13} /> Manage <ChevronRight size={13} /></button></td>
               </tr>)}
               {customers.length === 0 && <tr><td colSpan={6}><Empty icon={<Building2 size={22} />} title={search ? "No client matches" : "No client accounts"} text={search ? "Try another client or billing contact." : "Client workspaces will appear here when they are created."} /></td></tr>}
             </tbody></table></div>
@@ -265,9 +469,10 @@ export default function PlatformBilling() {
             <div className="billing-table-wrap"><table className="billing-table"><thead><tr><th>INVOICE</th><th>CLIENT</th><th>ISSUED / DUE</th><th>TOTAL</th><th>PAID</th><th>STATUS</th><th /></tr></thead><tbody>
               {data.invoices.map((invoice) => {
                 const balance = Number(invoice.subtotal_minor) - Number(invoice.paid_minor);
-                const overdue = invoice.status === "issued" && balance > 0 && invoice.due_on < today();
+                const settled = invoice.status === "void" || balance <= 0;
+                const overdue = !settled && invoice.due_on < today();
                 const status = invoice.status === "void" ? "Voided" : balance <= 0 ? "Paid" : overdue ? "Overdue" : Number(invoice.paid_minor) > 0 ? "Part paid" : "Due";
-                return <tr key={invoice.id}><td><strong>{invoice.invoice_number}</strong><small>{invoice.items.length} line item(s)</small></td><td><strong>{invoice.customer_name || invoice.tenant_name_snapshot}</strong><small>{invoice.billing_email_snapshot || "No billing email on file"}</small></td><td>{localDate(invoice.issued_at.slice(0, 10))}<small>Due {localDate(invoice.due_on)}</small></td><td>{money(invoice.subtotal_minor, invoice.currency)}</td><td>{money(invoice.paid_minor, invoice.currency)}</td><td><span className={`billing-status ${status === "Paid" ? "is-active" : status === "Overdue" ? "is-overdue" : status === "Voided" ? "is-void" : ""}`}>{status}</span></td><td><div className="billing-row-actions"><button type="button" className="btn btn-secondary billing-small-btn" onClick={() => setPreviewInvoice(invoice)}>View</button>{invoice.status === "issued" && balance > 0 && <button type="button" className="btn btn-secondary billing-small-btn" onClick={() => { setPayInvoice(invoice); setPaymentAmount((balance / 100).toFixed(2)); }}>Record payment</button>}{invoice.status === "issued" && Number(invoice.paid_minor) === 0 && <button type="button" className="billing-text-button" onClick={() => voidInvoice(invoice)}>Void</button>}</div></td></tr>;
+                return <tr key={invoice.id}><td><strong>{invoice.invoice_number}</strong><small>{invoice.items.length} line item(s)</small></td><td><strong>{invoice.customer_name || invoice.tenant_name_snapshot}</strong><small>{invoice.billing_email_snapshot || "No billing email on file"}</small></td><td>{localDate(invoice.issued_at.slice(0, 10))}<small>Due {localDate(invoice.due_on)}</small></td><td>{money(invoice.subtotal_minor, invoice.currency)}</td><td>{money(invoice.paid_minor, invoice.currency)}</td><td><span className={`billing-status ${status === "Paid" ? "is-active" : status === "Overdue" ? "is-overdue" : status === "Voided" ? "is-void" : ""}`}>{status}</span></td><td><div className="billing-row-actions"><button type="button" className="btn btn-secondary billing-small-btn" onClick={() => setPreviewInvoice(invoice)}>View</button>{!settled && balance > 0 && <button type="button" className="btn btn-secondary billing-small-btn" onClick={() => { setPayInvoice(invoice); setPaymentAmount((balance / 100).toFixed(2)); }}>Record payment</button>}{invoice.status !== "void" && Number(invoice.paid_minor) === 0 && <button type="button" className="billing-text-button" onClick={() => voidInvoice(invoice)}>Void</button>}</div></td></tr>;
               })}
               {data.invoices.length === 0 && <tr><td colSpan={7}><Empty icon={<FileText size={22} />} title="No invoices yet" text="Create an invoice from the client’s agreed tier or another approved charge." /></td></tr>}
             </tbody></table></div>
@@ -285,23 +490,177 @@ export default function PlatformBilling() {
         </form>
       </section>}
 
-      {customer && <div className="modal-backdrop" role="presentation" onClick={() => setCustomer(null)}><div className="modal-panel billing-modal" role="dialog" aria-modal="true" aria-labelledby="billing-customer-title" onClick={(event) => event.stopPropagation()}>
-        <div className="modal-head"><div className="modal-head-copy"><div className="eyebrow"><Building2 size={12} /> CLIENT ACCOUNT</div><h2 id="billing-customer-title">{customer.name}</h2><p>{customer.slug}</p></div><button type="button" className="icon-btn" aria-label="Close" onClick={() => setCustomer(null)}><X size={17} /></button></div>
+      <Modal open={Boolean(customer)} onClose={closeCustomerModal} labelledBy="billing-customer-title" className="billing-modal">
+        {customer && <>
+        <div className="modal-head">
+          <div className="modal-head-copy">
+            <div className="eyebrow"><Building2 size={12} /> CLIENT ACCOUNT</div>
+            <h2 id="billing-customer-title">{customer.name}</h2>
+            <p>
+              <span>{customer.slug}</span>
+              {customer.outstanding_minor > 0 && (
+                <span className="billing-badge billing-badge-due">
+                  Outstanding: {money(customer.outstanding_minor)}
+                </span>
+              )}
+              {customer.paid_minor > 0 && (
+                <span className="billing-badge billing-badge-paid">
+                  Paid: {money(customer.paid_minor)}
+                </span>
+              )}
+            </p>
+          </div>
+          <button type="button" className="icon-btn" aria-label="Close client account" onClick={closeCustomerModal}><X size={17} /></button>
+          <button
+            type="button"
+            className="modal-close-overlay"
+            aria-label="Close"
+            onClick={closeCustomerModal}
+          />
+        </div>
         <form className="billing-form" onSubmit={saveCustomer}>
-          <div className="field"><label htmlFor="billing-name">Legal / billing name</label><input id="billing-name" name="billing_name" defaultValue={customer.billing_name} maxLength={160} /></div>
-          <div className="field"><label htmlFor="billing-email">Billing email</label><input id="billing-email" name="billing_email" type="email" defaultValue={customer.billing_email} maxLength={254} /></div>
-          <div className="field"><label htmlFor="billing-reference">Customer / tax reference</label><input id="billing-reference" name="billing_reference" defaultValue={customer.billing_reference} maxLength={100} /></div>
-          <div className="field"><label htmlFor="billing-address">Billing address</label><textarea id="billing-address" name="billing_address" defaultValue={customer.billing_address} maxLength={1000} rows={2} /></div>
+          <div className="field">
+            <label htmlFor="billing-name">Legal / billing name *</label>
+            <input 
+              id="billing-name" 
+              name="billing_name" 
+              defaultValue={customer.billing_name} 
+              maxLength={160} 
+              required 
+              aria-required="true"
+            />
+            <span className="field-hint">As it appears on invoices and official documents.</span>
+          </div>
+          <div className="field">
+            <label htmlFor="billing-email">Billing email *</label>
+            <input 
+              id="billing-email" 
+              name="billing_email" 
+              type="email" 
+              defaultValue={customer.billing_email} 
+              maxLength={254} 
+              required 
+              aria-required="true"
+            />
+            <span className="field-hint">Invoices and payment reminders will be sent here.</span>
+          </div>
+          <div className="field">
+            <label htmlFor="billing-reference">Customer / tax reference</label>
+            <input id="billing-reference" name="billing_reference" defaultValue={customer.billing_reference} maxLength={100} />
+            <span className="field-hint">Optional: VAT number, business registration, or other reference.</span>
+          </div>
+          <div className="field">
+            <label htmlFor="billing-address">Billing address</label>
+            <textarea id="billing-address" name="billing_address" defaultValue={customer.billing_address} maxLength={1000} rows={2} />
+            <span className="field-hint">Physical address for official correspondence and tax purposes.</span>
+          </div>
+          
           <div className="billing-form-rule" />
-          <div className="form-grid"><div className="field"><label htmlFor="billing-tier">Commercial tier</label><select id="billing-tier" name="tier" defaultValue={customer.tier_id ?? ""}><option value="">No tier</option>{data.tiers.filter((item) => item.active || item.id === customer.tier_id).map((item) => <option value={item.id} key={item.id}>{item.name} · {money(item.monthly_price_minor, item.currency)}/mo</option>)}</select></div><div className="field"><label htmlFor="billing-subscription-status">Agreement status</label><select id="billing-subscription-status" name="subscription_status" defaultValue=""><option value="">Keep current agreement</option><option value="active">Active</option><option value="paused">Paused</option><option value="canceled">Canceled</option></select></div></div>
-          <div className="field"><label htmlFor="billing-start-date">Agreement start date</label><input id="billing-start-date" name="starts_on" type="date" defaultValue={today()} /></div>
-          <div className="field"><label htmlFor="billing-account-notes">Internal account notes</label><textarea id="billing-account-notes" name="notes" defaultValue={customer.notes} maxLength={2000} rows={3} /></div>
+          
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor="billing-tier">Commercial tier</label>
+              <select
+                id="billing-tier"
+                name="tier"
+                value={customerTier}
+                onChange={(event) => {
+                  setCustomerTier(event.target.value);
+                  if (!event.target.value && customerStatus === "active") setCustomerStatus("");
+                }}
+              >
+                <option value="">No tier</option>
+                {data.tiers.filter((item) => item.active || item.id === customer.tier_id).map((item) => (
+                  <option value={item.id} key={item.id}>{item.name} · {money(item.monthly_price_minor, item.currency)}/mo</option>
+                ))}
+              </select>
+              <span className="field-hint">Sets the plan capabilities and message limits for this workspace.</span>
+            </div>
+            <div className="field">
+              <label htmlFor="billing-subscription-status">Agreement status</label>
+              <select
+                id="billing-subscription-status"
+                name="subscription_status"
+                value={customerStatus}
+                onChange={(event) => setCustomerStatus(event.target.value)}
+              >
+                <option value="">Keep current agreement</option>
+                <option value="active" disabled={!customerTier}>Active — requires a tier</option>
+                <option value="paused">Paused</option>
+                <option value="canceled">Canceled</option>
+              </select>
+              <span className="field-hint">
+                {customerStatus === "active" && "Client will be invoiced according to the selected tier."}
+                {customerStatus === "paused" && "Invoicing paused. Workspace remains accessible."}
+                {customerStatus === "canceled" && "Agreement canceled. No further invoices will be generated."}
+              </span>
+            </div>
+          </div>
+          
+          <div className="field">
+            <label htmlFor="billing-start-date">Agreement start date</label>
+            <input id="billing-start-date" name="starts_on" type="date" defaultValue={today()} />
+            <span className="field-hint">First billing period begins on this date.</span>
+          </div>
+          
+          <div className="field">
+            <label htmlFor="billing-account-notes">Internal account notes</label>
+            <textarea id="billing-account-notes" name="notes" defaultValue={customer.notes} maxLength={2000} rows={3} />
+            <span className="field-hint">Internal notes only — not visible to the client.</span>
+          </div>
+          
+          {error && <div className="form-error" role="alert">{error}</div>}
+          
+          {/* Summary of changes */}
+          {(customerTier !== (customer.tier_id ?? "") || 
+            customerStatus !== (customer.subscription_status ?? "") ||
+            String(document.querySelector<HTMLInputElement>("#billing-name")?.value || "") !== customer.billing_name ||
+            String(document.querySelector<HTMLInputElement>("#billing-email")?.value || "") !== customer.billing_email) && (
+            <div className="billing-changes-summary">
+              <h3>Summary of changes</h3>
+              <ul>
+                {customerTier !== (customer.tier_id ?? "") && (
+                  <li>
+                    <strong>Plan:</strong> {customerTier ? data.tiers.find(t => t.id === customerTier)?.name || "Custom tier" : "No tier"}
+                    {customer.tier_id && ` (was: ${customer.tier_name || "No tier"})`}
+                  </li>
+                )}
+                {customerStatus !== (customer.subscription_status ?? "") && (
+                  <li>
+                    <strong>Status:</strong> {customerStatus || "Unchanged"}
+                    {customer.subscription_status && ` (was: ${customer.subscription_status})`}
+                  </li>
+                )}
+                {String(document.querySelector<HTMLInputElement>("#billing-name")?.value || "") !== customer.billing_name && (
+                  <li>
+                    <strong>Name:</strong> {String(document.querySelector<HTMLInputElement>("#billing-name")?.value || "")}
+                    {customer.billing_name && ` (was: ${customer.billing_name})`}
+                  </li>
+                )}
+                {String(document.querySelector<HTMLInputElement>("#billing-email")?.value || "") !== customer.billing_email && (
+                  <li>
+                    <strong>Email:</strong> {String(document.querySelector<HTMLInputElement>("#billing-email")?.value || "")}
+                    {customer.billing_email && ` (was: ${customer.billing_email})`}
+                  </li>
+                )}
+              </ul>
+            </div>
+          )}
+          
           <p className="billing-form-help">Agreement status is a billing record. It does not suspend or unlock the client workspace.</p>
-          <div className="modal-actions"><span className="modal-action-hint">Only platform owners can view or change billing records.</span><button type="submit" className="btn btn-primary" disabled={busy}><Save size={14} /> Save client</button></div>
+          <div className="modal-actions">
+            <span className="modal-action-hint">Owner-only · changes are audit logged</span>
+            <div className="flex items-center gap-2">
+              <button type="button" className="btn btn-secondary" onClick={closeCustomerModal} disabled={busy}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={busy}><Save size={14} /> {busy ? "Saving…" : "Save client"}</button>
+            </div>
+          </div>
         </form>
-      </div></div>}
+        </>}
+      </Modal>
 
-      {tierForm && <div className="modal-backdrop" role="presentation" onClick={() => setTierForm(null)}><div className="modal-panel billing-modal" role="dialog" aria-modal="true" aria-labelledby="billing-tier-title" onClick={(event) => event.stopPropagation()}>
+      <Modal open={Boolean(tierForm)} onClose={() => setTierForm(null)} labelledBy="billing-tier-title" className="billing-modal">
+        {tierForm && <>
         <div className="modal-head"><div className="modal-head-copy"><div className="eyebrow"><CreditCard size={12} /> BILLING CATALOG</div><h2 id="billing-tier-title">{tierForm.id ? "Edit tier" : "Create tier"}</h2><p>Define the commercial amount used for client agreements and invoices.</p></div><button type="button" className="icon-btn" aria-label="Close" onClick={() => setTierForm(null)}><X size={17} /></button></div>
         <form className="billing-form" onSubmit={saveTier}>
           <div className="form-grid"><div className="field"><label htmlFor="tier-name">Plan name *</label><input id="tier-name" value={tierForm.name} onChange={(event) => setTierForm({ ...tierForm, name: event.target.value, slug: tierForm.id ? tierForm.slug : event.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") })} required maxLength={80} /></div><div className="field"><label htmlFor="tier-slug">Plan URL key *</label><input id="tier-slug" value={tierForm.slug} onChange={(event) => setTierForm({ ...tierForm, slug: event.target.value })} required pattern="[a-z0-9]+(-[a-z0-9]+)*" maxLength={100} /></div></div>
@@ -314,26 +673,33 @@ export default function PlatformBilling() {
           <p className="billing-form-help">Published descriptions, prices and included capabilities update the public and client-facing plan catalog. Feature switches and usage limits apply to workspaces with an active agreement. Assigned client prices remain as agreed; billing status alone does not suspend a workspace.</p>
           <div className="modal-actions"><span className="modal-action-hint">Tier changes are audit logged.</span><button type="submit" className="btn btn-primary" disabled={busy}><Save size={14} /> Save tier</button></div>
         </form>
-      </div></div>}
+        </>}
+      </Modal>
 
-      {payInvoice && <div className="modal-backdrop" role="presentation" onClick={() => setPayInvoice(null)}><div className="modal-panel billing-modal" role="dialog" aria-modal="true" aria-labelledby="billing-payment-title" onClick={(event) => event.stopPropagation()}>
+      <Modal open={Boolean(payInvoice)} onClose={() => setPayInvoice(null)} labelledBy="billing-payment-title" className="billing-modal">
+        {payInvoice && <>
         <div className="modal-head"><div className="modal-head-copy"><div className="eyebrow"><Banknote size={12} /> PAYMENT ENTRY</div><h2 id="billing-payment-title">Record payment</h2><p>{payInvoice.invoice_number} · balance {money(Number(payInvoice.subtotal_minor) - Number(payInvoice.paid_minor), payInvoice.currency)}</p></div><button type="button" className="icon-btn" aria-label="Close" onClick={() => setPayInvoice(null)}><X size={17} /></button></div>
         <form className="billing-form" onSubmit={recordPayment}><div className="field"><label htmlFor="payment-amount">Amount received *</label><input id="payment-amount" type="number" min="0.01" max={((Number(payInvoice.subtotal_minor) - Number(payInvoice.paid_minor)) / 100).toFixed(2)} step="0.01" value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} required /></div><div className="field"><label htmlFor="payment-method">Payment method *</label><select id="payment-method" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="mpesa">M-Pesa — recorded externally</option><option value="bank_transfer">Bank transfer</option><option value="cash">Cash</option><option value="card">Card — recorded externally</option><option value="other">Other</option></select></div><div className="field"><label htmlFor="payment-reference">Receipt / transaction reference</label><input id="payment-reference" value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} maxLength={160} /></div><p className="billing-form-help">This records a payment already received. It does not contact a bank, M-Pesa or card processor.</p><div className="modal-actions"><span className="modal-action-hint">Payment entries cannot be edited or deleted.</span><button type="submit" className="btn btn-primary" disabled={busy}><Check size={14} /> Record payment</button></div></form>
-      </div></div>}
+        </>}
+      </Modal>
 
-      {previewInvoice && <div className="modal-backdrop billing-preview-backdrop" role="presentation" onClick={() => setPreviewInvoice(null)}><div className="billing-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="invoice-preview-title" onClick={(event) => event.stopPropagation()}>
+      <Modal open={Boolean(previewInvoice)} onClose={() => setPreviewInvoice(null)} labelledBy="invoice-preview-title" className="billing-preview-dialog" backdropClassName="billing-preview-backdrop">
+        {previewInvoice && <>
         <div className="billing-preview-actions"><button type="button" className="btn btn-secondary" onClick={() => window.print()}><Printer size={14} /> Print / save PDF</button><button type="button" className="icon-btn" aria-label="Close invoice preview" onClick={() => setPreviewInvoice(null)}><X size={17} /></button></div>
         <article className="billing-invoice-paper">
-          <header><div><BrandMark /><p>MobiWave Innovations Ltd</p><small>Kenya</small></div><div className="billing-invoice-title"><span>INVOICE</span><h2 id="invoice-preview-title">{previewInvoice.invoice_number}</h2><p>{previewInvoice.status === "void" ? "VOID" : "Issued"}</p></div></header>
+          <header><div><BrandMark /><p>MobiWave Innovations Ltd</p><small>Kenya</small></div><div className="billing-invoice-title"><span>INVOICE</span><h2 id="invoice-preview-title">{previewInvoice.invoice_number}</h2><p>{previewInvoice.status === "void" ? "VOID" : previewInvoice.status === "paid" ? "PAID" : "Issued"}</p></div></header>
           <div className="billing-invoice-meta"><div><span>BILL TO</span><strong>{previewInvoice.billing_name_snapshot || previewInvoice.tenant_name_snapshot}</strong><small>{previewInvoice.billing_email_snapshot}</small><small>{previewInvoice.billing_reference_snapshot}</small><small>{previewInvoice.billing_address_snapshot}</small></div><div><span>ISSUED</span><strong>{localDate(previewInvoice.issued_at.slice(0, 10))}</strong><span>DUE</span><strong>{localDate(previewInvoice.due_on)}</strong></div></div>
           <table><thead><tr><th>Description</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>{previewInvoice.items.map((item) => <tr key={item.id}><td>{item.description}</td><td>{item.quantity}</td><td>{money(item.unit_amount_minor, previewInvoice.currency)}</td><td>{money(item.line_total_minor, previewInvoice.currency)}</td></tr>)}</tbody></table>
           <div className="billing-invoice-total"><span>Invoice total</span><strong>{money(previewInvoice.subtotal_minor, previewInvoice.currency)}</strong></div>
           <div className="billing-invoice-paid"><span>Payments recorded</span><strong>{money(previewInvoice.paid_minor, previewInvoice.currency)}</strong></div>
-          {previewInvoice.payments.length > 0 && <div className="billing-payment-history"><strong>Payment history</strong>{previewInvoice.payments.map((payment) => <div key={payment.id} className={payment.reversed_at ? "is-reversed" : ""}><span>{localDate(payment.paid_at.slice(0, 10))} · {payment.method}{payment.reference ? ` · ${payment.reference}` : ""}{payment.reversed_at ? ` · Reversed: ${payment.reversal_reason}` : ""}</span><strong>{money(payment.amount_minor, previewInvoice.currency)}</strong>{!payment.reversed_at && previewInvoice.status === "issued" && <button type="button" className="billing-text-button no-print" onClick={() => void reversePayment(payment)}>Reverse</button>}</div>)}</div>}
+          {previewInvoice.payments.length > 0 && <div className="billing-payment-history"><strong>Payment history</strong>{previewInvoice.payments.map((payment) => <div key={payment.id} className={payment.reversed_at ? "is-reversed" : ""}><span>{localDate(payment.paid_at.slice(0, 10))} · {payment.method}{payment.reference ? ` · ${payment.reference}` : ""}{payment.reversed_at ? ` · Reversed: ${payment.reversal_reason}` : ""}</span><strong>{money(payment.amount_minor, previewInvoice.currency)}</strong>{!payment.reversed_at && previewInvoice.status !== "void" && <button type="button" className="billing-text-button no-print" onClick={() => void reversePayment(payment)}>Reverse</button>}</div>)}</div>}
           {previewInvoice.notes && <div className="billing-invoice-notes"><span>NOTES</span><p>{previewInvoice.notes}</p></div>}
           <footer>Payment is handled according to the agreed terms. Keep your payment receipt and quote {previewInvoice.invoice_number} as the reference.</footer>
         </article>
-      </div></div>}
+        </>}
+      </Modal>
+      {confirmElement}
+      {promptElement}
     </div>
   );
 }
