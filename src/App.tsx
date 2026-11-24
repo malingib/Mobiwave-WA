@@ -715,7 +715,7 @@ export default function App() {
         supabase.from("wa_templates").select("id,meta_template_name,language_code,category,meta_status,components").eq("tenant_id", tenantId).order("meta_template_name"),
         supabase.from("campaigns").select("id,name,status,created_at,scheduled_at,template_id,template_parameters").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
         supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts!conversations_contact_same_tenant_fk(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
-        supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at,waba_timezone,messaging_limit_tier,quality_rating").eq("tenant_id", tenantId).maybeSingle(),
+        supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at,webhook_verified_at,waba_timezone,messaging_limit_tier,quality_rating").eq("tenant_id", tenantId).maybeSingle(),
         supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
         supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       ]), "Loading workspace");
@@ -1833,6 +1833,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
             <SetupRow done={Boolean(metaStatus?.phone_number_id)} label="Business number details saved" detail="Phone Number ID and WABA ID are stored for this business account."/>
             <SetupRow done={metaAppSecretSaved} label="This account's Meta app secret saved" detail="Used to verify signed webhooks for this client's Meta app."/>
             <SetupRow done={Boolean(metaStatus?.verified)} label="Credentials verified" detail="MobiWave successfully checked the number with Meta Graph API."/>
+            <SetupRow done={Boolean(metaStatus?.webhook_verified_at)} label="Meta webhook callback verified" detail={metaStatus?.webhook_verified_at ? `Workspace-specific Meta GET handshake recorded ${new Date(metaStatus.webhook_verified_at).toLocaleString()}.` : "No workspace-specific Meta verification handshake is recorded yet. Live POST events alone do not prove callback verification."}/>
             <SetupRow done={Boolean(metaStatus?.enabled&&metaStatus?.verified)} label="Meta app subscribed to this WABA" detail="Connection verification subscribes this app to the saved WhatsApp Business Account for webhook events."/>
             <SetupRow done={Boolean(metaStatus?.enabled&&metaStatus?.verified)} label="Messaging enabled" detail="Messaging is enabled after credentials are verified and WABA event delivery is subscribed."/>
           </div>
