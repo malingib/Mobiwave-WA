@@ -27,7 +27,7 @@ interface MetaAllowance {
   connected: boolean;
 }
 
-const UsagePage: React.FC = () => {
+type UsagePageProps = { tenantId: string };\nconst UsagePage: React.FC<UsagePageProps> = ({ tenantId }) => {
   const [loading, setLoading] = useState(true);
   const [usageStats, setUsageStats] = useState<UsageStat[]>([]);
   const [metaAllowance, setMetaAllowance] = useState<MetaAllowance | null>(null);
@@ -96,7 +96,7 @@ const UsagePage: React.FC = () => {
 
       // tenant_meta_allowance is an RPC, not a related table of `tenants`.
       const { data: allowance, error: tenantError } = await supabase
-        .rpc('tenant_meta_allowance', { p_tenant_id: membership.tenant_id });
+        .rpc('tenant_meta_allowance', { p_tenant_id: tenantId });
       if (tenantError) throw tenantError;
       setMetaAllowance(allowance);
     } catch (error) {
