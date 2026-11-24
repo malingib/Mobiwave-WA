@@ -1,5 +1,4 @@
 {
-  // Fix for TypeScript errors - deployment trigger
   "rewrites": [
     {
       "source": "/login",
