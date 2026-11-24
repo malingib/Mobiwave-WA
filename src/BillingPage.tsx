@@ -52,7 +52,7 @@ interface MpesaConfig {
   is_active: boolean;
 }
 
-const BillingPage: React.FC = () => {
+type BillingPageProps = { tenantId: string; role: string };\nconst BillingPage: React.FC<BillingPageProps> = ({ tenantId: activeTenantId }) => {
   const [loading, setLoading] = useState(true);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
