@@ -52,7 +52,8 @@ interface MpesaConfig {
   is_active: boolean;
 }
 
-type BillingPageProps = { tenantId: string; role: string };\nconst BillingPage: React.FC<BillingPageProps> = ({ tenantId: activeTenantId }) => {
+type BillingPageProps = { tenantId: string; role: string };
+const BillingPage: React.FC<BillingPageProps> = ({ tenantId: activeTenantId }) => {
   const [loading, setLoading] = useState(true);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -66,27 +67,14 @@ type BillingPageProps = { tenantId: string; role: string };\nconst BillingPage: 
   const [paymentStatus, setPaymentStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
-    fetchBillingData();
-  }, []);
+    if (activeTenantId) void fetchBillingData();
+    else { setLoading(false); setTenant(null); setInvoices([]); setPayments([]); }
+  }, [activeTenantId]);
 
   const fetchBillingData = async () => {
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) throw authError;
-
-      // Get the workspace this user belongs to. `tenants` has no owner_id
-      // column and tenant_meta_allowance is an RPC, not a related table.
-      const { data: membership, error: membershipError } = await supabase
-        .from('tenant_members')
-        .select('tenant_id')
-        .eq('user_id', user.id)
-        .limit(1)
-        .maybeSingle();
-
-      if (membershipError) throw membershipError;
-      if (!membership) throw new Error('No workspace membership found for this account.');
-
-      const tenantId = membership.tenant_id;
+      if (!activeTenantId) throw new Error('Select a business account to view billing.');
+      const tenantId = activeTenantId;
       const { data: tenantData, error: tenantError } = await supabase
         .from('tenants')
         .select('*')
