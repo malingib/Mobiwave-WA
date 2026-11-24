@@ -1,5 +1,4 @@
 {
-  // Deployment trigger after TypeScript fixes
   "rewrites": [
     {
       "source": "/login",
