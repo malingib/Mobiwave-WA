@@ -33,13 +33,25 @@ interface Payment {
 interface Tenant {
   id: string;
   name: string;
-  subscription_status: string;
-  subscription_period_ends: string;
+  subscription_status: string | null;
+  subscription_tier_name: string | null;
+  subscription_monthly_price_minor: number | null;
+  subscription_currency: string | null;
+  subscription_period_ends: string | null;
   tenant_meta_allowance: {
     free_service_remaining: number;
     period_end: string;
     free_service_used: number;
   } | null;
+}
+
+interface BillingEntitlements {
+  subscription_status?: string | null;
+  currency?: string | null;
+  monthly_price_minor?: number | null;
+  starts_on?: string | null;
+  ends_on?: string | null;
+  tier?: { name?: string | null } | null;
 }
 
 interface MpesaConfig {
@@ -88,14 +100,24 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId: activeTenantId }) =
         .rpc('tenant_meta_allowance', { p_tenant_id: tenantId });
       if (allowanceError) console.error('Could not load Meta allowance:', allowanceError);
 
-      setTenant({ ...tenantData, tenant_meta_allowance: allowance ?? null });
-
-      // Invoice records are exposed through a membership-checked RPC. The
-      // underlying platform invoice table intentionally remains platform-only.
+      // Invoice and subscription records are exposed through a membership-
+      // checked RPC. The tenant row itself does not own subscription columns.
+      // The underlying platform invoice table intentionally remains platform-only.
       const { data: billingSummary, error: invoicesError } = await supabase
         .rpc('tenant_billing_summary', { p_tenant_id: tenantData.id });
 
       if (invoicesError) throw invoicesError;
+      const entitlement = (billingSummary as { entitlements?: BillingEntitlements } | null)?.entitlements;
+      setTenant({
+        ...tenantData,
+        subscription_status: entitlement?.subscription_status ?? null,
+        subscription_tier_name: entitlement?.tier?.name ?? null,
+        subscription_monthly_price_minor: entitlement?.monthly_price_minor ?? null,
+        subscription_currency: entitlement?.currency ?? null,
+        subscription_period_ends: entitlement?.ends_on ?? null,
+        tenant_meta_allowance: allowance ?? null,
+      });
+
       const invoiceRows = billingSummary && typeof billingSummary === 'object'
         && Array.isArray((billingSummary as { invoices?: unknown }).invoices)
         ? (billingSummary as { invoices: Invoice[] }).invoices
@@ -315,8 +337,12 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId: activeTenantId }) =
               <span className="kpi-icon"><Wallet size={20} /></span>
               <div className="kpi-copy">
                 <span className="kpi-label">Current plan</span>
-                <strong className="kpi-value">{tenant?.subscription_status ? 'Active plan' : 'No plan'}</strong>
-                <span className="kpi-hint">Platform fee billed separately from Meta</span>
+                <strong className="kpi-value">{tenant?.subscription_tier_name ?? 'No plan'}</strong>
+                <span className="kpi-hint">
+                  {tenant?.subscription_monthly_price_minor != null && tenant.subscription_currency
+                    ? `${formatCurrency(tenant.subscription_monthly_price_minor / 100, tenant.subscription_currency)} / month · Platform fee billed separately from Meta`
+                    : 'Platform fee billed separately from Meta'}
+                </span>
               </div>
             </div>
           </article>
