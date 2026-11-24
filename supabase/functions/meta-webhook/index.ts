@@ -67,9 +67,23 @@ Deno.serve(async (request) => {
     const legacyExpected = Deno.env.get("META_WEBHOOK_VERIFY_TOKEN");
     const tokenHash = token ? await sha256(token) : "";
     const { data: matchingTenant } = tokenHash ? await admin.from("meta_integrations").select("tenant_id").eq("webhook_verify_token_hash", tokenHash).limit(1).maybeSingle() : { data: null };
-    if (mode === "subscribe" && challenge && ((matchingTenant && tokenHash) || (legacyExpected && token === legacyExpected))) {
+    if (mode === "subscribe" && challenge && ((matchingTenant?.tenant_id && tokenHash) || (legacyExpected && token === legacyExpected))) {
+      // Only a successful workspace-specific token handshake is evidence that
+      // this tenant completed Meta callback verification. A platform-level
+      // legacy token may keep an old callback working, but must not stamp every
+      // workspace as verified.
       if (matchingTenant?.tenant_id) {
-        await admin.from("meta_integrations").update({ webhook_verified_at: new Date().toISOString() }).eq("tenant_id", matchingTenant.tenant_id);
+        const verifiedAt = new Date().toISOString();
+        const { data: audited, error: auditError } = await admin.from("meta_integrations")
+          .update({ webhook_verified_at: verifiedAt, updated_at: verifiedAt })
+          .eq("tenant_id", matchingTenant.tenant_id)
+          .eq("webhook_verify_token_hash", tokenHash)
+          .select("tenant_id")
+          .maybeSingle();
+        if (auditError || !audited) {
+          console.error("Meta webhook handshake succeeded but its workspace audit could not be persisted.", auditError?.message ?? "No matching integration row.");
+          return new Response("Verification audit could not be saved", { status: 500 });
+        }
       }
       return new Response(challenge, { status: 200, headers: { "Content-Type": "text/plain" } });
     }
