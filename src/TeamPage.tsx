@@ -23,7 +23,7 @@ interface TeamInvitation {
   invited_by: string;
 }
 
-const TeamPage: React.FC = () => {
+type TeamPageProps = { tenantId: string; role: string };\nconst TeamPage: React.FC<TeamPageProps> = ({ tenantId: activeTenantId }) => {
   const [loading, setLoading] = useState(true);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
@@ -37,7 +37,7 @@ const TeamPage: React.FC = () => {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'editor'>('editor');
   const [processing, setProcessing] = useState(false);
-  const [tenantId, setTenantId] = useState('');
+  const [tenantId, setTenantId] = useState(activeTenantId);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
