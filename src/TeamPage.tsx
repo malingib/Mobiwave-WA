@@ -23,7 +23,8 @@ interface TeamInvitation {
   invited_by: string;
 }
 
-type TeamPageProps = { tenantId: string; role: string };\nconst TeamPage: React.FC<TeamPageProps> = ({ tenantId: activeTenantId }) => {
+type TeamPageProps = { tenantId: string; role: string };
+const TeamPage: React.FC<TeamPageProps> = ({ tenantId: activeTenantId }) => {
   const [loading, setLoading] = useState(true);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
@@ -40,16 +41,7 @@ type TeamPageProps = { tenantId: string; role: string };\nconst TeamPage: React.
   const [tenantId, setTenantId] = useState(activeTenantId);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !active) return;
-      const { data } = await supabase.from('tenant_members').select('tenant_id').eq('user_id', user.id).limit(1).maybeSingle();
-      if (data && active) setTenantId(data.tenant_id);
-    })();
-    return () => { active = false; };
-  }, []);
+  useEffect(() => { setTenantId(activeTenantId); }, [activeTenantId]);
   useEffect(() => {
     if (tenantId) void fetchTeamData();
   }, [tenantId]);
