@@ -27,7 +27,8 @@ interface MetaAllowance {
   connected: boolean;
 }
 
-type UsagePageProps = { tenantId: string };\nconst UsagePage: React.FC<UsagePageProps> = ({ tenantId }) => {
+type UsagePageProps = { tenantId: string };
+const UsagePage: React.FC<UsagePageProps> = ({ tenantId }) => {
   const [loading, setLoading] = useState(true);
   const [usageStats, setUsageStats] = useState<UsageStat[]>([]);
   const [metaAllowance, setMetaAllowance] = useState<MetaAllowance | null>(null);
@@ -35,23 +36,13 @@ type UsagePageProps = { tenantId: string };\nconst UsagePage: React.FC<UsagePage
   const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
-    fetchUsageData();
-  }, [selectedPeriod]);
+    if (tenantId) void fetchUsageData();
+    else { setLoading(false); setUsageStats([]); setMetaAllowance(null); }
+  }, [selectedPeriod, tenantId]);
 
   const fetchUsageData = async () => {
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) throw authError;
-
-      const { data: membership, error: membershipError } = await supabase
-        .from('tenant_members')
-        .select('tenant_id')
-        .eq('user_id', user.id)
-        .limit(1)
-        .maybeSingle();
-      if (membershipError) throw membershipError;
-      if (!membership) throw new Error('No workspace membership found for this account.');
-      const tenantId = membership.tenant_id;
+      if (!tenantId) throw new Error('Select a business account to view usage.');
 
       // Build period totals from workspace-scoped tables. The old
       // `unified-api` function is not deployed and referenced a view
