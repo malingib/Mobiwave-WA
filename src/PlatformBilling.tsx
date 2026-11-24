@@ -195,7 +195,10 @@ export default function PlatformBilling() {
       p_setup_fee_minor: minor(tierForm.setup), p_active: tierForm.active,
       p_is_public: tierForm.isPublic, p_display_order: Number(tierForm.displayOrder), p_featured: tierForm.featured,
       p_feature_highlights: tierForm.highlights.split("\n").map((line) => line.trim()).filter(Boolean),
-      p_feature_flags: tierForm.featureFlags, p_max_team_members: Number(tierForm.maxTeamMembers),
+      // Existing catalog rows may carry retired keys (for example ai/automations).
+      // Only send the six capabilities currently supported by this editor/API.
+      p_feature_flags: Object.fromEntries(tierFeatures.map(({ key }) => [key, Boolean(tierForm.featureFlags[key])])),
+      p_max_team_members: Number(tierForm.maxTeamMembers),
       p_monthly_message_limit: Number(tierForm.monthlyMessageLimit), p_monthly_ai_request_limit: Number(tierForm.monthlyAiRequestLimit),
     }, "Tier saved.");
     if (ok) setTierForm(null);
