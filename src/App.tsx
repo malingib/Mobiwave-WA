@@ -264,7 +264,7 @@ export default function App() {
   const [newPassword, setNewPassword] = useState("");
   const [user, setUser] = useState<User | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [tenantId, setTenantId] = useState(() => typeof restoredUi.tenantId === "string" ? restoredUi.tenantId : "");
+  const [tenantId, setTenantId] = useState<string>(() => typeof restoredUi.tenantId === "string" ? restoredUi.tenantId : "");
   const [tenantLoading, setTenantLoading] = useState(true);
   const [tenantError, setTenantError] = useState("");
   const [tenantPlan, setTenantPlan] = useState<TenantPlan | null>(null);
@@ -729,7 +729,7 @@ export default function App() {
         user ? supabase.from("conversation_reads").select("conversation_id,last_read_at").eq("tenant_id", tenantId).eq("user_id", user.id) : Promise.resolve({ data: [], error: null }),
       ]), "Loading collaboration details");
       if (requestId !== workspaceRequestId.current) return;
-      const readAt = new Map((readResponse.data ?? []).map((row: any) => [row.conversation_id, new Date(row.last_read_at).getTime()]));
+      const readAt = new Map<string, number>((readResponse.data ?? []).map((row: any) => [String(row.conversation_id), new Date(row.last_read_at).getTime()]));
       setTeamMembers((teamResponse.data?.members ?? []) as TeamMember[]);
       const freshConversations = ((co.data ?? []) as any[]).map((conversation: any) => ({
         ...conversation,
@@ -849,7 +849,7 @@ export default function App() {
         : { data: [], error: null };
       if (requestId !== inboxRequestId.current) return;
       if (readError) { setNotice("Could not refresh inbox read state. Check your connection and retry."); return; }
-      const readAt = new Map((readRows ?? []).map((row: any) => [row.conversation_id, new Date(row.last_read_at).getTime()]));
+      const readAt = new Map<string, number>((readRows ?? []).map((row: any) => [String(row.conversation_id), new Date(row.last_read_at).getTime()]));
       const loaded = pageRows.map((conversation: any) => ({
         ...conversation,
         unread: Boolean(conversation.last_message_at && new Date(conversation.last_message_at).getTime() > (readAt.get(conversation.id) ?? 0)),
