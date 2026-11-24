@@ -23,7 +23,7 @@ import {
   Zap,
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
-import { withTimeout } from "./lib/runtime";
+import { withTimeout } from "./lib/runtime.js";
 import { Brand, Empty, KpiCard, Modal } from "./components/ui";
 import PlatformBilling from "./PlatformBilling";
 
@@ -293,7 +293,7 @@ export default function PlatformConsole({ user, role, hasClientWorkspace, client
       return;
     }
     withTimeout(supabase.rpc("platform_tenant_detail", { p_tenant_id: selected.tenant_id }), "Loading workspace detail")
-      .then(({ data, error: rpcError }) => {
+      .then(({ data, error: rpcError }: { data?: any; error?: any }) => {
         if (!active) return;
         if (rpcError) { setDetailError(rpcError.message); return; }
         const parsed = asObject<TenantDetail>(data);

@@ -6,7 +6,7 @@ import {
   Send, Settings2, ShieldCheck, Trash2, Users, UserRound, Settings as SettingsIcon, X, Zap, LoaderCircle, Eye, EyeOff, LockKeyhole, Mail, FileText,
 } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
-import { clearWorkspaceUiState, readWorkspaceUiState, withTimeout, writeWorkspaceUiState } from "./lib/runtime";
+import { clearWorkspaceUiState, readWorkspaceUiState, withTimeout, writeWorkspaceUiState } from "./lib/runtime.js";
 import { ErrorPage } from "./ErrorPages";
 import type { DailyMessagePoint, OverviewMetrics } from "./dashboard/Overview";
 
@@ -502,7 +502,7 @@ export default function App() {
         return;
       }
       const memberships = membershipResult.data ?? [];
-      const tenantIds = [...new Set(memberships.map((row) => row.tenant_id))];
+      const tenantIds = [...new Set(memberships.map((row: any) => row.tenant_id))];
       const tenantResult = tenantIds.length
         ? await withTimeout(supabase.from("tenants").select("id,name,slug").in("id", tenantIds), "Loading business accounts")
         : { data: [], error: null };
@@ -513,8 +513,8 @@ export default function App() {
         setTenantLoading(false);
         return;
       }
-      const tenantsById = new Map((tenantResult.data ?? []).map((tenant) => [tenant.id, tenant]));
-      const mapped = memberships.flatMap((membership) => {
+      const tenantsById = new Map((tenantResult.data ?? []).map((tenant: any) => [tenant.id, tenant]));
+      const mapped = memberships.flatMap((membership: any) => {
         const tenant = tenantsById.get(membership.tenant_id);
         return tenant ? [{ ...tenant, role: membership.role }] : [];
       }) as Tenant[];
@@ -553,7 +553,7 @@ export default function App() {
     if (!supabase || !tenantId) { setTenantPlan(null); return; }
     setTenantPlanLoading(true);
     withTimeout(supabase.rpc("platform_tenant_plan", { p_tenant_id: tenantId }), "Loading plan")
-      .then(({ data, error }) => {
+      .then(({ data, error }: { data?: any; error?: any }) => {
         if (!current) return;
         setTenantPlan(error ? null : data as TenantPlan);
         setTenantPlanLoading(false);
@@ -565,7 +565,7 @@ export default function App() {
     let current = true;
     if (!supabase || !tenantId) { setMetaAllowance(null); return; }
     withTimeout(supabase.rpc("tenant_meta_allowance", { p_tenant_id: tenantId }), "Loading message allowance")
-      .then(({ data, error }) => {
+      .then(({ data, error }: { data?: any; error?: any }) => {
         if (!current) return;
         setMetaAllowance(error ? null : data as MetaAllowance);
       })
@@ -731,7 +731,7 @@ export default function App() {
       if (requestId !== workspaceRequestId.current) return;
       const readAt = new Map((readResponse.data ?? []).map((row: any) => [row.conversation_id, new Date(row.last_read_at).getTime()]));
       setTeamMembers((teamResponse.data?.members ?? []) as TeamMember[]);
-      const freshConversations = ((co.data ?? []) as any[]).map((conversation) => ({
+      const freshConversations = ((co.data ?? []) as any[]).map((conversation: any) => ({
         ...conversation,
         unread: Boolean(conversation.last_message_at && new Date(conversation.last_message_at).getTime() > (readAt.get(conversation.id) ?? 0)),
       })) as Conversation[];
@@ -753,7 +753,7 @@ export default function App() {
       setWebhookDeliveries((deliveryRows ?? []) as WebhookDelivery[]);
       if (!validatedRestoredConversationRef.current) {
         validatedRestoredConversationRef.current = true;
-        setSelectedConversation((current) => current && freshConversations.some((fresh) => fresh.id === current) ? current : "");
+        setSelectedConversation((current: any) => current && freshConversations.some((fresh) => fresh.id === current) ? current : "");
       }
       await overviewPromise;
     } catch (cause) {
@@ -769,7 +769,7 @@ export default function App() {
     if (!supabase || !tenantId || !isAdmin) { setMetaAppSecretSaved(false); setMetaTokenSaved(false); return; }
     let active = true;
     withTimeout(supabase.functions.invoke("meta-config", { body: { tenant_id: tenantId, action: "status" } }), "Loading connection status")
-      .then(({ data, error }) => {
+      .then(({ data, error }: { data?: any; error?: any }) => {
         if (active && !error && data?.ok === true) {
           setMetaAppSecretSaved(data.app_secret_configured === true);
           setMetaTokenSaved(data.access_token_configured === true);
@@ -850,7 +850,7 @@ export default function App() {
       if (requestId !== inboxRequestId.current) return;
       if (readError) { setNotice("Could not refresh inbox read state. Check your connection and retry."); return; }
       const readAt = new Map((readRows ?? []).map((row: any) => [row.conversation_id, new Date(row.last_read_at).getTime()]));
-      const loaded = pageRows.map((conversation) => ({
+      const loaded = pageRows.map((conversation: any) => ({
         ...conversation,
         unread: Boolean(conversation.last_message_at && new Date(conversation.last_message_at).getTime() > (readAt.get(conversation.id) ?? 0)),
       })) as Conversation[];
@@ -1927,9 +1927,9 @@ Content-Type: application/json
           <button type="button" className="secondary-button compact" onClick={()=>void signOut()}>Sign out</button>
         </div>
         <form className="panel form-panel profile-form" onSubmit={saveProfile}><h2>Personal details</h2><div className="field"><label htmlFor="profile-name">Full name</label><input id="profile-name" value={profileName} onChange={(e)=>setProfileName(e.target.value)} maxLength={120} placeholder="Your name"/></div><div className="field"><label htmlFor="profile-email">Email address</label><input id="profile-email" value={user.email ?? ""} readOnly aria-readonly="true"/><small className="muted small">Your sign-in email is managed by your authentication account.</small></div><div className="field"><label htmlFor="profile-password">New password <span className="muted small">(optional)</span></label><input id="profile-password" type="password" value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} minLength={8} autoComplete="new-password" placeholder="At least 8 characters"/></div><div className="form-actions"><span className="muted small">Leave the password blank to keep it unchanged.</span><button className="primary-button" disabled={busy}>{busy?"Saving…":"Save profile"}</button></div></form><div className="privacy-note"><ShieldCheck size={18}/><div><strong>Account security</strong><p>Use a unique password. Your profile is stored with your authenticated account and does not change workspace permissions.</p></div></div></section>}
-      {view === "Billing" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading billing…</div></section>}><BillingPage tenantId={tenantId} role={activeTenant?.role ?? "viewer"} /></Suspense>}
-{view === "Team" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading team…</div></section>}><TeamPage tenantId={tenantId} role={activeTenant?.role ?? "viewer"} /></Suspense>}
-{view === "Usage" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading usage…</div></section>}><UsagePage tenantId={tenantId} /></Suspense>}
+      {view === "Billing" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading billing…</div></section>}><BillingPage tenantId={tenantId as string} role={activeTenant?.role ?? "viewer"} /></Suspense>}
+{view === "Team" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading team…</div></section>}><TeamPage tenantId={tenantId as string} role={activeTenant?.role ?? "viewer"} /></Suspense>}
+{view === "Usage" && <Suspense fallback={<section className="content"><div className="panel" role="status">Loading usage…</div></section>}><UsagePage tenantId={tenantId as string} /></Suspense>}
       {view === "Settings" && <section className="content"><PageHeading eyebrow="PREFERENCES" title="Settings" description="Review your business account, plan and account access."/><div className="panel settings-panel"><div className="setting-row"><div className="setting-icon"><Users size={19}/></div><div className="setting-copy"><strong>Active business account</strong><p>{activeTenant?.name ?? "No business account selected"} · Account ID and role are managed by business account membership.</p></div><span className="fixed-setting">{activeTenant?.role ?? "Member"}</span></div>
           <div className="setting-row">
             <div className="setting-icon"><CreditCard size={19}/></div>

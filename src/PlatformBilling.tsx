@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { Banknote, Building2, Check, ChevronRight, CircleDollarSign, CreditCard, FileText, LoaderCircle, Pencil, Plus, Printer, Receipt, RefreshCw, Save, ShieldCheck, X } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import { Empty, KpiCard, Modal, useConfirm } from "./components/ui";
-import { BreakdownCard, CHART, TransactionTable, VolumeChart } from "./components/finance";
+import { BreakdownCard, CHART, TransactionTable, VolumeChart } from "./components/finance.js";
 
 type Tier = {
   id: string; name: string; description: string; currency: string;
@@ -402,7 +402,7 @@ export default function PlatformBilling() {
                     ]}
                     mode="bar"
                     emptyText="No invoices have been issued yet. Amounts will appear once client workspaces are billed for the platform fee and Meta message charges."
-                    formatter={(value) => money(value * 100)}
+                    formatter={(value: number) => money(value * 100)}
                   />
                 </div>
                 <BreakdownCard
@@ -410,7 +410,7 @@ export default function PlatformBilling() {
                   subtitle="Manually recorded settlements by method"
                   data={paymentMix}
                   emptyText="No payments recorded yet. Methods will appear when M-Pesa or manual settlements are posted against invoices."
-                  formatter={(value) => money(value * 100)}
+                  formatter={(value: number) => money(value * 100)}
                 />
               </div>
               <TransactionTable
