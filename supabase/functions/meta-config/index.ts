@@ -23,6 +23,13 @@ Deno.serve(async (request) => {
 
     const phoneNumberId = String(body.phone_number_id ?? "").trim();
     const wabaId = String(body.waba_id ?? "").trim();
+    const wabaTimezone = String(body.waba_timezone ?? "Africa/Nairobi").trim();
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: wabaTimezone }).format(new Date());
+    } catch {
+      return json({ error: "Provide a valid IANA timezone, such as Africa/Nairobi or Europe/London." }, 400);
+    }
+    if (wabaTimezone.length > 64) return json({ error: "The WABA timezone must be 64 characters or fewer." }, 400);
     const token = String(body.access_token ?? "").trim();
     const appSecret = String(body.app_secret ?? "").trim();
     if (!/^\d{5,30}$/.test(phoneNumberId) || !/^\d{5,30}$/.test(wabaId)) {
@@ -53,6 +60,7 @@ Deno.serve(async (request) => {
     ]);
     const { error } = await auth.admin.from("meta_integrations").upsert({
       tenant_id: tenantId, phone_number_id: phoneNumberId, waba_id: wabaId,
+      waba_timezone: wabaTimezone,
       encrypted_access_token: encryptedToken, encrypted_app_secret: encryptedAppSecret,
       enabled: false, verified: false, updated_at: new Date().toISOString(),
     });
