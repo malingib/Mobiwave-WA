@@ -9,13 +9,14 @@ const supabase = supabaseClient!;
 interface Invoice {
   id: string;
   invoice_number: string;
-  amount: number;
-  meta_cost: number;
-  total_amount: number;
+  currency: string;
+  subtotal_minor: number;
+  paid_minor: number;
+  balance_minor: number;
+  due_on: string;
+  issued_at: string;
   status: string;
-  due_date: string;
-  paid_at?: string;
-  created_at: string;
+  is_overdue: boolean;
 }
 
 interface Payment {
@@ -89,15 +90,17 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId: activeTenantId }) =
 
       setTenant({ ...tenantData, tenant_meta_allowance: allowance ?? null });
 
-      // Get invoices
-      const { data: invoicesData, error: invoicesError } = await supabase
-        .from('platform_invoices')
-        .select('*')
-        .eq('tenant_id', tenantData.id)
-        .order('created_at', { ascending: false });
+      // Invoice records are exposed through a membership-checked RPC. The
+      // underlying platform invoice table intentionally remains platform-only.
+      const { data: billingSummary, error: invoicesError } = await supabase
+        .rpc('tenant_billing_summary', { p_tenant_id: tenantData.id });
 
       if (invoicesError) throw invoicesError;
-      setInvoices(invoicesData || []);
+      const invoiceRows = billingSummary && typeof billingSummary === 'object'
+        && Array.isArray((billingSummary as { invoices?: unknown }).invoices)
+        ? (billingSummary as { invoices: Invoice[] }).invoices
+        : [];
+      setInvoices(invoiceRows);
 
       // Get payments
       const { data: paymentsData, error: paymentsError } = await supabase
@@ -244,10 +247,10 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId: activeTenantId }) =
     }
   };
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number, currency = 'KES') => {
     return new Intl.NumberFormat('en-KE', {
       style: 'currency',
-      currency: 'KES'
+      currency
     }).format(amount);
   };
 
@@ -454,7 +457,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId: activeTenantId }) =
         </div>
         <div className="source-list">
           <div className="source-table-head invoice-head">
-            <span>Invoice</span><span>Date</span><span>Amount</span><span>Meta cost</span><span>Total</span><span>Status</span>
+            <span>Invoice</span><span>Issued</span><span>Due</span><span>Total</span><span>Paid</span><span>Status</span>
           </div>
           {invoices.length === 0 ? (
             <Empty icon={<CreditCard size={22} />} title="No invoices yet" text="Invoices will appear here once your workspace is billed." />
@@ -462,10 +465,10 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId: activeTenantId }) =
             invoices.map((invoice) => (
               <div className="source-row invoice-row" key={invoice.id}>
                 <strong>{invoice.invoice_number}</strong>
-                <span className="muted small">{formatDate(invoice.created_at)}</span>
-                <span>{formatCurrency(invoice.amount)}</span>
-                <span>{formatCurrency(invoice.meta_cost)}</span>
-                <strong>{formatCurrency(invoice.total_amount)}</strong>
+                <span className="muted small">{formatDate(invoice.issued_at)}</span>
+                <span className="muted small">{formatDate(invoice.due_on)}</span>
+                <strong>{formatCurrency(invoice.subtotal_minor / 100, invoice.currency)}</strong>
+                <span>{formatCurrency(invoice.paid_minor / 100, invoice.currency)}</span>
                 <span><Status status={invoice.status} /></span>
               </div>
             ))
@@ -488,7 +491,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId: activeTenantId }) =
             payments.map((payment) => (
               <div className="source-row payment-row" key={payment.id}>
                 <span>{formatDate(payment.created_at)}</span>
-                <strong>{formatCurrency(payment.amount)}</strong>
+                <strong>{formatCurrency(payment.amount, payment.currency)}</strong>
                 <span className="muted small">{payment.payment_method.toUpperCase()}</span>
                 <span><Status status={payment.status} /></span>
               </div>
