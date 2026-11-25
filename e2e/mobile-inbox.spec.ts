@@ -316,12 +316,14 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
   expect(firstKey).toMatch(/^[0-9a-f-]{36}$/i);
   await expect(composer).toHaveValue("Please confirm your delivery address.");
   await page.reload();
-  await openView(page, "Inbox");
+  // The app restores the last active view and selected conversation on reload.
+  // Re-opening the mobile drawer here is incorrect: the Inbox nav item is already
+  // active and the drawer remains off-canvas while the restored chat is visible.
   const conversation = page.locator(".conversation-item").filter({ hasText: "Amina Customer" });
-  // On mobile, the selected conversation opens the chat pane and hides the list.
-  // After reload the restored selection may already be active, so only click when visible.
   if (await conversation.isVisible()) await conversation.click({ timeout: 7000 });
-  await page.locator('textarea[aria-label="Message reply"]').fill("Please confirm your delivery address.");
+  const restoredComposer = page.locator('textarea[aria-label="Message reply"]');
+  await expect(restoredComposer).toBeVisible({ timeout: 10000 });
+  await restoredComposer.fill("Please confirm your delivery address.");
   await page.locator(".chat-reply").getByRole("button", { name: /^Send/ }).click({ timeout: 7000 });
   await expect.poll(() => calls).toBe(2);
   expect(sentMessages[1].idempotency_key).toBe(firstKey);
