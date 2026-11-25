@@ -283,8 +283,12 @@ export default function PlatformBilling() {
       if (!confirmed) return;
     }
     
+    const selectedTierDetails = data.tiers.find((tier) => tier.id === selectedTier);
+    const defaultPaidPlanStatus = selectedTierDetails && selectedTierDetails.monthly_price_minor > 0
+      ? "suspended"
+      : "active";
     const defaultStatus = selectedTier
-      ? (customer.subscription_status ?? "active")
+      ? (tierChanged ? defaultPaidPlanStatus : (customer.subscription_status ?? defaultPaidPlanStatus))
       : customer.tier_id ? "canceled" : "";
     const status = requestedStatus || (tierChanged ? defaultStatus : "");
     
@@ -588,12 +592,14 @@ export default function PlatformBilling() {
                 onChange={(event) => setCustomerStatus(event.target.value)}
               >
                 <option value="">Keep current agreement</option>
-                <option value="active" disabled={!customerTier}>Active — requires a tier</option>
+                <option value="active" disabled={!customerTier}>Active — administrator override / manual reactivation</option>
+                <option value="suspended" disabled={!customerTier}>Pending payment — suspended until verified</option>
                 <option value="paused">Paused</option>
                 <option value="canceled">Canceled</option>
               </select>
               <span className="field-hint">
-                {customerStatus === "active" && "Client will be invoiced according to the selected tier."}
+                {customerStatus === "active" && "Administrator override: the workspace is activated immediately, even if its invoice remains unpaid."}
+                {customerStatus === "suspended" && "Paid-plan access remains suspended until Paystack or an administrator verifies payment and activates the subscription."}
                 {customerStatus === "paused" && "Invoicing paused. Workspace remains accessible."}
                 {customerStatus === "canceled" && "Agreement canceled. No further invoices will be generated."}
               </span>
