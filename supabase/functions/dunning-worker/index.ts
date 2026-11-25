@@ -44,7 +44,7 @@ async function handleRequest(action: string): Promise<Response> {
     }
 
     const commercialError = new CommercialError(ErrorCode.INTERNAL_SERVER_ERROR, 'Internal server error', {
-      original_error: error.message,
+      original_error: error instanceof Error ? error.message : String(error),
       action
     });
     logError(commercialError);
@@ -78,7 +78,7 @@ serve(async (req) => {
     }
 
     const commercialError = new CommercialError(ErrorCode.INTERNAL_SERVER_ERROR, 'Internal server error', {
-      original_error: error.message
+      original_error: error instanceof Error ? error.message : String(error)
     });
     logError(commercialError);
     return createErrorResponse(commercialError);
@@ -181,7 +181,7 @@ async function sendPaymentReminders(): Promise<Response> {
     }
 
     const commercialError = new CommercialError(ErrorCode.INTERNAL_SERVER_ERROR, 'Failed to send payment reminders', {
-      original_error: error.message
+      original_error: error instanceof Error ? error.message : String(error)
     });
     logError(commercialError);
     return createErrorResponse(commercialError);
@@ -264,7 +264,7 @@ async function handlePastDuePayments(): Promise<Response> {
     }
 
     const commercialError = new CommercialError(ErrorCode.INTERNAL_SERVER_ERROR, 'Failed to handle past due payments', {
-      original_error: error.message
+      original_error: error instanceof Error ? error.message : String(error)
     });
     logError(commercialError);
     return createErrorResponse(commercialError);
@@ -330,7 +330,7 @@ async function handleGracePeriod(): Promise<Response> {
     }
 
     const commercialError = new CommercialError(ErrorCode.INTERNAL_SERVER_ERROR, 'Failed to handle grace period', {
-      original_error: error.message
+      original_error: error instanceof Error ? error.message : String(error)
     });
     logError(commercialError);
     return createErrorResponse(commercialError);
@@ -410,7 +410,7 @@ async function suspendAccounts(): Promise<Response> {
     }
 
     const commercialError = new CommercialError(ErrorCode.INTERNAL_SERVER_ERROR, 'Failed to suspend accounts', {
-      original_error: error.message
+      original_error: error instanceof Error ? error.message : String(error)
     });
     logError(commercialError);
     return createErrorResponse(commercialError);
@@ -533,7 +533,7 @@ async function sendPaymentReminder(payment: any, reminderType: string): Promise<
       reminder_type: reminderType,
       status: 'failed',
       failed_at: new Date().toISOString(),
-      failure_reason: emailError.message
+      failure_reason: emailError instanceof Error ? emailError.message : String(emailError)
     });
   }
 }

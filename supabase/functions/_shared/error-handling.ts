@@ -74,6 +74,7 @@ export interface ApiError {
   message: string;
   details?: Record<string, any>;
   retry_after?: number; // For rate limiting
+  timestamp?: string;
 }
 
 export class CommercialError extends Error {
@@ -297,7 +298,7 @@ export async function withRetry<T>(
     try {
       return await operation();
     } catch (error) {
-      lastError = error instanceof CommercialError ? error : createError(ErrorCode.UNKNOWN_ERROR, error.message);
+      lastError = error instanceof CommercialError ? error : createError(ErrorCode.UNKNOWN_ERROR, error instanceof Error ? error.message : String(error));
       
       if (!shouldRetry(lastError, attempt, maxAttempts)) {
         throw lastError;

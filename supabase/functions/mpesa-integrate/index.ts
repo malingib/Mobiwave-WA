@@ -123,7 +123,7 @@ async function handleSuccessfulPayment(
       supabase,
       tenant_id,
       'payment_successful',
-      { amount, transaction_id, invoice_number, processed_at: invoiceDate }
+      { amount, transaction_id, invoice_number: invoiceNumber, processed_at: invoiceDate }
     );
 
     // Send payment confirmation notification
@@ -134,7 +134,7 @@ async function handleSuccessfulPayment(
         type: 'payment_success',
         title: 'Payment Successful',
         message: `Your payment of KES ${amount} has been processed successfully.`,
-        data: { amount, invoice_number, subscription_period_ends: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }
+        data: { amount, invoice_number: invoiceNumber, subscription_period_ends: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }
       });
 
     // Reactivate any paused campaigns
@@ -243,7 +243,7 @@ serve(async (req) => {
     }
 
     const commercialError = new CommercialError(ErrorCode.INTERNAL_SERVER_ERROR, 'Internal server error', {
-      original_error: error.message
+      original_error: error instanceof Error ? error.message : String(error)
     });
     logError(commercialError);
     return createErrorResponse(commercialError);
@@ -387,7 +387,7 @@ async function initiatePayment(_req: Request, tenant_id: string, paymentRequest:
       supabase,
       tenant_id,
       'payment_initiated',
-      { amount: paymentRequest.amount, phone_number: paymentRequest.phone_number, transaction_id, checkout_request_id }
+      { amount: paymentRequest.amount, phone_number: paymentRequest.phone_number, transaction_id: transactionId, checkout_request_id: checkoutRequestId }
     );
 
     return new Response(
@@ -405,7 +405,7 @@ async function initiatePayment(_req: Request, tenant_id: string, paymentRequest:
     }
 
     const commercialError = new CommercialError(ErrorCode.PAYMENT_FAILED, 'Failed to initiate M-Pesa payment', {
-      original_error: error.message,
+      original_error: error instanceof Error ? error.message : String(error),
       tenant_id
     });
     logError(commercialError);

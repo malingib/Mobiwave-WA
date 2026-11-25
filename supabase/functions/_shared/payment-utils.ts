@@ -27,30 +27,26 @@ export interface PaymentVerificationResult {
 
 // Payment lock mechanism
 export class PaymentLock {
-  private static locks = new Map<string, Promise<any>>();
+  private static locks = new Map<string, Promise<void>>();
   
   static async acquire(lockKey: string): Promise<() => void> {
-    // Check if lock already exists
-    if (this.locks.has(lockKey)) {
-      // Wait for existing lock to release
-      await this.locks.get(lockKey);
-    }
-    
-    // Create a new lock
-    const releaseLock = () => {
-      this.locks.delete(lockKey);
-    };
-    
-    const lockPromise = new Promise<void>((resolve) => {
-      // Store the promise in the locks map
-      this.locks.set(lockKey, new Promise((lockResolve) => {
-        // When the operation completes, resolve the lock
-        lockResolve();
-        resolve();
-      }));
+    // Queue callers behind the current holder so concurrent requests cannot
+    // enter the critical section at the same time.
+    const previous = this.locks.get(lockKey) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
     });
-    
-    return releaseLock;
+    this.locks.set(lockKey, current);
+
+    await previous;
+
+    return () => {
+      release();
+      if (this.locks.get(lockKey) === current) {
+        this.locks.delete(lockKey);
+      }
+    };
   }
 }
 

@@ -107,6 +107,7 @@ async function mockBackend(page: Page) {
     const request = route.request();
     const url = new URL(request.url());
     if (request.method() === "OPTIONS") return json(route, {});
+
     if (url.pathname.endsWith("/token")) {
       const now = Math.floor(Date.now() / 1000);
       return json(route, { access_token: "e2e", token_type: "bearer", expires_in: 3600, expires_at: now + 3600, refresh_token: "e2e-r", user });
@@ -115,12 +116,68 @@ async function mockBackend(page: Page) {
     return json(route, {});
   });
 
+  await page.route("**/rest/v1/rpc/**", async (route) => {
+    const request = route.request();
+    const procedure = new URL(request.url()).pathname.split("/").pop() ?? "";
+    if (request.method() === "OPTIONS") return json(route, {});
+    if (procedure === "platform_tenant_plan") return json(route, {
+      state: "active", subscription_status: "active", can_send: true,
+      currency: "KES", monthly_price_minor: 400000, monthly_messages_used: 125,
+      tier: {
+        id: "e2e-tier-1", name: "E2E Pro", description: "E2E subscription",
+        feature_highlights: [], feature_flags: {
+          inbox: true, contacts: true, templates: true, campaigns: true, api: true, webhooks: true
+        }, max_team_members: 10, monthly_message_limit: 0
+      }
+    });
+    if (procedure === "get_tenant_overview") return json(route, {
+      contacts: { total: 6, opted_in: 4, opted_out: 1 },
+      conversations: { total: 6, open: 3, pending: 1, resolved: 2, unread: 2 },
+      unfinished_campaigns: 1, approved_templates: 2,
+      daily_messages: Array.from({ length: 14 }, (_, index) => ({
+        date: new Date(Date.now() - (13 - index) * 86400000).toISOString().slice(0, 10),
+        label: "Day " + (index + 1), inbound: 8 + index, outbound: 5 + index
+      }))
+    });
+    if (procedure === "tenant_meta_allowance") return json(route, {
+      connected: true, free_limit: 1000, free_service_used: 0, free_service_remaining: 1000
+    });
+    return json(route, {});
+  });
+
   await page.route("**/rest/v1/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const table = url.pathname.split("/").pop() ?? "";
     if (request.method() === "OPTIONS") return json(route, {});
+    if (url.pathname.includes("/rest/v1/rpc/")) {
+      const procedure = url.pathname.split("/").pop();
+      if (procedure === "platform_tenant_plan") return json(route, {
+        state: "active", subscription_status: "active", can_send: true,
+        currency: "KES", monthly_price_minor: 400000, monthly_messages_used: 125,
+        tier: {
+          id: "e2e-tier-1", name: "E2E Pro", description: "E2E subscription",
+          feature_highlights: [], feature_flags: {
+            inbox: true, contacts: true, templates: true, campaigns: true, api: true, webhooks: true
+          }, max_team_members: 10, monthly_message_limit: 0
+        }
+      });
+      if (procedure === "get_tenant_overview") return json(route, {
+        contacts: { total: 6, opted_in: 4, opted_out: 1 },
+        conversations: { total: 6, open: 3, pending: 1, resolved: 2, unread: 2 },
+        unfinished_campaigns: 1, approved_templates: 2,
+        daily_messages: Array.from({ length: 14 }, (_, index) => ({
+          date: new Date(Date.now() - (13 - index) * 86400000).toISOString().slice(0, 10),
+          label: "Day " + (index + 1), inbound: 8 + index, outbound: 5 + index
+        }))
+      });
+      return json(route, {});
+    }
     if (table === "tenant_members") return json(route, tenantMembership);
+    // The app resolves tenant_members first, then fetches tenant records by ID.
+    // Keep that second query in the fixture; nested `tenants` on membership rows
+    // are not selected by the production query.
+    if (table === "tenants") return json(route, [{ id: "e2e-tenant-1", name: "Demo Business", slug: "demo-business" }]);
     if (table === "conversations") return json(route, conversations, conversations.length);
     if (table === "contacts") return json(route, contacts, contacts.length);
     if (table === "wa_templates") return json(route, templates, templates.length);
@@ -144,6 +201,11 @@ async function mockBackend(page: Page) {
     }
     return json(route, []);
   });
+
+  // Keep RPC fixtures on a dedicated route. PostgREST RPC endpoints are not table
+  // resources; handling them before the broad REST mock avoids returning [] for
+  // scalar JSONB functions such as get_tenant_overview and platform_tenant_plan.
+
 
   await page.route("**/functions/v1/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -227,7 +289,8 @@ test("shots dashboard", async ({ page }, testInfo) => {
   await page.locator("#primary-navigation").getByRole("button", { name: "Integrations", exact: true }).click();
   await page.waitForTimeout(500);
   await capture(page, testInfo, "integrations");
-  await page.locator("#primary-navigation").getByRole("button", { name: "Alerts", exact: true }).click();
+  await page.getByRole("button", { name: "Open alerts" }).click();
+  await page.locator(".alerts-dropdown-footer").getByRole("button", { name: "View all" }).click();
   await page.waitForTimeout(500);
   await capture(page, testInfo, "alerts");
   await page.locator("#primary-navigation").getByRole("button", { name: "Profile", exact: true }).click();
