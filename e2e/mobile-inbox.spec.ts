@@ -183,6 +183,11 @@ async function mockBackend(page: Page, role = "admin") {
 }
 
 async function navigateTo(page: Page, label: string) {
+  if (label === "Alerts") {
+    await page.getByRole("button", { name: "Open alerts" }).click();
+    await page.locator(".alerts-dropdown-footer").getByRole("button", { name: "View all" }).click();
+    return;
+  }
   const menu = page.getByRole("button", { name: "Open navigation" });
   if (await menu.isVisible()) await menu.click();
   await page.locator(`#primary-navigation .nav-item[aria-label="${label}"]`).click();
@@ -346,13 +351,12 @@ test("webhook verification token is displayed after the backend confirms it is s
   await expect(page.getByRole("button", { name: "Copy token" })).toBeVisible();
 });
 
-test("workspace navigation exposes all eight sections without losing the active business context", async ({ page }) => {
+test("workspace sidebar omits Alerts while the notification centre remains accessible", async ({ page }) => {
   await signIn(page);
   const sections = [
     ["Overview", "Your messaging at a glance"],
     ["Contacts", "Contacts"],
     ["Campaigns", "Campaigns"],
-    ["Alerts", "Alerts"],
     ["Integrations", "Integrations"],
     ["Profile", "Your profile"],
     ["Settings", "Settings"],
@@ -364,6 +368,10 @@ test("workspace navigation exposes all eight sections without losing the active 
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     await expect(page.locator(".page-crumbs").getByText("Demo Business")).toBeVisible();
   }
+  await expect(page.locator('#primary-navigation .nav-item[aria-label="Alerts"]')).toHaveCount(0);
+  await navigateTo(page, "Alerts");
+  await expect(page.getByRole("heading", { name: "Alerts", exact: true })).toBeVisible();
+  await expect(page.locator(".page-crumbs").getByText("Demo Business")).toBeVisible();
 });
 
 test("adding a contact without claiming consent stores an unknown consent state", async ({ page }) => {
