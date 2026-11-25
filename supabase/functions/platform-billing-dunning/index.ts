@@ -399,8 +399,9 @@ async function processDunning(dryRun: boolean, asOf?: string) {
   }
 
   if (dryRun) {
-    for (const row of eligible) {
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((row.invoice.billing_email_snapshot ?? "").trim())) emailsSkipped++;
+    for (const event of eventsPlanned) {
+      const invoice = eligible.find((row) => row.invoice.invoice_number === event.invoice_number)?.invoice;
+      if (invoice && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test((invoice.billing_email_snapshot ?? "").trim())) emailsSkipped++;
     }
   }
 
