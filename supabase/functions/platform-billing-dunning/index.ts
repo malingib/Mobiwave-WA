@@ -381,7 +381,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
 
       await supabase.from("platform_billing_audit").insert({
         actor_id: null,
-        action: nextStatus === "suspended" ? "subscription_auto_suspended_nonpayment" : "subscription_marked_past_due",
+        action: nextStatus === "suspended" ? "subscription_auto_suspended_nonpayment" : nextStatus === "grace" ? "subscription_grace_period_started" : "subscription_marked_past_due",
         entity_type: "subscription",
         entity_id: tenantId,
         details: {
