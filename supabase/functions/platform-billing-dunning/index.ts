@@ -263,8 +263,8 @@ async function emitEvent(invoice: Invoice, eventType: string, outstandingMinor: 
   ]);
 }
 
-async function processDunning(dryRun: boolean) {
-  const today = nairobiToday();
+async function processDunning(dryRun: boolean, asOf?: string) {
+  const today = dryRun && asOf ? asOf : nairobiToday();
   const { data: invoices, error: invoiceError } = await supabase
     .from("platform_invoices")
     .select("id,tenant_id,invoice_number,tenant_name_snapshot,billing_email_snapshot,currency,subtotal_minor,due_on,status")
@@ -388,10 +388,10 @@ async function processDunning(dryRun: boolean) {
         },
       });
 
-      if (nextStatus === "suspended") {
-        suspensions++;
-        await emitEvent(row.invoice, "suspended", row.outstanding);
-      }
+    }
+    if (nextStatus === "suspended") {
+      if (subscription.status !== "suspended") suspensions++;
+      if (!dryRun) await emitEvent(row.invoice, "suspended", row.outstanding);
     }
   }
 
@@ -430,8 +430,12 @@ Deno.serve(async (request: Request) => {
     if (action !== "process" && action !== "dry_run") {
       return Response.json({ error: "Unsupported action" }, { status: 400 });
     }
+    const asOf = payload?.as_of;
+    if (action === "dry_run" && asOf !== undefined && (typeof asOf !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(asOf))) {
+      return Response.json({ error: "as_of must be a YYYY-MM-DD date and is only supported for dry_run." }, { status: 400 });
+    }
 
-    const result = await processDunning(action === "dry_run");
+    const result = await processDunning(action === "dry_run", asOf);
     return Response.json({ success: true, ...result });
   } catch (error) {
     console.error("[platform-billing-dunning] failed", error);
