@@ -1,70 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import { corsHeaders, json } from "../_shared/cors.ts";
+import { verifyPaystackWebhookSignature } from "../_shared/paystack-signature.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const paystackSecretKey = Deno.env.get("PAYSTACK_SECRET_KEY") ?? "";
 const webhookSigningSecret = Deno.env.get("PAYSTACK_WEBHOOK_SECRET") ?? "";
-
-function constantTimeEqual(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.length !== right.length) return false;
-  let difference = 0;
-  for (let index = 0; index < left.length; index++) difference |= left[index] ^ right[index];
-  return difference === 0;
-}
-
-function hexToBytes(value: string): Uint8Array | null {
-  if (!/^[0-9a-f]{128}$/i.test(value)) return null;
-  const bytes = new Uint8Array(value.length / 2);
-  for (let index = 0; index < bytes.length; index++) bytes[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
-  return bytes;
-}
-
-async function hmacSha512(secret: string, message: Uint8Array): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-512" },
-    false,
-    ["sign"],
-  );
-  return new Uint8Array(await crypto.subtle.sign("HMAC", key, message));
-}
-
-function bytesToHex(bytes: Uint8Array): string {
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function verifyWebhookSignature(rawBody: Uint8Array, request: Request): Promise<boolean> {
-  const modern = request.headers.get("Paystack-Signature");
-  if (modern && webhookSigningSecret) {
-    const fields = modern.split(",").map((part) => part.trim());
-    const timestamp = fields.find((part) => part.startsWith("t="))?.slice(2);
-    const signatures = fields.filter((part) => part.startsWith("v1=")).map((part) => part.slice(3).split(":").at(-1) || "");
-    const signedAt = Number(timestamp);
-    if (!Number.isInteger(signedAt) || Math.abs(Date.now() / 1000 - signedAt) > 300 || signatures.length === 0) return false;
-    const prefix = new TextEncoder().encode(`${timestamp}.`);
-    const signedBody = new Uint8Array(prefix.length + rawBody.length);
-    signedBody.set(prefix);
-    signedBody.set(rawBody, prefix.length);
-    const expected = await hmacSha512(webhookSigningSecret, signedBody);
-    return signatures.some((signature) => {
-      const received = hexToBytes(signature);
-      return received !== null && constantTimeEqual(expected, received);
-    });
-  }
-
-  // Backward compatibility while a Paystack integration is still using the
-  // legacy X-Paystack-Signature header. Prefer the timestamped signing secret.
-  const legacy = request.headers.get("X-Paystack-Signature");
-  if (legacy && paystackSecretKey) {
-    const received = hexToBytes(legacy);
-    if (!received) return false;
-    const expected = await hmacSha512(paystackSecretKey, rawBody);
-    return constantTimeEqual(expected, received);
-  }
-  return false;
-}
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -77,7 +18,10 @@ Deno.serve(async (request) => {
   try {
     const rawBody = new Uint8Array(await request.arrayBuffer());
     if (rawBody.length === 0 || rawBody.length > 256 * 1024) return json({ error: "Invalid webhook body." }, 400);
-    if (!await verifyWebhookSignature(rawBody, request)) return json({ error: "Invalid Paystack signature." }, 401);
+    if (!await verifyPaystackWebhookSignature(rawBody, request.headers, {
+      webhookSigningSecret,
+      secretKey: paystackSecretKey,
+    })) return json({ error: "Invalid Paystack signature." }, 401);
 
     const event = JSON.parse(new TextDecoder().decode(rawBody));
     const reference = typeof event?.data?.reference === "string" ? event.data.reference : "";
