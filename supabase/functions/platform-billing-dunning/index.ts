@@ -142,10 +142,10 @@ async function deliverEmail(
     return;
   }
 
-  const resendKey = Deno.env.get("RESEND_API_KEY");
-  const sendGridKey = Deno.env.get("SENDGRID_API_KEY");
-  if (!resendKey && !sendGridKey) {
-    console.warn("[platform-billing-dunning] email deferred: configure RESEND_API_KEY or SENDGRID_API_KEY", invoice.invoice_number);
+  const relayUrl = Deno.env.get("DUNNING_EMAIL_RELAY_URL");
+  const relayToken = Deno.env.get("DUNNING_EMAIL_RELAY_TOKEN");
+  if (!relayUrl || !relayToken) {
+    console.warn("[platform-billing-dunning] email deferred: SMTP relay is not configured", invoice.invoice_number);
     return;
   }
 
@@ -173,42 +173,24 @@ async function deliverEmail(
     let subject = template.subject as string;
     let body = template.body as string;
     for (const [key, value] of Object.entries(variables)) {
-      const safe = escapeHtml(value);
       subject = subject.replaceAll(`{{${key}}}`, value);
-      body = body.replaceAll(`{{${key}}}`, safe);
+      body = body.replaceAll(`{{${key}}}`, escapeHtml(value));
     }
-    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#202124;max-width:620px;margin:0 auto;padding:24px">${body.split(/\r?\n/).map((line: string) => line ? `<p>${line}</p>` : "").join("")}</body></html>`;
-    const from = Deno.env.get("DUNNING_EMAIL_FROM") ?? "MobiWave WA <no-reply@mobiwave.co.ke>";
-
-    let response: Response;
-    if (resendKey) {
-      response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${resendKey}`,
-          "Content-Type": "application/json",
-          "Idempotency-Key": `mobiwave-wa-dunning-${invoice.id}-${eventType}`,
-        },
-        body: JSON.stringify({ from, to: [recipient], subject, html }),
-      });
-    } else {
-      response = await fetch("https://api.sendgrid.com/v3/mail/send", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${sendGridKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          personalizations: [{ to: [{ email: recipient }] }],
-          from: { email: from.match(/<([^>]+)>/)?.[1] ?? from },
-          subject,
-          content: [{ type: "text/html", value: html }],
-          custom_args: { dunning_key: `mobiwave-wa-${invoice.id}-${eventType}` },
-        }),
-      });
-    }
-
-    if (!response.ok) {
-      const detail = await response.text();
-      throw new Error(`Email provider returned ${response.status}: ${detail.slice(0, 1000)}`);
-    }
+    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#202124;max-width:620px;margin:0 auto;padding:24px">${body.split(/\\r?\\n/).map((line: string) => line ? `<p>${line}</p>` : "").join("")}</body></html>`;
+    const response = await fetch(relayUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${relayToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        to: recipient,
+        subject,
+        html,
+        idempotencyKey: `mobiwave-wa-${invoice.id}-${eventType}`,
+      }),
+    });
+    if (!response.ok) throw new Error(`SMTP relay returned ${response.status}: ${(await response.text()).slice(0, 500)}`);
     await finishEvent(eventId, "sent");
   } catch (error) {
     await finishEvent(eventId, "failed", error instanceof Error ? error.message : String(error));
@@ -274,7 +256,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     .limit(500);
   if (invoiceError) throw invoiceError;
   if (!invoices?.length) {
-    return { today, scanned: 0, eligible: 0, events_planned: [], emails_skipped: 0, suspensions: 0, email_provider_configured: Boolean(Deno.env.get("RESEND_API_KEY") || Deno.env.get("SENDGRID_API_KEY")) };
+    return { today, scanned: 0, eligible: 0, events_planned: [], emails_skipped: 0, suspensions: 0, email_provider_configured: Boolean(Deno.env.get("DUNNING_EMAIL_RELAY_URL") && Deno.env.get("DUNNING_EMAIL_RELAY_TOKEN")) };
   }
 
   const invoiceIds = invoices.map((invoice: Invoice) => invoice.id);
