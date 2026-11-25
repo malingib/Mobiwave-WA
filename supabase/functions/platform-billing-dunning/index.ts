@@ -23,7 +23,7 @@ type Subscription = {
   status: string;
   grace_ends_on: string | null;
   suspended_at: string | null;
-  updated_by: string | null;
+  admin_override: boolean;
 };
 
 const EVENT_TEMPLATES: Record<string, string> = {
@@ -283,7 +283,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     supabase.from("platform_invoice_payments").select("invoice_id,amount_minor,reversed_at").in("invoice_id", invoiceIds),
     supabase.from("platform_invoice_items").select("invoice_id,description").in("invoice_id", invoiceIds),
     supabase.from("tenants").select("id,is_demo,billing_exempt").in("id", tenantIds),
-    supabase.from("platform_customer_subscriptions").select("tenant_id,status,grace_ends_on,suspended_at,updated_by").in("tenant_id", tenantIds),
+    supabase.from("platform_customer_subscriptions").select("tenant_id,status,grace_ends_on,suspended_at,admin_override").in("tenant_id", tenantIds),
     supabase.from("platform_customer_accounts").select("tenant_id,billing_email").in("tenant_id", tenantIds),
   ]);
   for (const result of [paymentsResult, itemsResult, tenantsResult, subscriptionsResult, accountsResult]) {
@@ -343,7 +343,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     if (!subscription) continue;
     if (subscription.status === "canceled" || subscription.status === "paused") continue;
     // An explicit admin activation is a deliberate override until an administrator changes it.
-    if (subscription.status === "active" && subscription.updated_by !== null) continue;
+    if (subscription.admin_override === true) continue;
 
     const daysPastDue = -row.daysUntil;
     if (daysPastDue < 1) continue;
