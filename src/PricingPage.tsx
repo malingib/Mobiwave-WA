@@ -14,9 +14,6 @@ const formatMoney = (minor: number, currency: string) => new Intl.NumberFormat("
   style: "currency", currency, maximumFractionDigits: 2,
 }).format(Number(minor) / 100);
 
-// Check if setup fee is optional (zero or minimal)
-const isSetupOptional = (setupFeeMinor: number) => setupFeeMinor === 0 || setupFeeMinor < 1000;
-
 function Feature({ label, enabled, onDark = false }: { label: string; enabled: boolean; onDark?: boolean }) {
   const text = onDark
     ? enabled ? "text-white/85" : "text-white/40 line-through decoration-white/25"
@@ -151,10 +148,10 @@ export default function PricingPage() {
                     <span className={"text-[13px] " + (plan.featured ? "text-brand-200" : "text-ink-400")}>/ month*</span>
                   </div>
                   <p className={"mt-2 text-[12.5px] " + (plan.featured ? "text-brand-100/85" : "text-ink-500")}>
-                    {isSetupOptional(plan.setup_fee_minor) ? (
-                      "Optional setup: " + (plan.setup_fee_minor === 0 ? "No setup fee" : <strong className={plan.featured ? "text-white" : "text-ink-800"}>{formatMoney(plan.setup_fee_minor, plan.currency)}</strong>)
+                    {plan.setup_fee_minor > 0 ? (
+                      <>One-time setup fee: <strong className={plan.featured ? "text-white" : "text-ink-800"}>{formatMoney(plan.setup_fee_minor, plan.currency)}</strong></>
                     ) : (
-                      "Setup fee: " + <strong className={plan.featured ? "text-white" : "text-ink-800"}>{formatMoney(plan.setup_fee_minor, plan.currency)}</strong>
+                      "No setup fee"
                     )}
                   </p>
                   <p className={`mt-1 text-[12px] ${plan.featured ? "text-brand-100/75" : "text-ink-400"}`}>
@@ -194,7 +191,7 @@ export default function PricingPage() {
         <section className="border-y border-ink-100 bg-canvas">
           <div className="mx-auto grid max-w-[1240px] gap-8 px-5 py-16 md:grid-cols-3 lg:px-8">
             {[
-              ["Confirm your plan first", "Displayed plan amounts are indicative. Confirm the current price, enabled access and billing arrangements with our team before onboarding. Setup is optional and quoted separately."],
+              ["Confirm your plan first", "Displayed plan amounts are indicative. Confirm the current price, enabled access and billing arrangements with our team before onboarding. Any one-time setup fee is shown with the plan price above."],
               ["0% markup on Meta messaging", "MobiWave WA charges only for platform access, not WhatsApp delivery. You pay Meta directly at their published rates. No markup on message costs—ever."],
               ["Know what your plan includes", "Included capabilities and any configured team or usage limits are listed on each plan. Meta messaging charges remain separate and are billed by Meta directly."],
             ].map(([title, text]) => (
