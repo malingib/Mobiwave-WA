@@ -27,7 +27,9 @@ async function hmacSha512(secret: string, message: Uint8Array): Promise<Uint8Arr
     false,
     ["sign"],
   );
-  return new Uint8Array(await crypto.subtle.sign("HMAC", key, message));
+  const messageBuffer = new ArrayBuffer(message.byteLength);
+  new Uint8Array(messageBuffer).set(message);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", key, messageBuffer));
 }
 
 export async function verifyPaystackWebhookSignature(
