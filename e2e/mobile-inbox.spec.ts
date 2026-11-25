@@ -67,6 +67,35 @@ async function mockBackend(page: Page, role = "admin") {
     return json(route, {});
   });
 
+  await page.route("**/rest/v1/rpc/**", async (route) => {
+    const request = route.request();
+    const procedure = new URL(request.url()).pathname.split("/").pop() ?? "";
+    if (request.method() === "OPTIONS") return json(route, {});
+    if (procedure === "platform_tenant_plan") return json(route, {
+      state: "active", subscription_status: "active", can_send: true,
+      currency: "KES", monthly_price_minor: 400000, monthly_messages_used: 125,
+      tier: {
+        id: "e2e-tier-1", name: "E2E Pro", description: "E2E subscription",
+        feature_highlights: [], feature_flags: {
+          inbox: true, contacts: true, templates: true, campaigns: true, api: true, webhooks: true
+        }, max_team_members: 10, monthly_message_limit: 0
+      }
+    });
+    if (procedure === "get_tenant_overview") return json(route, {
+      contacts: { total: 6, opted_in: 4, opted_out: 1 },
+      conversations: { total: 6, open: 3, pending: 1, resolved: 2, unread: 2 },
+      unfinished_campaigns: 1, approved_templates: 2,
+      daily_messages: Array.from({ length: 14 }, (_, index) => ({
+        date: new Date(Date.now() - (13 - index) * 86400000).toISOString().slice(0, 10),
+        label: "Day " + (index + 1), inbound: 8 + index, outbound: 5 + index
+      }))
+    });
+    if (procedure === "tenant_meta_allowance") return json(route, {
+      connected: true, free_limit: 1000, free_service_used: 0, free_service_remaining: 1000
+    });
+    return json(route, {});
+  });
+
   await page.route("**/rest/v1/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -125,34 +154,7 @@ async function mockBackend(page: Page, role = "admin") {
   // Keep RPC fixtures on a dedicated route. PostgREST RPC endpoints are not table
   // resources; handling them before the broad REST mock avoids returning [] for
   // scalar JSONB functions such as get_tenant_overview and platform_tenant_plan.
-  await page.route("**/rest/v1/rpc/**", async (route) => {
-    const request = route.request();
-    const procedure = new URL(request.url()).pathname.split("/").pop() ?? "";
-    if (request.method() === "OPTIONS") return json(route, {});
-    if (procedure === "platform_tenant_plan") return json(route, {
-      state: "active", subscription_status: "active", can_send: true,
-      currency: "KES", monthly_price_minor: 400000, monthly_messages_used: 125,
-      tier: {
-        id: "e2e-tier-1", name: "E2E Pro", description: "E2E subscription",
-        feature_highlights: [], feature_flags: {
-          inbox: true, contacts: true, templates: true, campaigns: true, api: true, webhooks: true
-        }, max_team_members: 10, monthly_message_limit: 0
-      }
-    });
-    if (procedure === "get_tenant_overview") return json(route, {
-      contacts: { total: 6, opted_in: 4, opted_out: 1 },
-      conversations: { total: 6, open: 3, pending: 1, resolved: 2, unread: 2 },
-      unfinished_campaigns: 1, approved_templates: 2,
-      daily_messages: Array.from({ length: 14 }, (_, index) => ({
-        date: new Date(Date.now() - (13 - index) * 86400000).toISOString().slice(0, 10),
-        label: "Day " + (index + 1), inbound: 8 + index, outbound: 5 + index
-      }))
-    });
-    if (procedure === "tenant_meta_allowance") return json(route, {
-      connected: true, free_limit: 1000, free_service_used: 0, free_service_remaining: 1000
-    });
-    return json(route, {});
-  });
+
 
   await page.route("**/functions/v1/**", async (route) => {
     const request = route.request();
@@ -315,7 +317,10 @@ test("uncertain inbox send reuses its idempotency key after a page reload", asyn
   await expect(composer).toHaveValue("Please confirm your delivery address.");
   await page.reload();
   await openView(page, "Inbox");
-  await page.locator(".conversation-item").filter({ hasText: "Amina Customer" }).click({ timeout: 7000 });
+  const conversation = page.locator(".conversation-item").filter({ hasText: "Amina Customer" });
+  // On mobile, the selected conversation opens the chat pane and hides the list.
+  // After reload the restored selection may already be active, so only click when visible.
+  if (await conversation.isVisible()) await conversation.click({ timeout: 7000 });
   await page.locator('textarea[aria-label="Message reply"]').fill("Please confirm your delivery address.");
   await page.locator(".chat-reply").getByRole("button", { name: /^Send/ }).click({ timeout: 7000 });
   await expect.poll(() => calls).toBe(2);
