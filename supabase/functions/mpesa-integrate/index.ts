@@ -123,7 +123,7 @@ async function handleSuccessfulPayment(
       supabase,
       tenant_id,
       'payment_successful',
-      { amount, transaction_id: transactionId, invoice_number: invoiceNumber, processed_at: invoiceDate }
+      { amount, transaction_id, invoice_number: invoiceNumber, processed_at: invoiceDate }
     );
 
     // Send payment confirmation notification
