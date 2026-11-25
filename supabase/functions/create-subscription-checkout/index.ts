@@ -98,6 +98,7 @@ Deno.serve(async (request) => {
         amount: String(prepared.amount_minor),
         currency: prepared.currency,
         reference: prepared.reference,
+        callback_url: "https://wap.mobiwave.co.ke",
         metadata: {
           purpose: "mobiwave_wa_subscription",
           invoice_id: invoice.id,
