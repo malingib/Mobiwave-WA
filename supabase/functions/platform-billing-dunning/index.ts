@@ -434,7 +434,7 @@ Deno.serve(async (request: Request) => {
       return Response.json({ error: "Unsupported action" }, { status: 400 });
     }
     const asOf = payload?.as_of;
-    if (action === "dry_run" && asOf !== undefined && (typeof asOf !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(asOf))) {
+    if (action === "dry_run" && asOf !== undefined && (typeof asOf !== "string" || !/^(?:\\d{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])$/.test(asOf))) {
       return Response.json({ error: "as_of must be a YYYY-MM-DD date and is only supported for dry_run." }, { status: 400 });
     }
 
