@@ -174,6 +174,10 @@ async function mockBackend(page: Page) {
       return json(route, {});
     }
     if (table === "tenant_members") return json(route, tenantMembership);
+    // The app resolves tenant_members first, then fetches tenant records by ID.
+    // Keep that second query in the fixture; nested `tenants` on membership rows
+    // are not selected by the production query.
+    if (table === "tenants") return json(route, [{ id: "e2e-tenant-1", name: "Demo Business", slug: "demo-business" }]);
     if (table === "conversations") return json(route, conversations, conversations.length);
     if (table === "contacts") return json(route, contacts, contacts.length);
     if (table === "wa_templates") return json(route, templates, templates.length);
