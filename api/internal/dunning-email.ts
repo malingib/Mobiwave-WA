@@ -11,13 +11,13 @@ function authorized(provided: string | undefined, expected: string | undefined):
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  if (!authorized(req.headers.authorization?.replace(/^Bearer\\s+/i, ""), process.env.DUNNING_EMAIL_RELAY_TOKEN)) {
+  if (!authorized(req.headers.authorization?.replace(/^Bearer\s+/i, ""), process.env.DUNNING_EMAIL_RELAY_TOKEN)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
   const { to, subject, html, idempotencyKey } = req.body ?? {};
   if (
-    typeof to !== "string" || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(to) ||
+    typeof to !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) ||
     typeof subject !== "string" || subject.length < 1 || subject.length > 240 ||
     typeof html !== "string" || html.length < 1 || html.length > 100_000 ||
     typeof idempotencyKey !== "string" || !/^[a-zA-Z0-9:_-]{1,180}$/.test(idempotencyKey)
