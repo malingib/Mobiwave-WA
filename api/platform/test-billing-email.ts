@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
 
 const TEST_RECIPIENT = "sales@mobiwave.co.ke";
-const EMAIL_RE = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -11,7 +11,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const token = req.headers.authorization?.match(/^Bearer\\s+(.+)$/i)?.[1];
+  const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
   if (!token) return res.status(401).json({ error: "Authentication required" });
 
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
