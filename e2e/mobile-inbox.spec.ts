@@ -72,7 +72,7 @@ async function mockBackend(page: Page, role = "admin") {
     const url = new URL(request.url());
     const table = url.pathname.split("/").pop() ?? "";
     if (request.method() === "OPTIONS") return json(route, {}, 200);
-    if (table === "rpc") {
+    if (url.pathname.includes("/rest/v1/rpc/")) {
       const procedure = url.pathname.split("/").pop();
       if (procedure === "platform_tenant_plan") return json(route, {
         state: "active", subscription_status: "active", can_send: true,
@@ -381,7 +381,9 @@ test("integration administration exposes official Meta Cloud API setup and webho
   await expect(page.locator('input[placeholder="Numeric ID from Meta"]')).toBeVisible();
   await expect(page.locator('input[placeholder="Numeric WABA ID"]')).toBeVisible();
   await expect(page.locator('input[placeholder="Paste Meta access token"]')).toHaveAttribute("type", "password");
-  await expect(page.getByText("Advanced: customer event webhooks")).toBeVisible();
+  const customerWebhooks = page.locator("#integration-customer-webhooks");
+  await customerWebhooks.locator("summary").click();
+  await expect(customerWebhooks.getByText("Advanced: customer event webhooks")).toBeVisible();
 });
 
 
