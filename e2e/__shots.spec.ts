@@ -121,7 +121,7 @@ async function mockBackend(page: Page) {
     const url = new URL(request.url());
     const table = url.pathname.split("/").pop() ?? "";
     if (request.method() === "OPTIONS") return json(route, {});
-    if (table === "rpc") {
+    if (url.pathname.includes("/rest/v1/rpc/")) {
       const procedure = url.pathname.split("/").pop();
       if (procedure === "platform_tenant_plan") return json(route, {
         state: "active", subscription_status: "active", can_send: true,
