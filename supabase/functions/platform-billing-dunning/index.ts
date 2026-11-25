@@ -273,7 +273,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     .limit(500);
   if (invoiceError) throw invoiceError;
   if (!invoices?.length) {
-    return { today, scanned: 0, eligible: 0, events_planned: [], emails_skipped: 0, suspensions: 0 };
+    return { today, scanned: 0, eligible: 0, events_planned: [], emails_skipped: 0, suspensions: 0, email_provider_configured: Boolean(Deno.env.get("RESEND_API_KEY") || Deno.env.get("SENDGRID_API_KEY")) };
   }
 
   const invoiceIds = invoices.map((invoice: Invoice) => invoice.id);
@@ -413,6 +413,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     emails_skipped: emailsSkipped,
     suspensions,
     dry_run: dryRun,
+    email_provider_configured: Boolean(Deno.env.get("RESEND_API_KEY") || Deno.env.get("SENDGRID_API_KEY")),
   };
 }
 
