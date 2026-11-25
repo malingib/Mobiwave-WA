@@ -51,6 +51,27 @@ async function mockBackend(page: Page, role = "admin") {
     const request = route.request();
     const url = new URL(request.url());
     if (request.method() === "OPTIONS") return json(route, {}, 200);
+
+    if (url.pathname.endsWith("/token")) {
+      const now = Math.floor(Date.now() / 1000);
+      return json(route, {
+        access_token: "e2e-access-token",
+        token_type: "bearer",
+        expires_in: 3600,
+        expires_at: now + 3600,
+        refresh_token: "e2e-refresh-token",
+        user,
+      });
+    }
+    if (url.pathname.endsWith("/user")) return json(route, user);
+    return json(route, {});
+  });
+
+  await page.route("**/rest/v1/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const table = url.pathname.split("/").pop() ?? "";
+    if (request.method() === "OPTIONS") return json(route, {}, 200);
     if (table === "rpc") {
       const procedure = url.pathname.split("/").pop();
       if (procedure === "platform_tenant_plan") return json(route, {
@@ -74,26 +95,6 @@ async function mockBackend(page: Page, role = "admin") {
       });
       return json(route, {});
     }
-    if (url.pathname.endsWith("/token")) {
-      const now = Math.floor(Date.now() / 1000);
-      return json(route, {
-        access_token: "e2e-access-token",
-        token_type: "bearer",
-        expires_in: 3600,
-        expires_at: now + 3600,
-        refresh_token: "e2e-refresh-token",
-        user,
-      });
-    }
-    if (url.pathname.endsWith("/user")) return json(route, user);
-    return json(route, {});
-  });
-
-  await page.route("**/rest/v1/**", async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    const table = url.pathname.split("/").pop() ?? "";
-    if (request.method() === "OPTIONS") return json(route, {}, 200);
 
     if (table === "tenant_members") return json(route, tenantMembership.map((membership) => ({ ...membership, role })));
     if (table === "tenants") return json(route, tenantMembership.map((membership) => membership.tenants));
