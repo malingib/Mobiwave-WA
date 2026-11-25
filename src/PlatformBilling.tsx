@@ -59,7 +59,8 @@ export default function PlatformBilling() {
   const { confirm, confirmElement, prompt, promptElement } = useConfirm();
   const [data, setData] = useState<BillingData>(emptyData);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);\n  const [testEmailBusy, setTestEmailBusy] = useState(false);\n  const [testEmailStatus, setTestEmailStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [testEmailBusy, setTestEmailBusy] = useState(false);\n  const [testEmailStatus, setTestEmailStatus] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [view, setView] = useState<"overview" | "customers" | "tiers" | "invoices">("overview");
@@ -403,7 +404,9 @@ export default function PlatformBilling() {
         </div>
       </div>
 
-      {testEmailStatus && <div className="notice notice-success" role="status">{testEmailStatus}</div>}\n\n      <div className="billing-tabs" role="tablist" aria-label="Billing sections">
+      {testEmailStatus && <div className="notice notice-success" role="status">{testEmailStatus}</div>}
+
+      <div className="billing-tabs" role="tablist" aria-label="Billing sections">
         {(["overview", "customers", "tiers", "invoices"] as const).map((item) => (
           <button type="button" key={item} role="tab" aria-selected={view === item} className={view === item ? "is-active" : ""} onClick={() => setView(item)}>
             {item === "overview" ? <Banknote size={15} /> : item === "customers" ? <Building2 size={15} /> : item === "tiers" ? <CreditCard size={15} /> : <Receipt size={15} />}
