@@ -45,6 +45,8 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId }) => {
   const [error, setError] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [checkoutInvoiceId, setCheckoutInvoiceId] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +87,24 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId }) => {
     return () => { cancelled = true; };
   }, [tenantId]);
 
+  const startCheckout = async (invoice: Invoice) => {
+    setCheckoutInvoiceId(invoice.id);
+    setCheckoutError(null);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('create-subscription-checkout', {
+        body: { invoice_id: invoice.id },
+      });
+      if (invokeError) throw invokeError;
+      if (!data?.authorization_url || typeof data.authorization_url !== 'string') {
+        throw new Error(data?.error || 'Paystack did not return a checkout link.');
+      }
+      window.location.assign(data.authorization_url);
+    } catch (err) {
+      setCheckoutError(err instanceof Error ? err.message : 'Could not start payment checkout.');
+      setCheckoutInvoiceId(null);
+    }
+  };
+
   const money = (minor: number, currency = 'KES') => new Intl.NumberFormat('en-KE', { style: 'currency', currency }).format(Number(minor || 0) / 100);
   const date = (value?: string | null) => value ? new Date(value).toLocaleDateString('en-KE', { year: 'numeric', month: 'long', day: 'numeric' }) : '—';
   const subscriptionLabel = tenant?.subscription_status ? tenant.subscription_status.replace(/_/g, ' ') : 'Not assigned';
@@ -103,6 +123,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId }) => {
           <div><span className="eyebrow">Account</span><h1>Billing &amp; Payments</h1><p className="page-description">View your MobiWave WA subscription, invoices and verified payments.</p></div>
         </div>
         {error && <div className="notice error" role="alert">{error}</div>}
+        {checkoutError && <div className="notice error" role="alert">{checkoutError}</div>}
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <article className="kpi-card panel kpi-tone-success"><div className="kpi-body"><span className="kpi-icon"><CreditCard size={20} /></span><div className="kpi-copy"><span className="kpi-label">Subscription</span><strong className="kpi-value">{subscriptionLabel}</strong><span className="kpi-hint">Workspace subscription status</span></div></div></article>
           <article className="kpi-card panel kpi-tone-brand"><div className="kpi-body"><span className="kpi-icon"><Wallet size={20} /></span><div className="kpi-copy"><span className="kpi-label">Current plan</span><strong className="kpi-value">{tenant?.subscription_tier_name ?? 'No plan'}</strong><span className="kpi-hint">{tenant?.subscription_monthly_price_minor != null ? money(tenant.subscription_monthly_price_minor, tenant.subscription_currency || 'KES') + ' / month' : 'Contact MobiWave to select a plan'}</span></div></div></article>
@@ -116,7 +137,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId }) => {
           {invoices.length === 0 ? <Empty icon={<CreditCard size={22} />} title="No invoices yet" text="Your invoices will appear here when MobiWave assigns a subscription or issues a renewal." /> : invoices.map((invoice) => (
             <div className="invoice-record" key={invoice.id}>
               <div className="source-row invoice-row">
-                <strong>{invoice.invoice_number}</strong><span className="muted small">{date(invoice.issued_at)}</span><span className="muted small">{date(invoice.due_on)}</span><strong>{money(invoice.subtotal_minor, invoice.currency)}</strong><span>{money(invoice.paid_minor, invoice.currency)}</span><strong>{money(invoice.balance_minor, invoice.currency)}</strong><span><Status status={invoice.is_overdue ? 'overdue' : invoice.status} /></span>
+                <strong>{invoice.invoice_number}</strong><span className="muted small">{date(invoice.issued_at)}</span><span className="muted small">{date(invoice.due_on)}</span><strong>{money(invoice.subtotal_minor, invoice.currency)}</strong><span>{money(invoice.paid_minor, invoice.currency)}</span><strong>{money(invoice.balance_minor, invoice.currency)}</strong><span className="flex flex-col items-start gap-2"><Status status={invoice.is_overdue ? 'overdue' : invoice.status} />{invoice.status === 'issued' && invoice.balance_minor > 0 && <button type="button" className="btn btn-primary btn-sm" onClick={() => void startCheckout(invoice)} disabled={checkoutInvoiceId !== null}>{checkoutInvoiceId === invoice.id ? 'Preparing…' : 'Pay invoice'}</button>}</span>
               </div>
               {((invoice.items?.length || 0) > 0 || (invoice.payments?.length || 0) > 0) && <details className="px-4 py-3 text-sm">
                 <summary className="cursor-pointer font-medium text-brand-700">View invoice details and payment records</summary>
@@ -128,8 +149,8 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId }) => {
         </div>
         <div className="panel form-panel mt-6">
           <div className="section-header"><div><h2>Payment processing</h2><p>Secure online invoice payments are being connected through Paystack.</p></div></div>
-          <p className="muted small">Payments will be initiated against an issued invoice balance. The amount and invoice reference will be validated by MobiWave’s server before checkout. Your workspace’s own M-Pesa integration settings are separate and are not used for subscription billing.</p>
-          <p className="muted small">To settle an outstanding invoice while online checkout is being enabled, contact MobiWave and quote the invoice number. Your subscription is activated only after payment is verified.</p>
+          <p className="muted small">Pay an issued invoice securely through Paystack. MobiWave calculates the exact outstanding balance on the server and verifies the transaction before recording payment or activating a subscription. Your workspace’s own M-Pesa integration settings are separate and are never used for subscription billing.</p>
+          <p className="muted small">If checkout is not yet configured, contact MobiWave and quote the invoice number. A successful return from Paystack is not itself proof of payment; the verified webhook updates your invoice and subscription.</p>
         </div>
       </div>
     </MarketingChrome>
