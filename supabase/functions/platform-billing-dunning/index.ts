@@ -161,7 +161,7 @@ async function deliverEmail(
       .maybeSingle();
 
     if (templateError) throw templateError;
-    if (!template) throw new Error(\`Active email template not found: \${templateName}\`);
+    if (!template) throw new Error(`Active email template not found: ${templateName}`);
 
     const variables: Record<string, string> = {
       tenant_name: invoice.tenant_name_snapshot,
@@ -173,10 +173,10 @@ async function deliverEmail(
     let body = template.body as string;
     for (const [key, value] of Object.entries(variables)) {
       const safe = escapeHtml(value);
-      subject = subject.replaceAll(\`{{\${key}}}\`, value);
-      body = body.replaceAll(\`{{\${key}}}\`, safe);
+      subject = subject.replaceAll(`{{${key}}}`, value);
+      body = body.replaceAll(`{{${key}}}`, safe);
     }
-    const html = \`<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#202124;max-width:620px;margin:0 auto;padding:24px">\${body.split(/\\r?\\n/).map((line: string) => line ? \`<p>\${line}</p>\` : "").join("")}</body></html>\`;
+    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#202124;max-width:620px;margin:0 auto;padding:24px">${body.split(/\\r?\\n/).map((line: string) => line ? `<p>${line}</p>` : "").join("")}</body></html>`;
     const from = Deno.env.get("DUNNING_EMAIL_FROM") ?? "MobiWave WA <noreply@mobiwave.wa>";
 
     let response: Response;
@@ -184,29 +184,29 @@ async function deliverEmail(
       response = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
-          Authorization: \`Bearer \${resendKey}\`,
+          Authorization: `Bearer ${resendKey}`,
           "Content-Type": "application/json",
-          "Idempotency-Key": \`mobiwave-wa-dunning-\${invoice.id}-\${eventType}\`,
+          "Idempotency-Key": `mobiwave-wa-dunning-${invoice.id}-${eventType}`,
         },
         body: JSON.stringify({ from, to: [recipient], subject, html }),
       });
     } else {
       response = await fetch("https://api.sendgrid.com/v3/mail/send", {
         method: "POST",
-        headers: { Authorization: \`Bearer \${sendGridKey}\`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${sendGridKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           personalizations: [{ to: [{ email: recipient }] }],
           from: { email: from.match(/<([^>]+)>/)?.[1] ?? from },
           subject,
           content: [{ type: "text/html", value: html }],
-          custom_args: { dunning_key: \`mobiwave-wa-\${invoice.id}-\${eventType}\` },
+          custom_args: { dunning_key: `mobiwave-wa-${invoice.id}-${eventType}` },
         }),
       });
     }
 
     if (!response.ok) {
       const detail = await response.text();
-      throw new Error(\`Email provider returned \${response.status}: \${detail.slice(0, 1000)}\`);
+      throw new Error(`Email provider returned ${response.status}: ${detail.slice(0, 1000)}`);
     }
     await finishEvent(eventId, "sent");
   } catch (error) {
