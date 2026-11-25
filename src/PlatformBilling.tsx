@@ -454,7 +454,7 @@ export default function PlatformBilling() {
               </tr>)}
               {customers.length === 0 && <tr><td colSpan={6}><Empty icon={<Building2 size={22} />} title={search ? "No client matches" : "No client accounts"} text={search ? "Try another client or billing contact." : "Client workspaces will appear here when they are created."} /></td></tr>}
             </tbody></table></div>
-            <p className="billing-footnote"><ShieldCheck size={14} /> Active tier assignments apply the selected capabilities, team limit and monthly platform message limit. Billing status alone does not suspend a workspace.</p>
+            <p className="billing-footnote"><ShieldCheck size={14} /> Tier assignments set capabilities and usage limits. Billing status controls access: past due is read-only, grace retains access until its deadline, and suspended blocks paid features.</p>
           </section>}
 
           {view === "tiers" && <section className="billing-section">
@@ -656,7 +656,7 @@ export default function PlatformBilling() {
             </div>
           )}
           
-          <p className="billing-form-help">Agreement status is a billing record. It does not suspend or unlock the client workspace.</p>
+          <p className="billing-form-help">Agreement status controls workspace entitlements. Active is an administrator override; paid plans default to suspended until payment is verified.</p>
           <div className="modal-actions">
             <span className="modal-action-hint">Owner-only · changes are audit logged</span>
             <div className="flex items-center gap-2">
