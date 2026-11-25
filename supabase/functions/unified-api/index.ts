@@ -47,7 +47,7 @@ function checkRateLimit(identifier: string, maxRequests: number): { allowed: boo
 
   if (currentEntry.count >= maxRequests) {
     const retryAfter = Math.ceil((currentEntry.resetTime - now) / 1000);
-    return { allowed: false, retry_after: Math.max(1, retryAfter) };
+    return { allowed: false, retryAfter: Math.max(1, retryAfter) };
   }
 
   currentEntry.count++;
@@ -111,7 +111,7 @@ async function handleRequest(req: Request): Promise<Response> {
     }
 
     const commercialError = new CommercialError(ErrorCode.INTERNAL_SERVER_ERROR, 'Internal server error', {
-      original_error: error.message
+      original_error: error instanceof Error ? error.message : String(error)
     });
     logError(commercialError);
     return createErrorResponse(commercialError);
@@ -149,8 +149,8 @@ async function handleSendMessage(body: any, method: string): Promise<Response> {
     throw new CommercialError(
       ErrorCode.API_RATE_LIMIT_EXCEEDED,
       'Rate limit exceeded for message sending',
-      { retry_after: rateLimitResult.retry_after },
-      rateLimitResult.retry_after
+      { retry_after: rateLimitResult.retryAfter },
+      rateLimitResult.retryAfter
     );
   }
 
@@ -214,7 +214,7 @@ async function handleSendMessage(body: any, method: string): Promise<Response> {
     }
 
     const commercialError = new CommercialError(ErrorCode.PAYMENT_FAILED, 'Failed to send message', {
-      original_error: error.message,
+      original_error: error instanceof Error ? error.message : String(error),
       tenant_id
     });
     logError(commercialError);
@@ -239,8 +239,8 @@ async function handleGetMessages(body: any, method: string): Promise<Response> {
     throw new CommercialError(
       ErrorCode.API_RATE_LIMIT_EXCEEDED,
       'Rate limit exceeded for message retrieval',
-      { retry_after: rateLimitResult.retry_after },
-      rateLimitResult.retry_after
+      { retry_after: rateLimitResult.retryAfter },
+      rateLimitResult.retryAfter
     );
   }
 
@@ -308,8 +308,8 @@ async function handleCampaigns(body: any, method: string): Promise<Response> {
     throw new CommercialError(
       ErrorCode.API_RATE_LIMIT_EXCEEDED,
       'Rate limit exceeded for campaign operations',
-      { retry_after: rateLimitResult.retry_after },
-      rateLimitResult.retry_after
+      { retry_after: rateLimitResult.retryAfter },
+      rateLimitResult.retryAfter
     );
   }
 
