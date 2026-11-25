@@ -60,7 +60,8 @@ export default function PlatformBilling() {
   const [data, setData] = useState<BillingData>(emptyData);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [testEmailBusy, setTestEmailBusy] = useState(false);\n  const [testEmailStatus, setTestEmailStatus] = useState("");
+  const [testEmailBusy, setTestEmailBusy] = useState(false);
+  const [testEmailStatus, setTestEmailStatus] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [view, setView] = useState<"overview" | "customers" | "tiers" | "invoices">("overview");
