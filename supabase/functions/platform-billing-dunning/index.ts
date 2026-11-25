@@ -303,8 +303,8 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     eligible.push({ invoice, outstanding, daysUntil, monthly });
 
     const events: string[] = [];
-    if (daysUntil <= 3 && daysUntil > 1) events.push("reminder_3_days");
-    if (daysUntil <= 1 && daysUntil >= 0) events.push("reminder_1_day");
+    if (daysUntil === 3) events.push("reminder_3_days");
+    if (daysUntil === 1) events.push("reminder_1_day");
     if (daysUntil <= -1) events.push("past_due");
     if (daysUntil <= -2) events.push("grace_final");
     for (const eventType of events) {
