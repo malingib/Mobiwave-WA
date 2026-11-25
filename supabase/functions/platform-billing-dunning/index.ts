@@ -352,7 +352,10 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     else nextStatus = "past_due";
 
     if (dryRun) {
-      if (nextStatus === "suspended" && subscription.status !== "suspended") suspensions++;
+      if (nextStatus === "suspended" && subscription.status !== "suspended") {
+        suspensions++;
+        eventsPlanned.push({ invoice_number: row.invoice.invoice_number, event_type: "suspended", outstanding_minor: row.outstanding });
+      }
       continue;
     }
 
