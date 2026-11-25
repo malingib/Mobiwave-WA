@@ -45,8 +45,18 @@ export default function PricingPage() {
   useEffect(() => {
     if (!supabase) { setPlansError("Plan pricing is temporarily unavailable."); setPlansLoading(false); return; }
     supabase.rpc("platform_public_tiers").then(({ data, error }) => {
-      if (error) setPlansError("Plan pricing is temporarily unavailable.");
-      else setPlans((data ?? []) as Plan[]);
+      if (error) {
+        setPlansError("Plan pricing is temporarily unavailable.");
+      } else if (Array.isArray(data)) {
+        setPlans(data as Plan[]);
+      } else if (data && typeof data === "object" && Array.isArray((data as { tiers?: unknown }).tiers)) {
+        setPlans((data as { tiers: Plan[] }).tiers);
+      } else {
+        setPlansError("Plan pricing returned an unexpected response. Please contact our team for current options.");
+      }
+      setPlansLoading(false);
+    }).catch(() => {
+      setPlansError("Plan pricing is temporarily unavailable.");
       setPlansLoading(false);
     });
   }, []);
