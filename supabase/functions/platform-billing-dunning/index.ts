@@ -176,7 +176,7 @@ async function deliverEmail(
       subject = subject.replaceAll(`{{${key}}}`, value);
       body = body.replaceAll(`{{${key}}}`, escapeHtml(value));
     }
-    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#202124;max-width:620px;margin:0 auto;padding:24px">${body.split(/\\r?\\n/).map((line: string) => line ? `<p>${line}</p>` : "").join("")}</body></html>`;
+    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#202124;max-width:620px;margin:0 auto;padding:24px">${body.split(/\r?\n/).map((line: string) => line ? `<p>${line}</p>` : "").join("")}</body></html>`;
     const response = await fetch(relayUrl, {
       method: "POST",
       headers: {
@@ -399,7 +399,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     emails_skipped: emailsSkipped,
     suspensions,
     dry_run: dryRun,
-    email_provider_configured: Boolean(Deno.env.get("RESEND_API_KEY") || Deno.env.get("SENDGRID_API_KEY")),
+    email_provider_configured: Boolean(Deno.env.get("DUNNING_EMAIL_RELAY_URL") && Deno.env.get("DUNNING_EMAIL_RELAY_TOKEN")),
   };
 }
 
