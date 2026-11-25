@@ -148,9 +148,9 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId }) => {
           ))}
         </div>
         <div className="panel form-panel mt-6">
-          <div className="section-header"><div><h2>Payment processing</h2><p>Secure online invoice payments are being connected through Paystack.</p></div></div>
-          <p className="muted small">Pay an issued invoice securely through Paystack. MobiWave calculates the exact outstanding balance on the server and verifies the transaction before recording payment or activating a subscription. Your workspace’s own M-Pesa integration settings are separate and are never used for subscription billing.</p>
-          <p className="muted small">If checkout is not yet configured, contact MobiWave and quote the invoice number. A successful return from Paystack is not itself proof of payment; the verified webhook updates your invoice and subscription.</p>
+          <div className="section-header"><div><h2>Paystack payments</h2><p>Secure online payments for your MobiWave WA subscription.</p></div></div>
+          <p className="muted small">Pay issued subscription invoices directly through Paystack. The amount and currency are calculated by MobiWave, and payment is confirmed server-side before your invoice is marked paid or your subscription is activated.</p>
+          <p className="muted small">No separate payment integration or mobile-money setup is required in your workspace. Your subscription payments are handled by MobiWave through Paystack.</p>
         </div>
       </div>
     </MarketingChrome>
