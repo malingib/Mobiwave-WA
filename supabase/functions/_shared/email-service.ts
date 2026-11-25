@@ -81,7 +81,7 @@ export class ResendEmailProvider implements EmailProvider {
     } catch (error) {
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         provider: this.name
       };
     }
@@ -135,13 +135,13 @@ export class SendGridEmailProvider implements EmailProvider {
 
       return {
         success: true,
-        messageId: response.headers.get('X-Message-Id'),
+        messageId: response.headers.get('X-Message-Id') ?? undefined,
         provider: this.name
       };
     } catch (error) {
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         provider: this.name
       };
     }
@@ -178,7 +178,7 @@ export class EmailService {
           // Provider failed, try next provider
           lastErrors.push({ provider: provider.name, error: result.error || 'Unknown error' });
         } catch (error) {
-          lastErrors.push({ provider: provider.name, error: error.message });
+          lastErrors.push({ provider: provider.name, error: error instanceof Error ? error.message : String(error) });
         }
       }
 
@@ -239,7 +239,7 @@ export class EmailService {
           const result = await this.sendTemplatedEmail(to, templateName, variables, from);
           return { email: to, success: result.success, error: result.error };
         } catch (error) {
-          return { email: to, success: false, error: error.message };
+          return { email: to, success: false, error: error instanceof Error ? error.message : String(error) };
         }
       })
     );
@@ -248,7 +248,7 @@ export class EmailService {
       if (result.status === 'fulfilled') {
         return result.value;
       }
-      return { email: emails[index].to, success: false, error: result.reason.message };
+      return { email: emails[index].to, success: false, error: result.reason instanceof Error ? result.reason.message : String(result.reason) };
     });
   }
 }
