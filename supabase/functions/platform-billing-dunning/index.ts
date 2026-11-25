@@ -176,7 +176,7 @@ async function deliverEmail(
       subject = subject.replaceAll(`{{${key}}}`, value);
       body = body.replaceAll(`{{${key}}}`, safe);
     }
-    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#202124;max-width:620px;margin:0 auto;padding:24px">${body.split(/\\r?\\n/).map((line: string) => line ? `<p>${line}</p>` : "").join("")}</body></html>`;
+    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#202124;max-width:620px;margin:0 auto;padding:24px">${body.split(/\r?\n/).map((line: string) => line ? `<p>${line}</p>` : "").join("")}</body></html>`;
     const from = Deno.env.get("DUNNING_EMAIL_FROM") ?? "MobiWave WA <noreply@mobiwave.wa>";
 
     let response: Response;
