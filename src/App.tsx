@@ -200,7 +200,7 @@ const navigation: { section: string; items: { label: View; icon: typeof MessageC
       { label: "Campaigns", icon: Zap },
     ],
   },
-  { section: "Administration", items: [{ label: "Integrations", icon: Settings2 }, { label: "Alerts", icon: Bell }] },
+  { section: "Administration", items: [{ label: "Integrations", icon: Settings2 }] },
   {
     section: "Account",
     items: [
