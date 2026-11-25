@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Banknote, Building2, Check, ChevronRight, CircleDollarSign, CreditCard, FileText, LoaderCircle, Pencil, Plus, Printer, Receipt, RefreshCw, Save, ShieldCheck, X } from "lucide-react";
+import { Banknote, Building2, Check, ChevronRight, CircleDollarSign, CreditCard, FileText, LoaderCircle, Mail, Pencil, Plus, Printer, Receipt, RefreshCw, Save, ShieldCheck, X } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import { Empty, KpiCard, Modal, useConfirm } from "./components/ui";
 import { BreakdownCard, CHART, TransactionTable, VolumeChart } from "./components/finance.js";
@@ -60,6 +60,8 @@ export default function PlatformBilling() {
   const [data, setData] = useState<BillingData>(emptyData);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [testEmailBusy, setTestEmailBusy] = useState(false);
+  const [testEmailStatus, setTestEmailStatus] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [view, setView] = useState<"overview" | "customers" | "tiers" | "invoices">("overview");
@@ -104,6 +106,31 @@ export default function PlatformBilling() {
       setLoading(false);
     }
   }, []);
+
+  const sendTestEmail = async () => {
+    if (!supabase || testEmailBusy) return;
+    setTestEmailBusy(true);
+    setTestEmailStatus("");
+    setError("");
+    try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (sessionError || !accessToken) throw new Error("Your session has expired. Sign in again.");
+      const response = await fetch("/api/platform/test-billing-email", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.success !== true) {
+        throw new Error(payload?.error || "The test email could not be sent.");
+      }
+      setTestEmailStatus("Test email accepted by SMTP and sent to sales@mobiwave.co.ke.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The test email could not be sent.");
+    } finally {
+      setTestEmailBusy(false);
+    }
+  };
 
   useEffect(() => { void load(); }, [load]);
 
@@ -368,11 +395,17 @@ export default function PlatformBilling() {
         </div>
         <div className="platform-heading-actions">
           <span className="billing-mode"><ShieldCheck size={14} /> Owner only · manual ledger</span>
+          <button type="button" className="btn btn-secondary" onClick={() => void sendTestEmail()} disabled={testEmailBusy || busy}>
+            {testEmailBusy ? <LoaderCircle size={14} className="spin" /> : <Mail size={14} />}
+            {testEmailBusy ? "Sending test…" : "Send test email"}
+          </button>
           <button type="button" className="btn btn-secondary" onClick={() => void load()} disabled={loading}>
             <RefreshCw size={14} className={loading ? "spin" : ""} /> Refresh
           </button>
         </div>
       </div>
+
+      {testEmailStatus && <div className="notice notice-success" role="status">{testEmailStatus}</div>}
 
       <div className="billing-tabs" role="tablist" aria-label="Billing sections">
         {(["overview", "customers", "tiers", "invoices"] as const).map((item) => (
