@@ -134,8 +134,9 @@ async function deliverEmail(
   invoice: Invoice,
   eventType: string,
   outstandingMinor: number,
+  currentBillingEmail?: string,
 ): Promise<void> {
-  const recipient = (invoice.billing_email_snapshot ?? "").trim();
+  const recipient = (invoice.billing_email_snapshot || currentBillingEmail || "").trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
     console.warn("[platform-billing-dunning] email skipped: invoice has no valid billing email", invoice.invoice_number);
     return;
@@ -256,10 +257,10 @@ async function createInAppNotification(invoice: Invoice, eventType: string, outs
   }
 }
 
-async function emitEvent(invoice: Invoice, eventType: string, outstandingMinor: number) {
+async function emitEvent(invoice: Invoice, eventType: string, outstandingMinor: number, currentBillingEmail?: string) {
   await Promise.all([
     createInAppNotification(invoice, eventType, outstandingMinor),
-    deliverEmail(invoice, eventType, outstandingMinor),
+    deliverEmail(invoice, eventType, outstandingMinor, currentBillingEmail),
   ]);
 }
 
@@ -278,13 +279,14 @@ async function processDunning(dryRun: boolean, asOf?: string) {
 
   const invoiceIds = invoices.map((invoice: Invoice) => invoice.id);
   const tenantIds = [...new Set(invoices.map((invoice: Invoice) => invoice.tenant_id))];
-  const [paymentsResult, itemsResult, tenantsResult, subscriptionsResult] = await Promise.all([
+  const [paymentsResult, itemsResult, tenantsResult, subscriptionsResult, accountsResult] = await Promise.all([
     supabase.from("platform_invoice_payments").select("invoice_id,amount_minor,reversed_at").in("invoice_id", invoiceIds),
     supabase.from("platform_invoice_items").select("invoice_id,description").in("invoice_id", invoiceIds),
     supabase.from("tenants").select("id,is_demo,billing_exempt").in("id", tenantIds),
     supabase.from("platform_customer_subscriptions").select("tenant_id,status,grace_ends_on,suspended_at,updated_by").in("tenant_id", tenantIds),
+    supabase.from("platform_customer_accounts").select("tenant_id,billing_email").in("tenant_id", tenantIds),
   ]);
-  for (const result of [paymentsResult, itemsResult, tenantsResult, subscriptionsResult]) {
+  for (const result of [paymentsResult, itemsResult, tenantsResult, subscriptionsResult, accountsResult]) {
     if (result.error) throw result.error;
   }
 
@@ -302,6 +304,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
   }
   const tenantById = new Map((tenantsResult.data ?? []).map((tenant: any) => [tenant.id, tenant]));
   const subscriptionByTenant = new Map((subscriptionsResult.data ?? []).map((subscription: Subscription) => [subscription.tenant_id, subscription]));
+  const billingEmailByTenant = new Map((accountsResult.data ?? []).map((account: any) => [account.tenant_id, account.billing_email]));
 
   const eligible: Array<{ invoice: Invoice; outstanding: number; daysUntil: number; monthly: boolean }> = [];
   const eventsPlanned: Array<{ invoice_number: string; event_type: string; outstanding_minor: number }> = [];
@@ -324,7 +327,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     if (daysUntil <= -2) events.push("grace_final");
     for (const eventType of events) {
       eventsPlanned.push({ invoice_number: invoice.invoice_number, event_type: eventType, outstanding_minor: outstanding });
-      if (!dryRun) await emitEvent(invoice, eventType, outstanding);
+      if (!dryRun) await emitEvent(invoice, eventType, outstanding, billingEmailByTenant.get(invoice.tenant_id));
     }
   }
 
@@ -394,14 +397,15 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     }
     if (nextStatus === "suspended") {
       if (subscription.status !== "suspended") suspensions++;
-      if (!dryRun) await emitEvent(row.invoice, "suspended", row.outstanding);
+      if (!dryRun) await emitEvent(row.invoice, "suspended", row.outstanding, billingEmailByTenant.get(row.invoice.tenant_id));
     }
   }
 
   if (dryRun) {
     for (const event of eventsPlanned) {
       const invoice = eligible.find((row) => row.invoice.invoice_number === event.invoice_number)?.invoice;
-      if (invoice && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((invoice.billing_email_snapshot ?? "").trim())) emailsSkipped++;
+      const billingEmail = invoice ? (invoice.billing_email_snapshot || billingEmailByTenant.get(invoice.tenant_id) || "").trim() : "";
+      if (invoice && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billingEmail)) emailsSkipped++;
     }
   }
 
