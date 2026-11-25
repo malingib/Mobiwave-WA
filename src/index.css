@@ -4877,7 +4877,8 @@
     .app-shell .topbar { height: 4rem; padding-inline: 1rem; gap: .5rem; }
     .app-shell .topbar-search { width: auto; flex: 1; min-width: 0; }
     .app-shell .topbar-status-pill { display: none; }
-    .app-shell .top-actions { min-width: 0; overflow: hidden; }
+    /* Keep the notification popover visible outside the compact mobile action row. */
+    .app-shell .top-actions { min-width: 0; overflow: visible; }
     .app-shell .topbar-profile-copy { display: none; }
     .app-shell .page-crumbs { padding: .9rem 1rem 0; }
     .app-shell .content { padding: .85rem 1rem 1.75rem; }
