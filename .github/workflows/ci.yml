@@ -60,6 +60,8 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Test Paystack webhook signature verification
+        run: deno test supabase/functions/_shared/paystack-signature_test.ts
       - name: Test outbound idempotency behavior
         run: deno test supabase/functions/api-send/idempotency_test.ts
       - name: Install PostgreSQL client
