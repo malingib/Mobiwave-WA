@@ -289,7 +289,8 @@ test("shots dashboard", async ({ page }, testInfo) => {
   await page.locator("#primary-navigation").getByRole("button", { name: "Integrations", exact: true }).click();
   await page.waitForTimeout(500);
   await capture(page, testInfo, "integrations");
-  await page.locator("#primary-navigation").getByRole("button", { name: "Alerts", exact: true }).click();
+  await page.getByRole("button", { name: "Open alerts" }).click();
+  await page.locator(".alerts-dropdown-footer").getByRole("button", { name: "View all" }).click();
   await page.waitForTimeout(500);
   await capture(page, testInfo, "alerts");
   await page.locator("#primary-navigation").getByRole("button", { name: "Profile", exact: true }).click();
