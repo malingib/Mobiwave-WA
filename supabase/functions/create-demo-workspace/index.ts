@@ -47,9 +47,14 @@ Deno.serve(async (request) => {
     
     // Create demo user account if it doesn't exist
     let userId = null;
-    const { data: existingUser } = await admin.auth.admin.getUserByEmail(email);
-    if (existingUser?.user) {
-      userId = existingUser.user.id;
+    const { data: userList, error: userListError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (userListError) {
+      await admin.from("tenants").delete().eq("id", tenant.id);
+      return json({ error: "Could not check existing demo user: " + userListError.message }, 500);
+    }
+    const existingUser = userList.users.find((candidate) => candidate.email?.toLowerCase() === email.toLowerCase());
+    if (existingUser) {
+      userId = existingUser.id;
     } else {
       const { data: newUser, error: createUserError } = await admin.auth.admin.createUser({
         email,
