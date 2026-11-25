@@ -150,7 +150,7 @@ export default function PricingPage() {
                   <p className={"mt-2 text-[12.5px] " + (plan.featured ? "text-brand-100/85" : "text-ink-500")}>
                     Optional onboarding and integration assistance is available on request and is billed separately only after you approve the quote.
                   </p>
-                  <p className={`mt-1 text-[12px]` ${plan.featured ? "text-brand-100/75" : "text-ink-400"}`}>
+                  <p className={`mt-1 text-[12px] ${plan.featured ? "text-brand-100/75" : "text-ink-400"}`}>
                     + 1,000 free Meta messages per phone number/month
                   </p>
                   <a
