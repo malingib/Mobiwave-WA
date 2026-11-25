@@ -55,7 +55,7 @@ export default function PricingPage() {
         setPlansError("Plan pricing returned an unexpected response. Please contact our team for current options.");
       }
       setPlansLoading(false);
-    }).catch(() => {
+    }, () => {
       setPlansError("Plan pricing is temporarily unavailable.");
       setPlansLoading(false);
     });
