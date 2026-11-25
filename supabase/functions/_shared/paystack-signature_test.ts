@@ -8,7 +8,9 @@ async function sign(secret: string, message: Uint8Array): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-512" }, false, ["sign"],
   );
-  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, message));
+  const messageBuffer = new ArrayBuffer(message.byteLength);
+  new Uint8Array(messageBuffer).set(message);
+  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, messageBuffer));
   return [...signature].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
