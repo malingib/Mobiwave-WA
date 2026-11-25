@@ -148,13 +148,9 @@ export default function PricingPage() {
                     <span className={"text-[13px] " + (plan.featured ? "text-brand-200" : "text-ink-400")}>/ month*</span>
                   </div>
                   <p className={"mt-2 text-[12.5px] " + (plan.featured ? "text-brand-100/85" : "text-ink-500")}>
-                    {plan.setup_fee_minor > 0 ? (
-                      <>One-time setup fee: <strong className={plan.featured ? "text-white" : "text-ink-800"}>{formatMoney(plan.setup_fee_minor, plan.currency)}</strong></>
-                    ) : (
-                      "No setup fee"
-                    )}
+                    Optional onboarding and integration assistance is available on request and is billed separately only after you approve the quote.
                   </p>
-                  <p className={`mt-1 text-[12px] ${plan.featured ? "text-brand-100/75" : "text-ink-400"}`}>
+                  <p className={`mt-1 text-[12px]` ${plan.featured ? "text-brand-100/75" : "text-ink-400"}`}>
                     + 1,000 free Meta messages per phone number/month
                   </p>
                   <a
@@ -191,7 +187,7 @@ export default function PricingPage() {
         <section className="border-y border-ink-100 bg-canvas">
           <div className="mx-auto grid max-w-[1240px] gap-8 px-5 py-16 md:grid-cols-3 lg:px-8">
             {[
-              ["Confirm your plan first", "Displayed plan amounts are indicative. Confirm the current price, enabled access and billing arrangements with our team before onboarding. Any one-time setup fee is shown with the plan price above."],
+              ["Confirm your plan first", "Displayed plan amounts are indicative. Confirm the current price, enabled access and billing arrangements with our team before onboarding. Optional onboarding and integration assistance is quoted separately only when requested."],
               ["0% markup on Meta messaging", "MobiWave WA charges only for platform access, not WhatsApp delivery. You pay Meta directly at their published rates. No markup on message costs—ever."],
               ["Know what your plan includes", "Included capabilities and any configured team or usage limits are listed on each plan. Meta messaging charges remain separate and are billed by Meta directly."],
             ].map(([title, text]) => (
