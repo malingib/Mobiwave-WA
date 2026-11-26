@@ -19,7 +19,7 @@ Deno.serve(async (request) => {
     const body = await readRequestJson(request);
     const tenantId = String(body.tenant_id ?? ""), to = String(body.to ?? "");
     const idempotencyKey = String(request.headers.get("idempotency-key") ?? body.idempotency_key ?? "");
-    const type = ["template", "text", "image", "document", "audio", "video"].includes(String(body.type)) ? String(body.type) : "invalid";
+    const type = ["template", "otp", "text", "image", "document", "audio", "video"].includes(String(body.type)) ? String(body.type) : "invalid";
     if (type === "invalid") return json({ error: "Unsupported message type." }, 422);
     if (!tenantId || !/^\+[1-9][0-9]{7,14}$/.test(to)) return json({ error: "A tenant_id and E.164 recipient phone number are required." }, 400);
     if (!/^[A-Za-z0-9._:-]{8,200}$/.test(idempotencyKey)) return json({ error: "Provide a stable Idempotency-Key (8–200 letters, numbers, or . _ : -) and reuse it only for this send operation." }, 400);
@@ -35,14 +35,24 @@ Deno.serve(async (request) => {
 
     let payload: any;
     let conversationId: string | null = null;
-    if (type === "template") {
+    if (type === "template" || type === "otp") {
       if (contact.consent_status !== "opted_in") return json({ error: "Template messages require recorded opt-in consent." }, 403);
       const name = String(body.template_name ?? "");
       const language = String(body.language_code ?? "en");
       if (!/^[a-z0-9_]{1,512}$/.test(name) || !/^[a-zA-Z_]{2,10}(-[a-zA-Z0-9]{2,10})?$/.test(language)) return json({ error: "Invalid template name or language code." }, 400);
       const { data: template } = await admin.from("wa_templates").select("meta_status,components,category").eq("tenant_id", tenantId).eq("meta_template_name", name).eq("language_code", language).maybeSingle();
       if (!template || template.meta_status !== "approved") return json({ error: "Only Meta-approved templates can be sent outside the customer-service window." }, 403);
-      payload = { messaging_product: "whatsapp", to: to.replace("+", ""), type: "template", template: { name, language: { code: language }, components: Array.isArray(body.components) ? body.components : [] } };
+      let components = Array.isArray(body.components) ? body.components : [];
+      if (type === "otp") {
+        if (String(template.category ?? "").toLowerCase() !== "authentication") return json({ error: "OTP messages require a Meta-approved AUTHENTICATION template." }, 403);
+        const code = String(body.otp_code ?? "");
+        if (!/^[A-Za-z0-9]{1,15}$/.test(code)) return json({ error: "A 1–15 character OTP code is required." }, 400);
+        components = [
+          { type: "body", parameters: [{ type: "text", text: code }] },
+          { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: code }] },
+        ];
+      }
+      payload = { messaging_product: "whatsapp", to: to.replace("+", ""), type: "template", template: { name, language: { code: language }, components } };
       const { data: existingConversation, error: conversationLookupError } = await admin.from("conversations").select("id").eq("tenant_id", tenantId).eq("contact_id", contact.id).maybeSingle();
       if (conversationLookupError) throw conversationLookupError;
       conversationId = existingConversation?.id ?? null;
@@ -88,7 +98,7 @@ Deno.serve(async (request) => {
     const { data: attempt, error: attemptError } = await admin.from("outbound_send_attempts").insert({
       tenant_id: tenantId, idempotency_key: idempotencyKey, request_hash: requestHash,
       contact_id: contact.id, conversation_id: conversationId, message_type: type,
-      request_payload: payload, status: "prepared",
+      request_payload: type === "otp" ? { ...payload, template: { ...payload.template, components: payload.template.components.map((component: any) => ({ ...component, parameters: Array.isArray(component.parameters) ? component.parameters.map((parameter: any) => ({ ...parameter, text: "[REDACTED]" })) : component.parameters })) } } : payload, status: "prepared",
     }).select("id").single();
     if (attemptError) {
       if (attemptError.code === "23505") return json({ error: "A request with this idempotency key is being processed. Retry the same key to retrieve its outcome; it will not be sent twice." }, 409);
