@@ -22,6 +22,11 @@ X-API-Key: mw_live_YOUR_SECRET
 
 All data access is automatically restricted to the workspace that owns the key. A Client ID identifies the integration in logs; it is not an authentication credential.
 
+## API identity
+
+- `GET /health`: authenticated API health check.
+- `GET /me`: returns the current integration Client ID, name and granted scopes.
+
 ## Common headers
 
 ```http
@@ -210,7 +215,7 @@ The identifier in the message path is the Meta message ID returned by the send e
 | POST | `/campaigns` | `campaigns:write` | Create a draft or scheduled campaign |
 | GET | `/campaigns` | `campaigns:read` | List campaigns |
 | GET | `/campaigns/{id}` | `campaigns:read` | Retrieve campaign |
-| POST | `/campaigns/{id}/start` | `campaigns:write` | Start the next safe batch |
+| POST | `/campaigns/{id}/start` | `campaigns:write` | Queue the campaign for the existing worker to start on its next run |
 | POST | `/campaigns/{id}/pause` | `campaigns:write` | Pause campaign |
 | POST | `/campaigns/{id}/cancel` | `campaigns:write` | Cancel campaign |
 
@@ -228,7 +233,7 @@ Create a campaign using an approved template and explicit contact IDs:
 }
 ```
 
-`scheduled_at` is optional and must be in the future. Scheduled campaigns remain drafts until their due time; the existing campaign worker starts them. Every recipient must belong to the same workspace and have recorded opt-in consent. Existing campaign batch limits, quota checks, provider reconciliation and uncertain-outcome safeguards remain in force.
+`scheduled_at` is optional and must be in the future. Scheduled campaigns remain drafts until their due time; the existing campaign worker starts them. The start action queues an eligible draft or paused campaign for the existing worker rather than running a long synchronous request. Every recipient must belong to the same workspace and have recorded opt-in consent. Existing campaign batch limits, quota checks, provider reconciliation and uncertain-outcome safeguards remain in force.
 
 ## Customer event webhooks
 
