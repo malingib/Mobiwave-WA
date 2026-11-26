@@ -76,7 +76,7 @@ type CampaignFailure = { id: string; error_code?: string; error_detail?: string;
 type Conversation = { id: string; status: string; assigned_to?: string | null; unread?: boolean; last_message_at?: string; contacts?: { display_name?: string; phone_e164: string } };
 type TeamMember = { user_id: string; role: string; name: string; email: string };
 type ConsentEvent = { id: string; previous_status?: string | null; consent_status: string; consent_source?: string | null; changed_at: string };
-type ApiKey = { id: string; name: string; key_prefix: string; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };
+type ApiKey = { id: string; client_id?: string; name: string; key_prefix: string; scopes?: string[]; last_used_at?: string; expires_at?: string; revoked_at?: string; created_at: string };
 type TenantWebhook = { id: string; name: string; endpoint_url: string; events: string[]; enabled: boolean; last_delivery_at?: string; last_status?: string; last_error?: string; created_at: string };
 type WebhookDelivery = { id: string; webhook_id: string; event_type: string; status: string; attempt_count: number; response_status?: number; last_error?: string; created_at: string; delivered_at?: string };
 type WorkspaceNotification = { id: string; category: string; severity: string; title: string; body: string; entity_type?: string | null; entity_id?: string | null; metadata?: Record<string, any>; created_at: string; read_at?: string | null };
@@ -419,7 +419,9 @@ export default function App() {
   const [metaWebhookToken, setMetaWebhookToken] = useState("");
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [apiKeyName, setApiKeyName] = useState("Production integration");
+  const [apiKeyScopes, setApiKeyScopes] = useState<string[]>(["messages:send"]);
   const [newApiKey, setNewApiKey] = useState("");
+  const [newApiKeyClientId, setNewApiKeyClientId] = useState("");
   const [webhooks, setWebhooks] = useState<TenantWebhook[]>([]);
   const [webhookDeliveries, setWebhookDeliveries] = useState<WebhookDelivery[]>([]);
   const [notifications, setNotifications] = useState<WorkspaceNotification[]>([]);
@@ -717,7 +719,7 @@ export default function App() {
         supabase.from("campaigns").select("id,name,status,created_at,scheduled_at,template_id,template_parameters").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
         supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts!conversations_contact_same_tenant_fk(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
         supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at,webhook_verified_at,waba_timezone,messaging_limit_tier,quality_rating").eq("tenant_id", tenantId).maybeSingle(),
-        supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+        supabase.from("tenant_api_keys").select("id,client_id,name,key_prefix,scopes,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
         supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       ]), "Loading workspace");
       if (requestId !== workspaceRequestId.current) return;
@@ -1349,10 +1351,10 @@ export default function App() {
   }
   async function createApiKey(event: FormEvent) {
     event.preventDefault(); if (!supabase) return; setBusy(true); setNewApiKey("");
-    const { data, error } = await supabase.functions.invoke("create-api-key", { body: { tenant_id: tenantId, name: apiKeyName.trim() } });
+    const { data, error } = await supabase.functions.invoke("create-api-key", { body: { tenant_id: tenantId, name: apiKeyName.trim(), scopes: apiKeyScopes } });
     setBusy(false);
     if (error || data?.error || data?.ok !== true || typeof data?.api_key !== "string" || !data.api_key) setNotice(data?.error ?? error?.message ?? "API key creation was not confirmed. Check the key list before retrying.");
-    else { setNewApiKey(data.api_key); setApiKeyName("Production integration"); setNotice("API key created. Copy it now; the secret will not be shown again."); await loadWorkspace(); }
+    else { setNewApiKey(data.api_key); setNewApiKeyClientId(data.key?.client_id ?? ""); setApiKeyName("Production integration"); setNotice("API key created. Copy it now; the secret will not be shown again."); await loadWorkspace(); }
   }
   async function revokeApiKey(key: ApiKey) {
     if (!supabase) return;
@@ -1901,14 +1903,14 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
         </div>
         {tierFeatureAvailable("api") && <div className="panel form-panel" id="integration-api">
           <h2>Developer API</h2><p className="muted small">Use business-account-scoped keys for server-to-server integrations. Never put API keys in browser code or public repositories.</p><p className="muted small">API base URL: <code>{PUBLIC_API_BASE_URL}</code> · <a href="/api-docs/" target="_blank" rel="noreferrer">Read API documentation and code examples <ArrowUpRight size={13}/></a></p>
-          {isAdmin&&<form onSubmit={createApiKey} className="api-key-create"><div className="field"><label htmlFor="api-key-name">Key name</label><input id="api-key-name" value={apiKeyName} onChange={(e)=>setApiKeyName(e.target.value)} required minLength={2} maxLength={120}/></div><button className="primary-button" disabled={busy}><Plus size={15}/> Create API key</button></form>}
-          {newApiKey&&<div className="new-key-box"><strong>Copy your new key now</strong><code>{newApiKey}</code><button className="secondary-button" onClick={()=>void copyApiKey()}>Copy key</button><small>It will disappear if you refresh or leave this screen.</small></div>}
-          <div className="api-key-list">{apiKeys.length===0?<p className="muted small">No API keys created.</p>:apiKeys.map(key=><div className="api-key-row" key={key.id}><div><strong>{key.name}</strong><code>{key.key_prefix}…</code><small>Created {new Date(key.created_at).toLocaleDateString()} · {key.last_used_at?"Last used "+new Date(key.last_used_at).toLocaleString():"Not used yet"}{key.expires_at?" · Expires "+new Date(key.expires_at).toLocaleDateString():""}</small></div><Status status={key.revoked_at?"revoked":"active"}/>{isAdmin&&!key.revoked_at&&<button className="secondary-button compact" onClick={()=>void revokeApiKey(key)}>Revoke</button>}</div>)}</div>
-          <div className="api-example"><strong>Send an approved template</strong><pre>{`POST ${PUBLIC_API_BASE_URL}/messages/send
-X-API-Key: YOUR_MOBIWAVE_API_KEY
+          {isAdmin&&<form onSubmit={createApiKey} className="api-key-create"><div className="field"><label htmlFor="api-key-name">Integration name</label><input id="api-key-name" value={apiKeyName} onChange={(e)=>setApiKeyName(e.target.value)} required minLength={2} maxLength={120}/></div><div className="field"><label>Permissions</label><div className="webhook-event-options">{[["messages:send","Send messages"],["messages:read","Read messages"],["contacts:read","Read contacts"],["contacts:write","Manage contacts and consent"],["templates:read","Read templates"],["campaigns:read","Read campaigns"],["campaigns:write","Create and control campaigns"]].map(([scope,label])=><label key={scope} className="checkbox-line"><input type="checkbox" checked={apiKeyScopes.includes(scope)} onChange={(e)=>setApiKeyScopes(current=>e.target.checked?[...current,scope]:current.filter(item=>item!==scope))}/>{label}</label>)}</div><small className="muted small">Grant only the permissions this integration needs.</small></div><button className="primary-button" disabled={busy || apiKeyScopes.length===0}><Plus size={15}/> Create API key</button></form>}
+          {newApiKey&&<div className="new-key-box"><strong>Copy your new key now</strong><code>{newApiKey}</code>{newApiKeyClientId&&<><small>Client ID</small><code>{newApiKeyClientId}</code></>}<button className="secondary-button" onClick={()=>void copyApiKey()}>Copy key</button><small>The secret will not be shown again. Store it securely on your server.</small></div>}
+          <div className="api-key-list">{apiKeys.length===0?<p className="muted small">No API keys created.</p>:apiKeys.map(key=><div className="api-key-row" key={key.id}><div><strong>{key.name}</strong><code>{key.key_prefix}…</code><small>{key.client_id ? key.client_id+" · " : ""}Created {new Date(key.created_at).toLocaleDateString()} · {key.scopes?.length ? "Scopes: "+key.scopes.join(", ")+" · " : ""}{key.last_used_at?"Last used "+new Date(key.last_used_at).toLocaleString():"Not used yet"}{key.expires_at?" · Expires "+new Date(key.expires_at).toLocaleDateString():""}</small></div><Status status={key.revoked_at?"revoked":"active"}/>{isAdmin&&!key.revoked_at&&<button className="secondary-button compact" onClick={()=>void revokeApiKey(key)}>Revoke</button>}</div>)}</div>
+          <div className="api-example"><strong>Send an approved template (API v1)</strong><pre>{`POST ${PUBLIC_API_BASE_URL}/messages
+Authorization: Bearer YOUR_MOBIWAVE_API_KEY
 Idempotency-Key: YOUR_UNIQUE_REQUEST_KEY
 Content-Type: application/json
-{"to":"+2547XXXXXXXX","template_name":"approved_template","language_code":"en","components":[]}`}</pre><small className="muted small">Use the MobiWave endpoint above. Direct Supabase function URLs are not a supported integration surface.</small></div>
+{"to":"+2547XXXXXXXX","type":"template","template":{"name":"approved_template","language":"en","parameters":[]}}`}</pre><small className="muted small">Use the MobiWave endpoint above. Direct Supabase function URLs are not a supported integration surface.</small></div>
         </div>}
         {tierFeatureAvailable("webhooks") && <details className="panel form-panel" id="integration-customer-webhooks">
           <summary><strong>Advanced: customer event webhooks</strong><span className="muted small"> Send MobiWave events to your own HTTPS endpoints</span></summary>

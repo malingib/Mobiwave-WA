@@ -19,7 +19,8 @@ Deno.serve(async (request) => {
     const body = await readRequestJson(request);
     const tenantId = String(body.tenant_id ?? ""), to = String(body.to ?? "");
     const idempotencyKey = String(request.headers.get("idempotency-key") ?? body.idempotency_key ?? "");
-    const type = body.type === "template" ? "template" : "text";
+    const type = ["template", "text", "image", "document", "audio", "video"].includes(String(body.type)) ? String(body.type) : "invalid";
+    if (type === "invalid") return json({ error: "Unsupported message type." }, 422);
     if (!tenantId || !/^\+[1-9][0-9]{7,14}$/.test(to)) return json({ error: "A tenant_id and E.164 recipient phone number are required." }, 400);
     if (!/^[A-Za-z0-9._:-]{8,200}$/.test(idempotencyKey)) return json({ error: "Provide a stable Idempotency-Key (8–200 letters, numbers, or . _ : -) and reuse it only for this send operation." }, 400);
     if (actor) await requireTenantRole(admin, tenantId, actor.userId, ["owner", "admin", "agent"]);
@@ -46,15 +47,28 @@ Deno.serve(async (request) => {
       if (conversationLookupError) throw conversationLookupError;
       conversationId = existingConversation?.id ?? null;
     } else {
-      const text = String(body.text ?? "").trim();
-      if (!text || text.length > 4000) return json({ error: "Text must contain 1–4,000 characters." }, 400);
       const { data: conversation, error: conversationLookupError } = await admin.from("conversations").select("id").eq("tenant_id", tenantId).eq("contact_id", contact.id).maybeSingle();
       if (conversationLookupError) throw conversationLookupError;
-      if (!conversation) return json({ error: "An active conversation is required for free-form replies." }, 409);
+      if (!conversation) return json({ error: "An active conversation is required for free-form messages." }, 409);
       conversationId = conversation.id;
       const { data: inbound } = await admin.from("messages").select("created_at").eq("tenant_id", tenantId).eq("conversation_id", conversation.id).eq("direction", "inbound").order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (!inbound || Date.now() - new Date(inbound.created_at).getTime() > 24 * 60 * 60 * 1000) return json({ error: "Free-form messages are only allowed within the 24-hour customer-service window. Use an approved template instead." }, 403);
-      payload = { messaging_product: "whatsapp", to: to.replace("+", ""), type: "text", text: { preview_url: false, body: text } };
+      if (type === "text") {
+        const text = String(body.text ?? "").trim();
+        if (!text || text.length > 4000) return json({ error: "Text must contain 1–4,000 characters." }, 400);
+        payload = { messaging_product: "whatsapp", to: to.replace("+", ""), type: "text", text: { preview_url: false, body: text } };
+      } else {
+        const media = body[type] && typeof body[type] === "object" ? body[type] : {};
+        let mediaUrl: URL;
+        try { mediaUrl = new URL(String(media.link ?? "")); } catch { return json({ error: "A valid public HTTPS media link is required." }, 400); }
+        if (mediaUrl.protocol !== "https:" || mediaUrl.username || mediaUrl.password) return json({ error: "Media links must use public HTTPS URLs." }, 400);
+        const mediaPayload: Record<string, unknown> = { link: media.link };
+        if (type === "image" || type === "video" || type === "document") {
+          if (media.caption) mediaPayload.caption = String(media.caption).slice(0, 1024);
+        }
+        if (type === "document" && media.filename) mediaPayload.filename = String(media.filename).slice(0, 255);
+        payload = { messaging_product: "whatsapp", to: to.replace("+", ""), type, [type]: mediaPayload };
+      }
     }
 
     const requestHash = await sha256(JSON.stringify({ tenantId, contactId: contact.id, type, payload }));
@@ -146,7 +160,7 @@ Deno.serve(async (request) => {
     if (conversationId) {
       const { data: savedMessage, error: messageError } = await admin.from("messages").insert({
         tenant_id: tenantId, conversation_id: conversationId, direction: "outbound",
-        actor_type: "agent", message_type: type, body: type === "text" ? payload.text.body : "[Template: " + payload.template.name + "]",
+        actor_type: "agent", message_type: type, body: type === "text" ? payload.text.body : type === "template" ? "[Template: " + payload.template.name + "]" : (payload[type]?.caption ?? "[" + type + " message]"),
         status: initialStatus, meta_message_id: metaMessageId, metadata: { meta_status: initialStatus, outbound_attempt_id: attempt.id },
       }).select("id").single();
       if (messageError) {

@@ -214,8 +214,18 @@ Deno.serve(async (request) => {
         }
         const normalized = text.trim().toLowerCase().replace(/[.!?,]+$/g, "").replace(/\s+/g, " ");
         if (/^(stop|stop all|unsubscribe( me)?|opt ?out|cancel|end|quit|remove me|do not (message|text) me|don't (message|text) me)$/.test(normalized)) {
-          const { error: optOutError } = await admin.from("contacts").update({ consent_status: "opted_out", consent_source: "WhatsApp opt-out keyword: " + text.trim().slice(0, 80), opted_out_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", contact.id).eq("tenant_id", tenantId);
+          const previousConsent = contact.consent_status ?? "unknown";
+          const consentSource = "WhatsApp opt-out keyword: " + text.trim().slice(0, 80);
+          const optedOutAt = new Date().toISOString();
+          const { error: optOutError } = await admin.from("contacts").update({ consent_status: "opted_out", consent_source: consentSource, opted_out_at: optedOutAt, updated_at: optedOutAt }).eq("id", contact.id).eq("tenant_id", tenantId);
           if (optOutError) throw optOutError;
+          if (previousConsent !== "opted_out") {
+            const { error: auditError } = await admin.from("contact_consent_audit").insert({
+              tenant_id: tenantId, contact_id: contact.id, api_key_id: null,
+              previous_status: previousConsent, new_status: "opted_out", source: consentSource,
+            });
+            if (auditError) throw auditError;
+          }
           contact.consent_status = "opted_out";
         }
         const { data: conversation, error: convError } = await admin.from("conversations").upsert({
