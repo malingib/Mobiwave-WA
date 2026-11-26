@@ -252,7 +252,7 @@ Deno.serve(async (request) => {
       if (!id && method === "POST") {
         const name = String(body.name ?? "").trim();
         const templateId = String(body.template_id ?? "");
-        const contactIds = Array.isArray(body.contact_ids) ? [...new Set(body.contact_ids.filter((v: unknown) => typeof v === "string" && uuid.test(v)))] : [];
+        const contactIds = Array.isArray(body.contact_ids) ? [...new Set(body.contact_ids.filter((v: unknown): v is string => typeof v === "string" && uuid.test(v)))] : [];
         if (name.length < 1 || name.length > 180 || !uuid.test(templateId) || contactIds.length < 1 || contactIds.length > 5000)
           return fail(422, "INVALID_CAMPAIGN", "Provide a name, template_id and 1–5,000 contact_ids.");
         const { data: template, error: templateError } = await admin.from("wa_templates").select("id,meta_status").eq("tenant_id", tenantId).eq("id", templateId).maybeSingle();
