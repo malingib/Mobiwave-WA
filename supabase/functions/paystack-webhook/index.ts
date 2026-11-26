@@ -1,18 +1,17 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { verifyPaystackWebhookSignature } from "../_shared/paystack-signature.ts";
-import { paystackDomainMatchesMode, paystackEnvironmentIsValid } from "../_shared/paystack-environment.ts";
+import { isTestPaystackDomain, isTestPaystackKey } from "../_shared/paystack-environment.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const paystackSecretKey = Deno.env.get("PAYSTACK_SECRET_KEY") ?? "";
-const paystackMode = Deno.env.get("PAYSTACK_MODE");
 const webhookSigningSecret = Deno.env.get("PAYSTACK_WEBHOOK_SECRET") ?? "";
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
-  if (!supabaseUrl || !serviceRoleKey || !paystackEnvironmentIsValid(paystackMode, paystackSecretKey) || paystackMode !== "test") {
+  if (!supabaseUrl || !serviceRoleKey || !isTestPaystackKey(paystackSecretKey)) {
     console.error("Paystack webhook is missing required server configuration.");
     return json({ error: "Webhook is not configured." }, 503);
   }
@@ -26,7 +25,7 @@ Deno.serve(async (request) => {
     })) return json({ error: "Invalid Paystack signature." }, 401);
 
     const event = JSON.parse(new TextDecoder().decode(rawBody));
-    if (!paystackDomainMatchesMode(event?.data?.domain, "test")) {
+    if (!isTestPaystackDomain(event?.data?.domain)) {
       console.error("Rejected Paystack webhook from an unexpected or missing transaction domain.");
       return json({ error: "Paystack transaction environment mismatch." }, 409);
     }
@@ -73,7 +72,7 @@ Deno.serve(async (request) => {
     }
 
     const verified = verification.data;
-    if (!paystackDomainMatchesMode(verified.domain, "test")) {
+    if (!isTestPaystackDomain(verified.domain)) {
       console.error("Rejected Paystack verification response from an unexpected or missing transaction domain.", reference);
       return json({ received: true, requires_review: true, reason: "paystack_environment_mismatch" }, 409);
     }
