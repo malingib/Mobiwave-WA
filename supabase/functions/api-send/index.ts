@@ -28,6 +28,9 @@ Deno.serve(async (request) => {
     if (!apiKey || apiKey.revoked_at || (apiKey.expires_at && new Date(apiKey.expires_at).getTime() < Date.now()) || !apiKey.scopes?.includes("messages:send")) {
       return json({ error: "API key is invalid, expired, revoked or lacks permission." }, 401);
     }
+    const { data: rateAllowed, error: rateError } = await admin.rpc("claim_tenant_api_rate_limit", { p_api_key_id: apiKey.id, p_limit: 120 });
+    if (rateError) return json({ error: "Request limits could not be verified." }, 503);
+    if (rateAllowed !== true) return json({ error: "This API key has exceeded 120 requests per minute." }, 429);
 
     const tenantId = apiKey.tenant_id;
     const feature = await checkTenantFeature(admin, tenantId, "api");
