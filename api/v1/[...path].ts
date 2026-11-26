@@ -17,6 +17,9 @@ export default async function handler(request: Request): Promise<Response> {
   if (!backendUrl) return reply({ ok: false, error: { code: "SERVICE_UNAVAILABLE", message: "MobiWave API is not configured." } }, 503);
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\/v1\/?/, "").replace(/\/$/, "");
+  if ((request.method === "POST" || request.method === "PATCH") && !(request.headers.get("content-type") ?? "").toLowerCase().includes("application/json")) {
+    return reply({ ok: false, error: { code: "UNSUPPORTED_CONTENT_TYPE", message: "Content-Type must be application/json." } }, 415);
+  }
   if (!path) return reply({ ok: true, data: { name: "MobiWave Developer API", version: "v1" } }, 200);
   const auth = request.headers.get("authorization");
   const apiKey = request.headers.get("x-api-key");
