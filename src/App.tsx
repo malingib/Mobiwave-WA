@@ -25,7 +25,8 @@ import { Brand, Empty, Modal, PageHeading, SetupRow, Status, useConfirm } from "
 // webhook). The webhook is served by the Vercel edge function deployed on the
 // production domain, so it must never be derived from window.location.origin —
 // doing so would show http://localhost:5173/... during local development.
-const PUBLIC_APP_ORIGIN = (import.meta.env.VITE_APP_URL || "https://wap.mobiwave.co.ke").replace(/\/+$/, "");
+const PUBLIC_APP_ORIGIN = "https://wap.mobiwave.co.ke";
+const PUBLIC_API_BASE_URL = `${PUBLIC_APP_ORIGIN}/api/v1`;
 const META_WEBHOOK_CALLBACK_URL = `${PUBLIC_APP_ORIGIN}/api/webhooks/whatsapp`;
 
 type View = "Overview" | "Inbox" | "Contacts" | "Templates" | "Campaigns" | "Alerts" | "Integrations" | "Billing" | "Team" | "Usage" | "Profile" | "Settings";
@@ -1899,11 +1900,11 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           <p className="muted small">Webhook verification uses the Meta App Secret saved in this business account's WhatsApp connection. Each client account keeps its own app secret alongside its own access token and webhook verification token.</p>
         </div>
         {tierFeatureAvailable("api") && <div className="panel form-panel" id="integration-api">
-          <h2>Developer API</h2><p className="muted small">Use business-account-scoped keys for server-to-server integrations. Never put API keys in browser code or public repositories.</p>
+          <h2>Developer API</h2><p className="muted small">Use business-account-scoped keys for server-to-server integrations. Never put API keys in browser code or public repositories.</p><p className="muted small">API base URL: <code>{PUBLIC_API_BASE_URL}</code> · <a href="/api-docs/" target="_blank" rel="noreferrer">Read API documentation and code examples <ArrowUpRight size={13}/></a></p>
           {isAdmin&&<form onSubmit={createApiKey} className="api-key-create"><div className="field"><label htmlFor="api-key-name">Key name</label><input id="api-key-name" value={apiKeyName} onChange={(e)=>setApiKeyName(e.target.value)} required minLength={2} maxLength={120}/></div><button className="primary-button" disabled={busy}><Plus size={15}/> Create API key</button></form>}
           {newApiKey&&<div className="new-key-box"><strong>Copy your new key now</strong><code>{newApiKey}</code><button className="secondary-button" onClick={()=>void copyApiKey()}>Copy key</button><small>It will disappear if you refresh or leave this screen.</small></div>}
           <div className="api-key-list">{apiKeys.length===0?<p className="muted small">No API keys created.</p>:apiKeys.map(key=><div className="api-key-row" key={key.id}><div><strong>{key.name}</strong><code>{key.key_prefix}…</code><small>Created {new Date(key.created_at).toLocaleDateString()} · {key.last_used_at?"Last used "+new Date(key.last_used_at).toLocaleString():"Not used yet"}{key.expires_at?" · Expires "+new Date(key.expires_at).toLocaleDateString():""}</small></div><Status status={key.revoked_at?"revoked":"active"}/>{isAdmin&&!key.revoked_at&&<button className="secondary-button compact" onClick={()=>void revokeApiKey(key)}>Revoke</button>}</div>)}</div>
-          <div className="api-example"><strong>Send an approved template</strong><pre>{`POST ${window.location.origin.replace(/\/$/,"")}/api/v1/messages/send
+          <div className="api-example"><strong>Send an approved template</strong><pre>{`POST ${PUBLIC_API_BASE_URL}/messages/send
 X-API-Key: YOUR_MOBIWAVE_API_KEY
 Idempotency-Key: YOUR_UNIQUE_REQUEST_KEY
 Content-Type: application/json
