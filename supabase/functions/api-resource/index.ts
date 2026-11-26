@@ -124,9 +124,10 @@ Deno.serve(async (request) => {
         if (priorContactError) throw priorContactError;
         const consent = body.consent_status ?? priorContact?.consent_status ?? "unknown";
         if (!["unknown", "opted_in", "opted_out"].includes(consent)) return fail(422, "INVALID_CONSENT", "consent_status must be unknown, opted_in or opted_out.");
+        if (body.consent_status === "unknown" && priorContact && priorContact.consent_status !== "unknown") return fail(422, "CONSENT_RESET_NOT_ALLOWED", "Use the explicit opt-out consent endpoint to withdraw recorded permission.");
         if (body.consent_status !== undefined && consent !== "unknown" && !String(body.consent_source ?? "").trim()) return fail(422, "CONSENT_SOURCE_REQUIRED", "Record the source of consent.");
         const now = new Date().toISOString();
-        const consentChanged = Boolean(body.consent_status !== undefined && priorContact?.consent_status !== consent);
+        const consentChanged = Boolean(body.consent_status !== undefined && (priorContact?.consent_status !== consent || priorContact?.consent_source !== body.consent_source));
         const { data, error } = await admin.from("contacts").upsert({
           tenant_id: tenantId, phone_e164: body.phone,
           display_name: body.name === undefined ? (priorContact?.display_name ?? null) : String(body.name).slice(0, 160),
