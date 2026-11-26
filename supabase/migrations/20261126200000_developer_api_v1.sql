@@ -29,6 +29,9 @@ declare
   v_window timestamptz := date_trunc('minute', now());
   v_count integer;
 begin
+  if extract(minute from now())::integer % 10 = 0 then
+    delete from public.tenant_api_rate_limits where window_started_at < now() - interval '1 day';
+  end if;
   insert into public.tenant_api_rate_limits(api_key_id, window_started_at, request_count)
   values (p_api_key_id, v_window, 1)
   on conflict (api_key_id, window_started_at)
