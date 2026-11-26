@@ -25,11 +25,10 @@ export default async function handler(request: Request): Promise<Response> {
   const apiKey = request.headers.get("x-api-key");
   if (!auth && !apiKey) return reply({ ok: false, error: { code: "UNAUTHENTICATED", message: "A MobiWave API key is required." } }, 401);
   let body: ArrayBuffer | undefined;
-  if (request.method !== "GET" && request.method !== "HEAD") {
+  if (request.method === "POST" || request.method === "PATCH") {
     body = await request.arrayBuffer();
     if (!body.byteLength || body.byteLength > 128 * 1024) return reply({ ok: false, error: { code: "INVALID_BODY_SIZE", message: "Request body must be between 1 byte and 128 KiB." } }, 413);
   }
-  const isUnifiedSend = false;
   const upstreamPath = "api-resource";
   const target = new URL("/functions/v1/" + upstreamPath, backendUrl);
   target.searchParams.set("path", path);
