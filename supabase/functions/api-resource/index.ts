@@ -77,7 +77,7 @@ Deno.serve(async (request) => {
     if (method === "POST" || method === "PATCH") {
       const rawBody = await request.text();
       if (new TextEncoder().encode(rawBody).byteLength > 131072) return fail(413, "REQUEST_TOO_LARGE", "Request body exceeds the 128 KiB limit.");
-      try { body = JSON.parse(rawBody); } catch { return fail(400, "INVALID_JSON", "Request body must be valid JSON."); }
+      try { body = rawBody.trim() ? JSON.parse(rawBody) : {}; } catch { return fail(400, "INVALID_JSON", "Request body must be valid JSON."); }
     }
     if ((method === "POST" || method === "PATCH") && (!body || typeof body !== "object" || Array.isArray(body)))
       return fail(400, "INVALID_JSON", "A valid JSON object is required.");
