@@ -20,6 +20,7 @@ Deno.serve(async (request) => {
     const tenantId = String(body.tenant_id ?? ""), to = String(body.to ?? "");
     const idempotencyKey = String(request.headers.get("idempotency-key") ?? body.idempotency_key ?? "");
     const type = ["template", "text", "image", "document", "audio", "video"].includes(String(body.type)) ? String(body.type) : "invalid";
+    if (type === "invalid") return json({ error: "Unsupported message type." }, 422);
     if (!tenantId || !/^\+[1-9][0-9]{7,14}$/.test(to)) return json({ error: "A tenant_id and E.164 recipient phone number are required." }, 400);
     if (!/^[A-Za-z0-9._:-]{8,200}$/.test(idempotencyKey)) return json({ error: "Provide a stable Idempotency-Key (8–200 letters, numbers, or . _ : -) and reuse it only for this send operation." }, 400);
     if (actor) await requireTenantRole(admin, tenantId, actor.userId, ["owner", "admin", "agent"]);
