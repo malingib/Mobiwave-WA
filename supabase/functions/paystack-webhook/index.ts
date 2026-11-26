@@ -25,6 +25,9 @@ Deno.serve(async (request) => {
     })) return json({ error: "Invalid Paystack signature." }, 401);
 
     const event = JSON.parse(new TextDecoder().decode(rawBody));
+    if (event.event !== "charge.failed" && event.event !== "charge.success") {
+      return json({ received: true, ignored: true });
+    }
     if (!isTestPaystackDomain(event?.data?.domain)) {
       console.error("Rejected Paystack webhook from an unexpected or missing transaction domain.");
       return json({ error: "Paystack transaction environment mismatch." }, 409);
