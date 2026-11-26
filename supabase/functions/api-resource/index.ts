@@ -17,7 +17,7 @@ const scopes: Record<string, string> = {
   campaigns: "campaigns:read",
 };
 const writeScopes: Record<string, string> = {
-  contacts: "contacts:write", campaigns: "campaigns:write",
+  contacts: "contacts:write", campaigns: "campaigns:write", messages: "messages:send",
 };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 async function sha256(value: string) {
@@ -155,6 +155,49 @@ Deno.serve(async (request) => {
       if (error) throw error;
       if (id && !data?.length) return fail(404, "TEMPLATE_NOT_FOUND", "Template not found.");
       return json({ ok: true, data: id ? data[0] : data, ...(id ? {} : { pagination: { limit, offset, total: count ?? 0 } }) });
+    }
+
+    if (resource === "messages" && method === "POST") {
+      const type = String(body.type ?? "");
+      if (!["template", "text", "image", "document", "audio", "video"].includes(type))
+        return fail(422, "UNSUPPORTED_MESSAGE_TYPE", "Supported message types are template, text, image, document, audio and video.");
+      if (!phone(body.to)) return fail(422, "INVALID_RECIPIENT", "to must be an E.164 phone number.");
+      const idempotencyKey = request.headers.get("idempotency-key")?.trim() ?? "";
+      if (!/^[A-Za-z0-9._:-]{8,200}$/.test(idempotencyKey)) return fail(400, "IDEMPOTENCY_KEY_REQUIRED", "Provide an Idempotency-Key header between 8 and 200 letters, numbers, . _ : -.");
+      const { data: contact, error: contactError } = await admin.from("contacts").select("id,consent_status").eq("tenant_id", tenantId).eq("phone_e164", body.to).maybeSingle();
+      if (contactError) throw contactError;
+      if (!contact) return fail(404, "CONTACT_NOT_FOUND", "Recipient must exist in this workspace's contacts.");
+      if (contact.consent_status !== "opted_in") return fail(403, "CONSENT_REQUIRED", "The recipient must have recorded opt-in consent before API messaging.");
+      const internalToken = Deno.env.get("INTERNAL_FUNCTION_TOKEN");
+      if (!internalToken) return fail(503, "MESSAGING_NOT_CONFIGURED", "The messaging service is not available for API requests.");
+      const outbound: Record<string, unknown> = { tenant_id: tenantId, to: body.to, type };
+      if (type === "template") {
+        const template = body.template && typeof body.template === "object" ? body.template : {};
+        outbound.template_name = template.name;
+        outbound.language_code = template.language ?? "en";
+        outbound.components = Array.isArray(template.components) ? template.components :
+          (Array.isArray(template.parameters) && template.parameters.length ? [{ type: "body", parameters: template.parameters.map((value: unknown) => ({ type: "text", text: String(value) })) }] : []);
+      } else if (type === "text") {
+        const textBody = typeof body.text === "string" ? body.text : body.text?.body;
+        if (typeof textBody !== "string" || !textBody.trim()) return fail(422, "INVALID_MESSAGE", "text.body is required.");
+        outbound.text = textBody;
+      } else {
+        const media = body[type] && typeof body[type] === "object" ? body[type] : {};
+        if (typeof media.link !== "string") return fail(422, "INVALID_MEDIA", type + ".link is required.");
+        let mediaUrl: URL;
+        try { mediaUrl = new URL(media.link); } catch { return fail(422, "INVALID_MEDIA_URL", "Media link must be a valid HTTPS URL."); }
+        if (mediaUrl.protocol !== "https:" || mediaUrl.username || mediaUrl.password) return fail(422, "INVALID_MEDIA_URL", "Media link must be a public HTTPS URL.");
+        outbound[type] = { link: media.link, ...(media.caption ? { caption: String(media.caption).slice(0, 1024) } : {}), ...(media.filename ? { filename: String(media.filename).slice(0, 255) } : {}) };
+      }
+      const upstream = await fetch(new URL("/functions/v1/meta-send", Deno.env.get("SUPABASE_URL")!).toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Internal-Token": internalToken, "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(outbound),
+        signal: AbortSignal.timeout(22000),
+      });
+      const result = await upstream.json().catch(() => ({}));
+      if (!upstream.ok) return fail(upstream.status, result.error_code ?? "MESSAGE_SEND_FAILED", result.error ?? "The message could not be submitted.", { status: result.status ?? null });
+      return json({ ok: true, data: { message_id: result.message_id, status: result.status ?? "accepted", type, to: body.to }, meta: { idempotent_replay: result.idempotent_replay ?? false, persistence_warning: result.persistence_warning ?? false } }, 202);
     }
 
     if (resource === "messages" && method === "GET") {
