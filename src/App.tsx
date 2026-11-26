@@ -719,7 +719,7 @@ export default function App() {
         supabase.from("campaigns").select("id,name,status,created_at,scheduled_at,template_id,template_parameters").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
         supabase.from("conversations").select("id,status,assigned_to,last_message_at,contacts!conversations_contact_same_tenant_fk(display_name,phone_e164)").eq("tenant_id", tenantId).order("last_message_at", { ascending: false }).limit(100),
         supabase.from("meta_integrations").select("phone_number_id,waba_id,display_phone_number,verified,enabled,verified_name,last_error_code,last_health_check_at,webhook_verified_at,waba_timezone,messaging_limit_tier,quality_rating").eq("tenant_id", tenantId).maybeSingle(),
-        supabase.from("tenant_api_keys").select("id,name,key_prefix,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+        supabase.from("tenant_api_keys").select("id,client_id,name,key_prefix,scopes,last_used_at,expires_at,revoked_at,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
         supabase.from("tenant_webhooks").select("id,name,endpoint_url,events,enabled,last_delivery_at,last_status,last_error,created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       ]), "Loading workspace");
       if (requestId !== workspaceRequestId.current) return;
