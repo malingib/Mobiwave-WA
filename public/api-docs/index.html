@@ -2,197 +2,149 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MobiWave WA Developer API</title>
-<meta name="description" content="MobiWave WA API documentation: authenticate, send approved WhatsApp templates, handle idempotency and verify event webhooks.">
+<title>MobiWave Developer API v1</title>
+<meta name="description" content="MobiWave WhatsApp Developer API documentation, authentication, endpoints and code examples.">
 <style>
-:root{color-scheme:light;--ink:#17212b;--muted:#637080;--line:#e2e7ec;--soft:#f5f7f9;--brand:#087e78}*{box-sizing:border-box}body{margin:0;background:#fff;color:var(--ink);font:15px/1.65 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}header{border-bottom:1px solid var(--line);padding:18px max(24px,calc((100% - 1040px)/2));display:flex;align-items:center;justify-content:space-between}header a,.back{color:var(--brand);text-decoration:none;font-weight:650}.wrap{max-width:1040px;margin:0 auto;padding:42px 24px 80px}h1{font-size:38px;line-height:1.15;letter-spacing:-1.1px;margin:0 0 12px}h2{font-size:23px;margin:42px 0 12px}h3{font-size:17px;margin:25px 0 8px}.lead{font-size:17px;color:var(--muted);max-width:760px}.meta{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}.pill{border:1px solid var(--line);border-radius:999px;padding:4px 11px;font-size:12px;color:var(--muted)}code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}code{font-size:.92em}pre{overflow:auto;background:#111b24;color:#e8f0f5;padding:18px;border-radius:8px;font-size:13px;line-height:1.6}p{margin:8px 0 14px}.muted{color:var(--muted)}.callout{border-left:3px solid var(--brand);background:var(--soft);padding:12px 16px;margin:18px 0}.endpoint{display:inline-block;background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:8px 12px;font-weight:650}table{width:100%;border-collapse:collapse;margin:12px 0 22px}td,th{text-align:left;padding:10px;border-bottom:1px solid var(--line);vertical-align:top}th{font-size:13px;color:var(--muted)}nav{display:flex;gap:14px;flex-wrap:wrap;margin:26px 0}nav a{color:var(--brand)}footer{border-top:1px solid var(--line);padding-top:20px;color:var(--muted);margin-top:60px;font-size:13px}@media(max-width:600px){.wrap{padding:30px 18px 60px}h1{font-size:31px}header{padding:16px 18px}}
-</style>
-</head>
+:root{color-scheme:light;--ink:#17231f;--muted:#65736d;--line:#e1e8e4;--soft:#f5f8f6;--brand:#0b7655;--dark:#102c23}
+*{box-sizing:border-box}body{margin:0;background:#fff;color:var(--ink);font:15px/1.65 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+header{background:var(--dark);color:#fff;padding:28px max(24px,calc((100% - 1120px)/2));}header a{color:#bce8d6;text-decoration:none}header h1{font-size:28px;line-height:1.2;margin:18px 0 8px}header p{color:#d3e3dc;margin:0;max-width:650px}.version{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#bce8d6}
+main{max-width:1120px;margin:32px auto;padding:0 24px;display:grid;grid-template-columns:220px minmax(0,1fr);gap:48px}nav{position:sticky;top:24px;align-self:start;border-right:1px solid var(--line);padding-right:18px}nav a{display:block;color:var(--muted);text-decoration:none;padding:5px 0;font-size:13px}nav a:hover{color:var(--brand)}article{min-width:0}h2{font-size:22px;margin:34px 0 10px;line-height:1.3}h3{font-size:17px;margin:24px 0 8px}p{margin:8px 0 14px}.muted{color:var(--muted)}.endpoint{display:inline-block;border:1px solid var(--line);border-radius:6px;padding:3px 8px;font:600 12px ui-monospace,monospace;color:var(--brand);background:var(--soft)}code{font:13px ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--soft);padding:2px 5px;border-radius:4px}pre{overflow:auto;background:#10231c;color:#e7f2ec;border-radius:9px;padding:16px;font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}pre code{background:none;color:inherit;padding:0}table{border-collapse:collapse;width:100%;margin:12px 0 20px;font-size:13px}th,td{text-align:left;border-bottom:1px solid var(--line);padding:9px 10px;vertical-align:top}th{background:var(--soft);font-weight:650}.callout{border-left:3px solid var(--brand);background:var(--soft);padding:12px 15px;margin:16px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.panel{border:1px solid var(--line);border-radius:9px;padding:14px}.panel h3{margin-top:0}.base{font:14px ui-monospace,monospace;background:var(--soft);padding:12px;border-radius:8px;overflow-wrap:anywhere}footer{max-width:1120px;margin:30px auto;padding:20px 24px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+@media(max-width:760px){main{display:block;margin:20px auto}nav{position:static;border:0;border-bottom:1px solid var(--line);padding:0 0 14px;margin-bottom:24px;display:grid;grid-template-columns:1fr 1fr}header h1{font-size:24px}.grid{grid-template-columns:1fr}}
+</style></head>
 <body>
-<header><strong>MobiWave WA <span class="muted">/ Developers</span></strong><a href="/dashboard/integrations">Back to Integrations</a></header>
-<main class="wrap">
-<a class="back" href="/dashboard/integrations">← Integrations</a>
-<h1>Developer API</h1>
-<p class="lead">Send approved WhatsApp template messages from your server using a workspace-scoped MobiWave API key. The public API runs on the MobiWave WA domain; provider infrastructure remains internal.</p>
-<div class="meta"><span class="pill">HTTPS only</span><span class="pill">JSON</span><span class="pill">Server-to-server</span><span class="pill">WhatsApp Cloud API</span></div>
-<nav><a href="#quickstart">Quick start</a><a href="#auth">Authentication</a><a href="#request">Send message</a><a href="#examples">Code examples</a><a href="#idempotency">Idempotency</a><a href="#errors">Errors</a><a href="#webhooks">Webhooks</a></nav>
-<h2 id="quickstart">Quick start</h2>
-<ol><li>In MobiWave WA, open <strong>Integrations → Developer API</strong>.</li><li>Create a workspace API key. The full key is displayed once; copy it immediately and store it in your server-side secret manager.</li><li>Ensure the recipient exists in the workspace contacts with recorded opt-in consent.</li><li>Sync an approved WhatsApp template from Meta and use its exact name and language code.</li><li>Send a request to the endpoint below.</li></ol>
-<div class="callout"><strong>Keep your key private.</strong> Never embed it in browser JavaScript, a mobile app, source control, or client-visible HTML. Revoke a key immediately if it is exposed.</div>
-<h2 id="auth">Base URL and authentication</h2>
-<p>Base URL</p><div class="endpoint">https://wap.mobiwave.co.ke/api/v1</div>
-<p>Send the API key in the <code>X-API-Key</code> header. Bearer authorization is also accepted.</p>
-<pre>X-API-Key: mw_live_YOUR_SECRET_KEY
-Content-Type: application/json
-Idempotency-Key: YOUR_UNIQUE_REQUEST_ID</pre>
-<p>Keys are scoped to one workspace and require the <code>messages:send</code> permission. Expired or revoked keys are rejected. The raw key is stored as a hash and cannot be retrieved after creation.</p>
-<h2 id="request">Send an approved template</h2>
-<p><span class="endpoint">POST https://wap.mobiwave.co.ke/api/v1/messages/send</span></p>
-<pre>{
-  "to": "+2547XXXXXXXX",
-  "template_name": "approved_template",
-  "language_code": "en",
-  "components": []
-}</pre>
-<p><code>to</code> must be an E.164 phone number. <code>template_name</code> and <code>language_code</code> must match a template synchronized from Meta and marked approved. For templates with variables, pass the required Meta template components and parameters.</p>
-<h3>Template with a body variable</h3>
-<pre>{
+<header><a href="/">MobiWave WA</a><div class="version">Developer documentation · API v1</div><h1>WhatsApp Developer API</h1><p>Integrate official WhatsApp messaging, contacts, templates, message history and campaigns into your applications using one secure MobiWave API.</p></header>
+<main><nav>
+<a href="#start">Getting started</a><a href="#auth">Authentication</a><a href="#messages">Send messages</a><a href="#contacts">Contacts & consent</a><a href="#templates">Templates</a><a href="#history">Message history</a><a href="#campaigns">Campaigns</a><a href="#webhooks">Webhooks</a><a href="#errors">Errors & limits</a><a href="#examples">Code examples</a><a href="#meta">Meta callback</a>
+</nav><article>
+<section id="start"><h2>Getting started</h2><p>All API requests use the branded production base URL:</p><div class="base">https://wap.mobiwave.co.ke/api/v1</div><p>Keep API keys in a server-side secret manager. Never expose them in browser code or a public repository.</p></section>
+<section id="auth"><h2>Authentication</h2><p>Create an integration key under <b>Workspace → Integrations → Developer API</b>. Each key has a Client ID, integration name and explicit permissions. The secret is displayed once.</p><pre><code>Authorization: Bearer mw_live_YOUR_SECRET</code></pre><p>You may alternatively use <code>X-API-Key</code>. The Client ID is an identifier, not a credential. Every request is tenant-scoped to the workspace that owns the key.</p><h3>Scopes</h3><p><code>messages:send</code> · <code>messages:read</code> · <code>contacts:read</code> · <code>contacts:write</code> · <code>templates:read</code> · <code>campaigns:read</code> · <code>campaigns:write</code></p></section>
+<section id="messages"><h2>Send messages</h2><p><span class="endpoint">POST</span> <code>/messages</code> — unified send endpoint. Supported types: template, text, image, document, audio and video.</p><p>Include <code>Idempotency-Key</code> on every send. Reuse the same key and same body after an uncertain outcome.</p><h3>Template</h3><pre><code>{
   "to": "+254712345678",
-  "template_name": "order_update",
-  "language_code": "en",
-  "components": [
-    {
-      "type": "body",
-      "parameters": [
-        { "type": "text", "text": "Jane" },
-        { "type": "text", "text": "MW-1042" }
-      ]
-    }
-  ]
-}</pre>
-<p class="muted">The parameter order and types must match the approved template definition in Meta.</p>
-<h2 id="examples">Code examples</h2>
-<h3>cURL</h3>
-<pre>curl --request POST \
-  --url https://wap.mobiwave.co.ke/api/v1/messages/send \
-  --header "X-API-Key: $MOBIWAVE_API_KEY" \
-  --header "Idempotency-Key: order-MW-1042-update-v1" \
-  --header "Content-Type: application/json" \
-  --data '{
-    "to": "+254712345678",
-    "template_name": "order_update",
-    "language_code": "en",
-    "components": []
-  }'</pre>
-<h3>JavaScript (Node.js 18+)</h3>
-<pre>const response = await fetch(
-  "https://wap.mobiwave.co.ke/api/v1/messages/send",
-  {
-    method: "POST",
-    headers: {
-      "X-API-Key": process.env.MOBIWAVE_API_KEY,
-      "Idempotency-Key": "order-MW-1042-update-v1",
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      to: "+254712345678",
-      template_name: "order_update",
-      language_code: "en",
-      components: []
-    })
+  "type": "template",
+  "template": {
+    "name": "order_update",
+    "language": "en",
+    "parameters": ["Jane", "MW-1042"]
   }
-);
-
+}</code></pre><h3>Text (inside Meta's 24-hour customer-service window)</h3><pre><code>{
+  "to": "+254712345678",
+  "type": "text",
+  "text": { "body": "Your order has been dispatched." }
+}</code></pre><h3>Image or document</h3><pre><code>{
+  "to": "+254712345678",
+  "type": "image",
+  "image": {
+    "link": "https://cdn.example.com/product.jpg",
+    "caption": "Your product is ready."
+  }
+}</code></pre><p>Document, audio and video use their respective object with a publicly accessible HTTPS <code>link</code>. Meta validates media formats, sizes and availability.</p><div class="callout">Recipients must exist in the workspace and have recorded opt-in consent. Text and media are subject to the 24-hour customer-service window. Templates must be Meta-approved.</div><h3>Accepted response</h3><pre><code>{
+  "ok": true,
+  "data": {
+    "message_id": "wamid.example",
+    "status": "accepted",
+    "type": "template",
+    "to": "+254712345678"
+  },
+  "meta": {
+    "idempotent_replay": false,
+    "persistence_warning": false
+  }
+}</code></pre><p>Accepted means Meta accepted the submission, not that the recipient received it.</p><h3>Legacy compatibility</h3><p><span class="endpoint">POST</span> <code>/messages/send</code> remains available for existing template-only integrations using <code>template_name</code>, <code>language_code</code> and <code>components</code>.</p></section>
+<section id="contacts"><h2>Contacts and consent</h2><table><tr><th>Method</th><th>Endpoint</th><th>Scope</th></tr><tr><td>GET</td><td>/contacts</td><td>contacts:read</td></tr><tr><td>POST</td><td>/contacts</td><td>contacts:write</td></tr><tr><td>GET</td><td>/contacts/{id}</td><td>contacts:read</td></tr><tr><td>PATCH</td><td>/contacts/{id}</td><td>contacts:write</td></tr><tr><td>DELETE</td><td>/contacts/{id}</td><td>contacts:write</td></tr><tr><td>POST</td><td>/contacts/{id}/consent</td><td>contacts:write</td></tr><tr><td>GET</td><td>/contacts/{id}/consent</td><td>contacts:read</td></tr></table><h3>Create or upsert a contact</h3><pre><code>{
+  "phone": "+254712345678",
+  "name": "Jane Doe",
+  "consent_status": "opted_in",
+  "consent_source": "Website checkout checkbox",
+  "metadata": { "customer_ref": "C-1042" }
+}</code></pre><h3>Record consent change</h3><pre><code>{
+  "status": "opted_out",
+  "source": "Customer request via support"
+}</code></pre><p>Consent changes are audited with previous and new status, source, timestamp and API key. A source is required. Deleting a contact also deletes its linked records.</p></section>
+<section id="templates"><h2>Templates</h2><p><span class="endpoint">GET</span> <code>/templates</code> and <span class="endpoint">GET</span> <code>/templates/{id}</code> require <code>templates:read</code>. Templates are synchronised from the connected Meta WhatsApp Business Account. Only approved templates can be sent.</p></section>
+<section id="history"><h2>Message history</h2><p><span class="endpoint">GET</span> <code>/messages</code> and <span class="endpoint">GET</span> <code>/messages/{meta_message_id}</code> require <code>messages:read</code>. Lists are newest first.</p></section>
+<section id="campaigns"><h2>Campaigns</h2><table><tr><th>Method</th><th>Endpoint</th><th>Scope</th></tr><tr><td>POST</td><td>/campaigns</td><td>campaigns:write</td></tr><tr><td>GET</td><td>/campaigns</td><td>campaigns:read</td></tr><tr><td>GET</td><td>/campaigns/{id}</td><td>campaigns:read</td></tr><tr><td>POST</td><td>/campaigns/{id}/start</td><td>campaigns:write</td></tr><tr><td>POST</td><td>/campaigns/{id}/pause</td><td>campaigns:write</td></tr><tr><td>POST</td><td>/campaigns/{id}/cancel</td><td>campaigns:write</td></tr></table><h3>Create a campaign</h3><pre><code>{
+  "name": "November order updates",
+  "template_id": "00000000-0000-4000-8000-000000000000",
+  "contact_ids": [
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002"
+  ],
+  "scheduled_at": "2026-12-01T08:00:00+03:00"
+}</code></pre><p><code>scheduled_at</code> is optional and must be in the future. Campaigns use approved templates and explicit contact IDs. Every recipient must belong to the same workspace and be opted in. Existing batch limits, quota controls and uncertain-outcome protections remain active.</p></section>
+<section id="webhooks"><h2>Customer webhooks</h2><p>Configure customer webhooks under <b>Integrations → Customer webhooks</b>. This is separate from Meta's inbound callback. Current events: <code>message.inbound</code>, <code>message.status</code>, <code>message.outbound</code>, <code>campaign.completed</code>.</p><p>Verify <code>X-MobiWave-Signature</code> as <code>sha256=&lt;hex&gt;</code> HMAC-SHA256 over the exact raw JSON body. Deduplicate using <code>X-MobiWave-Delivery</code>. Failed deliveries are retried with backoff.</p></section>
+<section id="errors"><h2>Errors and limits</h2><p>Structured errors use this format:</p><pre><code>{
+  "ok": false,
+  "error": {
+    "code": "INVALID_RECIPIENT",
+    "message": "to must be an E.164 phone number.",
+    "details": null
+  }
+}</code></pre><table><tr><th>Status</th><th>Meaning</th></tr><tr><td>400</td><td>Invalid request</td></tr><tr><td>401</td><td>Invalid API key</td></tr><tr><td>403</td><td>Missing scope, feature or consent</td></tr><tr><td>404</td><td>Resource not found</td></tr><tr><td>409</td><td>Conflict or idempotency issue</td></tr><tr><td>413</td><td>Body exceeds 128 KiB</td></tr><tr><td>422</td><td>Validation failure</td></tr><tr><td>429</td><td>120 requests/minute per key or usage limit</td></tr><tr><td>500–504</td><td>Server or provider error</td></tr></table><p>List endpoints accept <code>limit</code> (1–100, default 50) and <code>offset</code> (default 0).</p></section>
+<section id="examples"><h2>Code examples</h2><p>Store the key in <code>MOBIWAVE_API_KEY</code>.</p><h3>cURL</h3><pre><code>curl https://wap.mobiwave.co.ke/api/v1/messages \
+  -X POST \
+  -H "Authorization: Bearer $MOBIWAVE_API_KEY" \
+  -H "Idempotency-Key: order-1042-message-v1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "+254712345678",
+    "type": "template",
+    "template": {
+      "name": "order_update",
+      "language": "en",
+      "parameters": ["Jane", "MW-1042"]
+    }
+  }'</code></pre><h3>JavaScript (Node.js 18+)</h3><pre><code>const response = await fetch("https://wap.mobiwave.co.ke/api/v1/messages", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${process.env.MOBIWAVE_API_KEY}`,
+    "Idempotency-Key": "order-1042-message-v1",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    to: "+254712345678",
+    type: "template",
+    template: { name: "order_update", language: "en", parameters: ["Jane", "MW-1042"] }
+  })
+});
 const result = await response.json();
-if (!response.ok) {
-  throw new Error(result.error || `MobiWave API error: ${response.status}`);
-}
-console.log(result);</pre>
-<h3>Python (requests)</h3>
-<pre>import os
-import requests
+if (!response.ok) throw new Error(result.error?.message ?? `API error: ${response.status}`);
+console.log(result.data);</code></pre><h3>Python</h3><pre><code>import os, requests
 
 response = requests.post(
-    "https://wap.mobiwave.co.ke/api/v1/messages/send",
+    "https://wap.mobiwave.co.ke/api/v1/messages",
     headers={
-        "X-API-Key": os.environ["MOBIWAVE_API_KEY"],
-        "Idempotency-Key": "order-MW-1042-update-v1",
+        "Authorization": f"Bearer {os.environ['MOBIWAVE_API_KEY']}",
+        "Idempotency-Key": "order-1042-message-v1",
     },
     json={
         "to": "+254712345678",
-        "template_name": "order_update",
-        "language_code": "en",
-        "components": [],
+        "type": "template",
+        "template": {"name": "order_update", "language": "en", "parameters": ["Jane", "MW-1042"]},
     },
     timeout=30,
 )
 response.raise_for_status()
-print(response.json())</pre>
-<h3>PHP (cURL)</h3>
-<pre>&lt;?php
-$payload = [
-  "to" =&gt; "+254712345678",
-  "template_name" =&gt; "order_update",
-  "language_code" =&gt; "en",
-  "components" =&gt; [],
+print(response.json()["data"])</code></pre><h3>PHP (cURL)</h3><pre><code>$payload = [
+  "to" => "+254712345678",
+  "type" => "template",
+  "template" => ["name" => "order_update", "language" => "en", "parameters" => ["Jane", "MW-1042"]],
 ];
-
-$ch = curl_init("https://wap.mobiwave.co.ke/api/v1/messages/send");
+$ch = curl_init("https://wap.mobiwave.co.ke/api/v1/messages");
 curl_setopt_array($ch, [
-  CURLOPT_POST =&gt; true,
-  CURLOPT_RETURNTRANSFER =&gt; true,
-  CURLOPT_HTTPHEADER =&gt; [
-    "X-API-Key: " . getenv("MOBIWAVE_API_KEY"),
-    "Idempotency-Key: order-MW-1042-update-v1",
+  CURLOPT_POST => true,
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_HTTPHEADER => [
+    "Authorization: Bearer " . getenv("MOBIWAVE_API_KEY"),
+    "Idempotency-Key: order-1042-message-v1",
     "Content-Type: application/json",
   ],
-  CURLOPT_POSTFIELDS =&gt; json_encode($payload),
+  CURLOPT_POSTFIELDS => json_encode($payload),
 ]);
 $body = curl_exec($ch);
 $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-if ($body === false || $status &lt; 200 || $status &gt;= 300) {
-  throw new RuntimeException("MobiWave API request failed: " . curl_error($ch));
-}
+if ($body === false || $status < 200 || $status >= 300) throw new RuntimeException("MobiWave API request failed: " . curl_error($ch));
 curl_close($ch);
-echo $body;</pre>
-<h2 id="idempotency">Idempotency and retries</h2>
-<p>Every send requires an <code>Idempotency-Key</code> between 8 and 200 characters. Generate a stable unique value for each logical send (for example, an order ID plus message purpose). If the network times out or the result is uncertain, retry the exact same request with the same key and same body. Do not create a new key to retry an uncertain request: doing so could submit a second message.</p>
-<p>Reusing a key with a different request body is rejected. A successful API response means Meta accepted the message for processing; it does not mean the recipient's device has received it. Delivery status is updated from Meta webhook events.</p>
-<h2 id="responses">Responses</h2>
-<p>Successful submission returns JSON similar to:</p>
-<pre>{
-  "ok": true,
-  "message_id": "wamid...",
-  "status": "sent_to_meta"
-}</pre>
-<p>Always treat the HTTP status as authoritative and parse the response body. Store the returned message ID for support and reconciliation.</p>
-<h2 id="errors">HTTP errors</h2>
-<table><thead><tr><th>Status</th><th>Meaning / action</th></tr></thead><tbody>
-<tr><td><code>400</code></td><td>Invalid recipient, template name, JSON, or idempotency key. Correct the request.</td></tr>
-<tr><td><code>401</code></td><td>Missing, invalid, expired, revoked, or insufficiently scoped API key. Create or replace the key.</td></tr>
-<tr><td><code>403</code></td><td>API feature unavailable, recipient lacks recorded opt-in, or template is not approved. Check plan, consent, and template status.</td></tr>
-<tr><td><code>409</code></td><td>Official Meta Cloud API connection is not enabled for this workspace.</td></tr>
-<tr><td><code>413</code></td><td>Request body exceeds the 128 KiB API limit.</td></tr>
-<tr><td><code>429</code></td><td>Configured monthly workspace message limit reached.</td></tr>
-<tr><td><code>502</code></td><td>Meta rejected the request or the provider outcome needs reconciliation. Do not blindly send again with a new key.</td></tr>
-<tr><td><code>503</code></td><td>Plan access or usage state could not be verified. No message may have been submitted; follow the returned error guidance.</td></tr>
-<tr><td><code>504</code></td><td>Provider outcome is unknown. Reconcile and retry only with the same idempotency key and body.</td></tr>
-</tbody></table>
-<h2 id="webhooks">Customer event webhooks</h2>
-<p>Workspace administrators can configure customer event destinations under <strong>Integrations → Advanced: customer event webhooks</strong>. These are separate from the Meta callback: customer webhooks send MobiWave events to your application. Destinations must use HTTPS, standard port 443, and a public DNS hostname.</p>
-<p>Supported event subscriptions include <code>message.inbound</code>, <code>message.status</code>, <code>message.outbound</code>, <code>conversation.updated</code>, and <code>campaign.completed</code>. Each delivery body is JSON in this shape:</p>
-<pre>{
-  "id": "delivery-uuid",
-  "type": "message.status",
-  "created_at": "2026-11-26T12:00:00.000Z",
-  "data": {}
-}</pre>
-<p>Headers include <code>X-MobiWave-Event</code>, <code>X-MobiWave-Delivery</code>, <code>X-MobiWave-Signature</code>, and <code>Idempotency-Key</code>. The signature is <code>sha256=</code> followed by the lowercase hex HMAC-SHA256 of the exact raw request body using the signing secret shown once when the webhook is created.</p>
-<h3>Verify a webhook signature (Node.js)</h3>
-<pre>import crypto from "node:crypto";
-
-function verifyMobiWaveWebhook(rawBody, signature, secret) {
-  const expected = "sha256=" + crypto
-    .createHmac("sha256", secret)
-    .update(rawBody)
-    .digest("hex");
-
-  const received = Buffer.from(signature || "");
-  const expectedBuffer = Buffer.from(expected);
-  return received.length === expectedBuffer.length &&
-    crypto.timingSafeEqual(received, expectedBuffer);
-}
-
-// In your HTTP handler, use the raw request bytes/string:
-// const rawBody = await readRawBody(request);
-// const valid = verifyMobiWaveWebhook(
-//   rawBody,
-//   request.headers.get("x-mobiwave-signature"),
-//   process.env.MOBIWAVE_WEBHOOK_SECRET
-// );
-// if (!valid) return new Response("Invalid signature", { status: 401 });</pre>
-<p>Verify the signature against the exact raw body before parsing JSON. Deduplicate deliveries using <code>X-MobiWave-Delivery</code> or the body <code>id</code>; webhook handlers should return a 2xx response promptly after safely accepting the event. Failed deliveries are retried with backoff, up to the platform's retry limit.</p>
-<h2>Operational notes</h2>
-<ul><li>Only official Meta WhatsApp Cloud API connectivity is supported.</li><li>Only approved template messages are supported by this public API; it is not an arbitrary message relay.</li><li>Recipients must exist in the same workspace and have recorded opt-in consent.</li><li>Message usage is metered per workspace.</li><li>Never share API keys or webhook signing secrets with frontend code or untrusted parties.</li></ul>
-<footer>MobiWave WA Developer Documentation · API base: https://wap.mobiwave.co.ke/api/v1</footer>
-</main></body></html>
+echo $body;</code></pre></section>
+<section id="meta"><h2>Meta callback</h2><p>Configure Meta's webhook callback URL as <code>https://wap.mobiwave.co.ke/api/webhooks/whatsapp</code>. Use the verification token from Integrations → Meta connection and subscribe to <code>messages</code> and <code>message_template_status_update</code>.</p><div class="callout">MobiWave uses the official Meta WhatsApp Cloud API. Meta policies, approved template requirements, customer-service windows, account limits and message charges continue to apply. Never call internal Supabase function URLs directly.</div></section>
+</article></main><footer>© 2026 MobiWave Innovations Ltd · <a href="https://wap.mobiwave.co.ke" style="color:var(--brand)">wap.mobiwave.co.ke</a></footer>
+</body></html>
