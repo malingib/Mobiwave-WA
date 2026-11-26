@@ -70,5 +70,9 @@ jobs:
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/mobiwave_test
         run: bash .github/scripts/test-outbound-idempotency-postgres.sh
+      - name: Test Paystack invoice settlement and webhook idempotency
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/mobiwave_test
+        run: bash .github/scripts/test-paystack-settlement-postgres.sh
       - name: Type-check Supabase Edge Functions
         run: deno check supabase/functions/*/index.ts
