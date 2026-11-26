@@ -26,9 +26,14 @@ Deno.serve(async (request) => {
     const token = "mw_live_" + base64url(random);
     const secretHash = await hash(token);
     const prefix = token.slice(0, 16);
+    const allowedScopes = ["messages:send", "messages:read", "contacts:read", "contacts:write", "templates:read", "campaigns:read", "campaigns:write"];
+    const requestedScopes = Array.isArray(body.scopes) ? [...new Set(body.scopes.filter((scope: unknown) => typeof scope === "string" && allowedScopes.includes(scope as string)))] : ["messages:send"];
+    if (!requestedScopes.length || requestedScopes.length !== (Array.isArray(body.scopes) ? new Set(body.scopes).size : 1)) return json({ error: "One or more API scopes are invalid." }, 400);
+    const expiresAt = body.expires_at ? new Date(String(body.expires_at)) : null;
+    if (expiresAt && (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() <= Date.now())) return json({ error: "expires_at must be a valid future timestamp." }, 400);
     const { data, error } = await auth.admin.from("tenant_api_keys").insert({
-      tenant_id: tenantId, name, key_prefix: prefix, secret_hash: secretHash, scopes: ["messages:send"], created_by: auth.userId,
-    }).select("id,name,key_prefix,created_at").single();
+      tenant_id: tenantId, name, key_prefix: prefix, secret_hash: secretHash, scopes: requestedScopes, expires_at: expiresAt?.toISOString() ?? null, created_by: auth.userId,
+    }).select("id,client_id,name,key_prefix,scopes,expires_at,created_at").single();
     if (error) throw error;
     return json({ ok: true, api_key: token, key: data, warning: "Copy this key now. The raw secret is never stored or shown again." });
   } catch (error) {
