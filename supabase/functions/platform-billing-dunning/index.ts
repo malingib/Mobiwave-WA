@@ -138,7 +138,7 @@ async function deliverEmail(
 ): Promise<void> {
   const recipient = [invoice.billing_email_snapshot, currentBillingEmail]
     .map((email) => (email ?? "").trim())
-    .find((email) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) ?? "";
+    .find((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) ?? "";
   if (!recipient) {
     console.warn("[platform-billing-dunning] email skipped: invoice has no valid billing email", invoice.invoice_number);
     return;
@@ -263,7 +263,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
 
   const invoiceIds = invoices.map((invoice: Invoice) => invoice.id);
   const tenantIds = [...new Set(invoices.map((invoice: Invoice) => invoice.tenant_id))];
-  const [paymentsResult, itemsResult, tenantsResult, subscriptionsResult, accountsResult] = await Promise.all([
+  const [paymentsResult, itemsResult, tenantsResult, subscriptionsResult, accountsResult, ownerMembersResult] = await Promise.all([
     supabase.from("platform_invoice_payments").select("invoice_id,amount_minor,reversed_at").in("invoice_id", invoiceIds),
     supabase.from("platform_invoice_items").select("invoice_id,description").in("invoice_id", invoiceIds),
     supabase.from("tenants").select("id,is_demo,billing_exempt").in("id", tenantIds),
@@ -292,7 +292,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
   const billingEmailByTenant = new Map<string, string>();
   for (const account of accountsResult.data ?? []) {
     const email = String((account as any).billing_email ?? "").trim();
-    if (/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       billingEmailByTenant.set((account as any).tenant_id, email);
     }
   }
@@ -309,7 +309,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     }
     const user = data.user;
     const email = (user?.email ?? "").trim();
-    if (!user?.email_confirmed_at || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return;
+    if (!user?.email_confirmed_at || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
     const emails = verifiedOwnerEmails.get(member.tenant_id) ?? new Set<string>();
     emails.add(email);
     verifiedOwnerEmails.set(member.tenant_id, emails);
