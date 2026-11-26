@@ -52,7 +52,7 @@ const EVENT_COPY: Record<string, { title: string; body: string; severity: string
   },
   grace_final: {
     title: "Final notice: subscription suspension tomorrow",
-    body: "Invoice {{invoice_number}} remains unpaid. Your 2-day grace period ends tomorrow; pay the outstanding balance to avoid suspension.",
+    body: "Invoice {{invoice_number}} remains unpaid. Today is the final day of your 2-day grace period. Pay by the end of today to avoid suspension tomorrow.",
     severity: "critical",
   },
   suspended: {
