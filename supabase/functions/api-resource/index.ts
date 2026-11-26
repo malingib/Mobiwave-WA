@@ -318,6 +318,7 @@ Deno.serve(async (request) => {
         if (currentError) throw currentError;
         if (!currentCampaign) return fail(404, "CAMPAIGN_NOT_FOUND", "Campaign not found.");
         if (!["draft", "paused", "running"].includes(currentCampaign.status)) return fail(409, "CAMPAIGN_STATE_CONFLICT", "This campaign cannot be started from its current state.");
+        if (currentCampaign.status === "running") return json({ ok: true, data: { id, status: "already_running" } }, 202);
         const now = new Date().toISOString();
         const patch: Record<string, unknown> = { scheduled_at: now, updated_at: now };
         if (currentCampaign.status === "paused") patch.status = "running";
