@@ -69,8 +69,16 @@ main{max-width:1120px;margin:32px auto;padding:0 24px;display:grid;grid-template
     "00000000-0000-4000-8000-000000000001",
     "00000000-0000-4000-8000-000000000002"
   ],
+  "template_parameters": [
+    {
+      "type": "body",
+      "parameters": [
+        { "type": "text", "text": "Jane" }
+      ]
+    }
+  ],
   "scheduled_at": "2026-12-01T08:00:00+03:00"
-}</code></pre><p><code>scheduled_at</code> is optional and must be in the future. Campaigns use approved templates and explicit contact IDs. Every recipient must belong to the same workspace and be opted in. The start action queues an eligible draft or paused campaign for the existing worker; it does not hold the API request open while a batch sends. Existing batch limits, quota controls and uncertain-outcome protections remain active.</p></section>
+}</code></pre><p><code>template_parameters</code> is optional; variable templates use the Meta components array. <code>scheduled_at</code> is optional and must be in the future. Campaigns use approved templates and explicit contact IDs. Every recipient must belong to the same workspace and be opted in. The start action queues an eligible draft or paused campaign for the existing worker; it does not hold the API request open while a batch sends. Existing batch limits, quota controls and uncertain-outcome protections remain active.</p></section>
 <section id="webhooks"><h2>Customer webhooks</h2><p>Configure customer webhooks under <b>Integrations → Customer webhooks</b>. This is separate from Meta's inbound callback. Current events: <code>message.inbound</code>, <code>message.status</code>, <code>message.outbound</code>, <code>campaign.completed</code>.</p><p>Verify <code>X-MobiWave-Signature</code> as <code>sha256=&lt;hex&gt;</code> HMAC-SHA256 over the exact raw JSON body. Deduplicate using <code>X-MobiWave-Delivery</code>. Failed deliveries are retried with backoff.</p></section>
 <section id="errors"><h2>Errors and limits</h2><p>Structured errors use this format:</p><pre><code>{
   "ok": false,
