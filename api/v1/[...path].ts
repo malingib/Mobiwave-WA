@@ -27,7 +27,7 @@ export default async function handler(request: Request): Promise<Response> {
   let body: ArrayBuffer | undefined;
   if (request.method === "POST" || request.method === "PATCH") {
     body = await request.arrayBuffer();
-    if (!body.byteLength || body.byteLength > 128 * 1024) return reply({ ok: false, error: { code: "INVALID_BODY_SIZE", message: "Request body must be between 1 byte and 128 KiB." } }, 413);
+    if (body.byteLength > 128 * 1024) return reply({ ok: false, error: { code: "INVALID_BODY_SIZE", message: "Request body must not exceed 128 KiB." } }, 413);
   }
   const upstreamPath = "api-resource";
   const target = new URL("/functions/v1/" + upstreamPath, backendUrl);
