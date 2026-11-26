@@ -49,7 +49,7 @@ Use an idempotency key for every message submission. It must contain 8–200 cha
 
 `POST /messages`
 
-The unified endpoint accepts the following Meta Cloud API message types: `template`, `text`, `image`, `document`, `audio`, and `video`. All recipients must exist in the workspace contact list and have recorded opt-in consent. Free-form text and media are allowed only inside Meta's 24-hour customer-service window. Template messages require an approved template.
+The unified endpoint accepts `template`, `otp`, `text`, `image`, `document`, `audio`, and `video` message types. All recipients must exist in the workspace contact list and have recorded opt-in consent. Free-form text and media are allowed only inside Meta's 24-hour customer-service window. Template messages require an approved template.
 
 Template:
 
@@ -78,6 +78,22 @@ For simple body-only templates, `parameters` may be supplied instead of `compone
   }
 }
 ```
+
+OTP (client-generated code):
+
+```json
+{
+  "to": "+254712345678",
+  "type": "otp",
+  "otp": "482913",
+  "template": {
+    "name": "login_code",
+    "language": "en"
+  }
+}
+```
+
+Your application generates, expires and verifies the code. MobiWave only delivers it. The named template must be approved by Meta in the `AUTHENTICATION` category. MobiWave inserts the supplied code into the authentication template body and OTP button parameters. The code is redacted from the persisted outbound attempt payload. No OTP generation or verification service is provided.
 
 Text:
 
@@ -251,6 +267,8 @@ Customer webhooks are configured in **Integrations → Customer webhooks**. This
 - `message.status`
 - `message.outbound`
 - `campaign.completed`
+
+Inbound customer messages are persisted in message history and emitted as `message.inbound`. Your application can reply through the same `POST /messages` endpoint using `type: "text"` while Meta’s 24-hour customer-service window is open, or an approved template outside that window.
 
 Each delivery includes `X-MobiWave-Event`, `X-MobiWave-Delivery` and `X-MobiWave-Signature`. The signature is `sha256=<hex>` HMAC-SHA256 over the exact raw JSON body. Verify the signature before parsing the payload and deduplicate using the delivery ID. Failed deliveries are retried with backoff; exhausted deliveries enter the dead state and can be retried from the dashboard.
 

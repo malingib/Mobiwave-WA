@@ -18,7 +18,7 @@ main{max-width:1120px;margin:32px auto;padding:0 24px;display:grid;grid-template
 </nav><article>
 <section id="start"><h2>Getting started</h2><p>All API requests use the branded production base URL:</p><div class="base">https://wap.mobiwave.co.ke/api/v1</div><p>Keep API keys in a server-side secret manager. Never expose them in browser code or a public repository.</p></section>
 <section id="auth"><h2>Authentication</h2><p>Create an integration key under <b>Workspace → Integrations → Developer API</b>. Each key has a Client ID, integration name and explicit permissions. The secret is displayed once.</p><pre><code>Authorization: Bearer mw_live_YOUR_SECRET</code></pre><p>You may alternatively use <code>X-API-Key</code>. The Client ID is an identifier, not a credential. Every request is tenant-scoped to the workspace that owns the key.</p><p><span class="endpoint">GET</span> <code>/health</code> checks API availability. <span class="endpoint">GET</span> <code>/me</code> returns this key's Client ID, integration name and scopes.</p><h3>Scopes</h3><p><code>messages:send</code> · <code>messages:read</code> · <code>contacts:read</code> · <code>contacts:write</code> · <code>templates:read</code> · <code>campaigns:read</code> · <code>campaigns:write</code></p></section>
-<section id="messages"><h2>Send messages</h2><p><span class="endpoint">POST</span> <code>/messages</code> — unified send endpoint. Supported types: template, text, image, document, audio and video.</p><p>Include <code>Idempotency-Key</code> on every send. Reuse the same key and same body after an uncertain outcome.</p><h3>Template</h3><pre><code>{
+<section id="messages"><h2>Send messages</h2><p><span class="endpoint">POST</span> <code>/messages</code> — unified send endpoint. Supported types: template, otp, text, image, document, audio and video.</p><p>Include <code>Idempotency-Key</code> on every send. Reuse the same key and same body after an uncertain outcome.</p><h3>Template</h3><pre><code>{
   "to": "+254712345678",
   "type": "template",
   "template": {
@@ -26,7 +26,15 @@ main{max-width:1120px;margin:32px auto;padding:0 24px;display:grid;grid-template
     "language": "en",
     "parameters": ["Jane", "MW-1042"]
   }
-}</code></pre><h3>Text (inside Meta's 24-hour customer-service window)</h3><pre><code>{
+}</code></pre><h3>OTP (client-generated code)</h3><pre><code>{
+  "to": "+254712345678",
+  "type": "otp",
+  "otp": "482913",
+  "template": {
+    "name": "login_code",
+    "language": "en"
+  }
+}</code></pre><p>Your application generates, expires and verifies the code. MobiWave only delivers it using a Meta-approved <code>AUTHENTICATION</code> template. The code is inserted into the template body and OTP button. MobiWave does not generate or verify OTPs and redacts the code from the persisted outbound attempt payload.</p><h3>Text (inside Meta's 24-hour customer-service window)</h3><pre><code>{
   "to": "+254712345678",
   "type": "text",
   "text": { "body": "Your order has been dispatched." }
@@ -79,7 +87,7 @@ main{max-width:1120px;margin:32px auto;padding:0 24px;display:grid;grid-template
   ],
   "scheduled_at": "2026-12-01T08:00:00+03:00"
 }</code></pre><p><code>template_parameters</code> is optional; variable templates use the Meta components array. <code>scheduled_at</code> is optional and must be in the future. Campaigns use approved templates and explicit contact IDs. Every recipient must belong to the same workspace and be opted in. The start action queues an eligible draft or paused campaign for the existing worker; it does not hold the API request open while a batch sends. Existing batch limits, quota controls and uncertain-outcome protections remain active.</p></section>
-<section id="webhooks"><h2>Customer webhooks</h2><p>Configure customer webhooks under <b>Integrations → Customer webhooks</b>. This is separate from Meta's inbound callback. Current events: <code>message.inbound</code>, <code>message.status</code>, <code>message.outbound</code>, <code>campaign.completed</code>.</p><p>Verify <code>X-MobiWave-Signature</code> as <code>sha256=&lt;hex&gt;</code> HMAC-SHA256 over the exact raw JSON body. Deduplicate using <code>X-MobiWave-Delivery</code>. Failed deliveries are retried with backoff.</p></section>
+<section id="webhooks"><h2>Customer webhooks</h2><p>Configure customer webhooks under <b>Integrations → Customer webhooks</b>. This is separate from Meta's inbound callback. Incoming messages are persisted and emitted as <code>message.inbound</code>. Reply through <code>POST /messages</code> with <code>type: "text"</code> during Meta's 24-hour customer-service window, or use an approved template outside it. Current events: <code>message.inbound</code>, <code>message.status</code>, <code>message.outbound</code>, <code>campaign.completed</code>.</p><p>Verify <code>X-MobiWave-Signature</code> as <code>sha256=&lt;hex&gt;</code> HMAC-SHA256 over the exact raw JSON body. Deduplicate using <code>X-MobiWave-Delivery</code>. Failed deliveries are retried with backoff.</p></section>
 <section id="errors"><h2>Errors and limits</h2><p>Structured errors use this format:</p><pre><code>{
   "ok": false,
   "error": {
