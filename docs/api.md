@@ -229,11 +229,19 @@ Create a campaign using an approved template and explicit contact IDs:
     "00000000-0000-4000-8000-000000000001",
     "00000000-0000-4000-8000-000000000002"
   ],
+  "template_parameters": [
+    {
+      "type": "body",
+      "parameters": [
+        { "type": "text", "text": "Jane" }
+      ]
+    }
+  ],
   "scheduled_at": "2026-12-01T08:00:00+03:00"
 }
 ```
 
-`scheduled_at` is optional and must be in the future. Scheduled campaigns remain drafts until their due time; the existing campaign worker starts them. The start action queues an eligible draft or paused campaign for the existing worker rather than running a long synchronous request. Every recipient must belong to the same workspace and have recorded opt-in consent. Existing campaign batch limits, quota checks, provider reconciliation and uncertain-outcome safeguards remain in force.
+`template_parameters` is optional; when the selected template has variables, supply the Meta components array. `scheduled_at` is optional and must be in the future. Scheduled campaigns remain drafts until their due time; the existing campaign worker starts them. The start action queues an eligible draft or paused campaign for the existing worker rather than running a long synchronous request. Every recipient must belong to the same workspace and have recorded opt-in consent. Existing campaign batch limits, quota checks, provider reconciliation and uncertain-outcome safeguards remain in force.
 
 ## Customer event webhooks
 
