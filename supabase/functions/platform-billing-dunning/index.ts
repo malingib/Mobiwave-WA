@@ -136,8 +136,10 @@ async function deliverEmail(
   outstandingMinor: number,
   currentBillingEmail?: string,
 ): Promise<void> {
-  const recipient = (invoice.billing_email_snapshot || currentBillingEmail || "").trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+  const recipient = [invoice.billing_email_snapshot, currentBillingEmail]
+    .map((email) => (email ?? "").trim())
+    .find((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) ?? "";
+  if (!recipient) {
     console.warn("[platform-billing-dunning] email skipped: invoice has no valid billing email", invoice.invoice_number);
     return;
   }
@@ -261,14 +263,15 @@ async function processDunning(dryRun: boolean, asOf?: string) {
 
   const invoiceIds = invoices.map((invoice: Invoice) => invoice.id);
   const tenantIds = [...new Set(invoices.map((invoice: Invoice) => invoice.tenant_id))];
-  const [paymentsResult, itemsResult, tenantsResult, subscriptionsResult, accountsResult] = await Promise.all([
+  const [paymentsResult, itemsResult, tenantsResult, subscriptionsResult, accountsResult, ownerMembersResult] = await Promise.all([
     supabase.from("platform_invoice_payments").select("invoice_id,amount_minor,reversed_at").in("invoice_id", invoiceIds),
     supabase.from("platform_invoice_items").select("invoice_id,description").in("invoice_id", invoiceIds),
     supabase.from("tenants").select("id,is_demo,billing_exempt").in("id", tenantIds),
     supabase.from("platform_customer_subscriptions").select("tenant_id,status,grace_ends_on,suspended_at,admin_override").in("tenant_id", tenantIds),
     supabase.from("platform_customer_accounts").select("tenant_id,billing_email").in("tenant_id", tenantIds),
+    supabase.from("tenant_members").select("tenant_id,user_id").eq("role", "owner").in("tenant_id", tenantIds),
   ]);
-  for (const result of [paymentsResult, itemsResult, tenantsResult, subscriptionsResult, accountsResult]) {
+  for (const result of [paymentsResult, itemsResult, tenantsResult, subscriptionsResult, accountsResult, ownerMembersResult]) {
     if (result.error) throw result.error;
   }
 
@@ -286,7 +289,37 @@ async function processDunning(dryRun: boolean, asOf?: string) {
   }
   const tenantById = new Map((tenantsResult.data ?? []).map((tenant: any) => [tenant.id, tenant]));
   const subscriptionByTenant = new Map((subscriptionsResult.data ?? []).map((subscription: Subscription) => [subscription.tenant_id, subscription]));
-  const billingEmailByTenant = new Map((accountsResult.data ?? []).map((account: any) => [account.tenant_id, account.billing_email]));
+  const billingEmailByTenant = new Map<string, string>();
+  for (const account of accountsResult.data ?? []) {
+    const email = String((account as any).billing_email ?? "").trim();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      billingEmailByTenant.set((account as any).tenant_id, email);
+    }
+  }
+
+  // Registration email is the billing contact of record. Only use an owner
+  // account whose email Supabase has explicitly confirmed; never send to an
+  // unverified address or guess from an arbitrary workspace member.
+  const verifiedOwnerEmails = new Map<string, Set<string>>();
+  await Promise.all((ownerMembersResult.data ?? []).map(async (member: any) => {
+    const { data, error } = await supabase.auth.admin.getUserById(member.user_id);
+    if (error) {
+      console.warn("[platform-billing-dunning] owner email lookup failed", member.tenant_id);
+      return;
+    }
+    const user = data.user;
+    const email = (user?.email ?? "").trim();
+    if (!user?.email_confirmed_at || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
+    const emails = verifiedOwnerEmails.get(member.tenant_id) ?? new Set<string>();
+    emails.add(email);
+    verifiedOwnerEmails.set(member.tenant_id, emails);
+  }));
+  for (const [tenantId, emails] of verifiedOwnerEmails) {
+    // Avoid choosing arbitrarily if a tenant has multiple distinct owner emails.
+    if (!billingEmailByTenant.has(tenantId) && emails.size === 1) {
+      billingEmailByTenant.set(tenantId, [...emails][0]);
+    }
+  }
 
   const eligible: Array<{ invoice: Invoice; outstanding: number; daysUntil: number; monthly: boolean }> = [];
   const eventsPlanned: Array<{ invoice_number: string; event_type: string; outstanding_minor: number }> = [];
