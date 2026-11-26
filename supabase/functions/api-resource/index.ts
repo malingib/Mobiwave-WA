@@ -87,6 +87,14 @@ Deno.serve(async (request) => {
     if (resource === "health" && method === "GET") return json({ ok: true, data: { version: "v1", status: "operational" } });
     if (resource === "me" && method === "GET") return json({ ok: true, data: { client_id: key.client_id, integration: key.name, scopes: key.scopes } });
 
+    if (!scopes[resource] && !writeScopes[resource]) return fail(404, "ENDPOINT_NOT_FOUND", "The requested API endpoint does not exist.");
+    const validShape = resource === "contacts"
+      ? parts.length === 1 || parts.length === 2 || (parts.length === 3 && action === "consent")
+      : resource === "messages" ? (method === "GET" ? parts.length <= 2 : parts.length === 1)
+      : resource === "templates" ? parts.length <= 2
+      : resource === "campaigns" ? (parts.length <= 2 || (parts.length === 3 && ["start", "pause", "cancel"].includes(action)))
+      : false;
+    if (!validShape) return fail(404, "ENDPOINT_NOT_FOUND", "The requested API endpoint does not exist.");
     const scope = method === "GET" ? scopes[resource] : writeScopes[resource];
     if (!scope || !Array.isArray(key.scopes) || !key.scopes.includes(scope))
       return fail(403, "INSUFFICIENT_SCOPE", "This API key does not have permission for this operation.", { required_scope: scope ?? null });
