@@ -302,7 +302,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     }
     const user = data.user;
     const email = user?.email?.trim() ?? "";
-    if (user?.email_confirmed_at && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+    if (user?.email_confirmed_at && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       ownerEmailByTenant.set(membership.tenant_id, email);
     }
   }));
