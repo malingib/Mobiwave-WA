@@ -277,7 +277,7 @@ Deno.serve(async (request) => {
       if (!id && method === "POST") {
         const name = String(body.name ?? "").trim();
         const templateId = String(body.template_id ?? "");
-        const contactIds = Array.isArray(body.contact_ids) ? [...new Set(body.contact_ids.filter((v: unknown): v is string => typeof v === "string" && uuid.test(v)))] : [];
+        const contactIds: string[] = Array.isArray(body.contact_ids) ? Array.from(new Set<string>((body.contact_ids as unknown[]).filter((v): v is string => typeof v === "string" && uuid.test(v)))) : [];
         const templateParameters = body.template_parameters === undefined ? [] : body.template_parameters;
         if (!Array.isArray(templateParameters)) return fail(422, "INVALID_TEMPLATE_PARAMETERS", "template_parameters must be a Meta template components array.");
         if (name.length < 1 || name.length > 180 || !uuid.test(templateId) || contactIds.length < 1 || contactIds.length > 5000)
