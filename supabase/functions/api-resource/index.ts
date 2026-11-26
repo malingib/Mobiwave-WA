@@ -50,6 +50,10 @@ Deno.serve(async (request) => {
     if (!key || key.revoked_at || (key.expires_at && new Date(key.expires_at).getTime() <= Date.now()))
       return fail(401, "INVALID_API_KEY", "The API key is invalid, expired or revoked.");
 
+    const apiFeature = await checkTenantFeature(admin, key.tenant_id, "api");
+    if (apiFeature.error) return fail(503, "PLAN_CHECK_FAILED", "Developer API plan access could not be verified.");
+    if (!apiFeature.allowed) return fail(403, "API_NOT_INCLUDED", "Developer API access is not included in this workspace plan.");
+
     const { data: rateAllowed, error: rateError } = await admin.rpc("claim_tenant_api_rate_limit", {
       p_api_key_id: key.id, p_limit: 120,
     });
