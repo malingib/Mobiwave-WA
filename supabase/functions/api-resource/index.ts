@@ -163,12 +163,13 @@ Deno.serve(async (request) => {
         const status = body.status;
         if (!["opted_in", "opted_out"].includes(status)) return fail(422, "INVALID_CONSENT", "status must be opted_in or opted_out.");
         if (!String(body.source ?? "").trim()) return fail(422, "CONSENT_SOURCE_REQUIRED", "A consent source is required.");
-        const { data: current, error: currentError } = await admin.from("contacts").select("consent_status").eq("tenant_id", tenantId).eq("id", id).single();
+        const { data: current, error: currentError } = await admin.from("contacts").select("consent_status,consent_at,opted_out_at").eq("tenant_id", tenantId).eq("id", id).single();
         if (currentError) throw currentError;
         const now = new Date().toISOString();
         const { data, error } = await admin.from("contacts").update({
           consent_status: status, consent_source: String(body.source).slice(0, 200),
-          consent_at: status === "opted_in" ? now : null, opted_out_at: status === "opted_out" ? now : null, updated_at: now,
+          consent_at: status === "opted_in" ? (current.consent_status === status ? current.consent_at : now) : null,
+          opted_out_at: status === "opted_out" ? (current.consent_status === status ? current.opted_out_at : now) : null, updated_at: now,
         }).eq("tenant_id", tenantId).eq("id", id).select("id,phone_e164,consent_status,consent_source,consent_at,opted_out_at").single();
         if (error) throw error;
         if (current.consent_status !== status) {
