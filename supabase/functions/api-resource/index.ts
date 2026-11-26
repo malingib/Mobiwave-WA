@@ -97,7 +97,9 @@ Deno.serve(async (request) => {
         if (!phone(body.phone)) return fail(422, "INVALID_RECIPIENT", "phone must be an E.164 number.");
         const consent = body.consent_status ?? "unknown";
         if (!["unknown", "opted_in", "opted_out"].includes(consent)) return fail(422, "INVALID_CONSENT", "consent_status must be unknown, opted_in or opted_out.");
-        if (consent === "opted_in" && (!String(body.consent_source ?? "").trim())) return fail(422, "CONSENT_SOURCE_REQUIRED", "Record the source of opt-in consent.");
+        if (consent !== "unknown" && !String(body.consent_source ?? "").trim()) return fail(422, "CONSENT_SOURCE_REQUIRED", "Record the source of consent.");
+        const { data: priorContact, error: priorContactError } = await admin.from("contacts").select("id,consent_status").eq("tenant_id", tenantId).eq("phone_e164", body.phone).maybeSingle();
+        if (priorContactError) throw priorContactError;
         const now = new Date().toISOString();
         const { data, error } = await admin.from("contacts").upsert({
           tenant_id: tenantId, phone_e164: body.phone, display_name: typeof body.name === "string" ? body.name.slice(0, 160) : null,
@@ -106,12 +108,25 @@ Deno.serve(async (request) => {
           metadata: body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata) ? body.metadata : {},
         }, { onConflict: "tenant_id,phone_e164" }).select("id,phone_e164,display_name,consent_status,consent_source,consent_at,opted_out_at,metadata,created_at,updated_at").single();
         if (error) throw error;
-        return json({ ok: true, data }, 201);
+        if (consent !== "unknown" && priorContact?.consent_status !== consent) {
+          const { error: auditError } = await admin.from("contact_consent_audit").insert({
+            tenant_id: tenantId, contact_id: data.id, api_key_id: key.id,
+            previous_status: priorContact?.consent_status ?? "unknown", new_status: consent,
+            source: String(body.consent_source).slice(0, 200),
+          });
+          if (auditError) throw auditError;
+        }
+        return json({ ok: true, data }, priorContact ? 200 : 201);
       }
       if (!uuid.test(id)) return fail(404, "CONTACT_NOT_FOUND", "Contact not found.");
       const { data: existing, error: lookupError } = await admin.from("contacts").select("id").eq("tenant_id", tenantId).eq("id", id).maybeSingle();
       if (lookupError) throw lookupError;
       if (!existing) return fail(404, "CONTACT_NOT_FOUND", "Contact not found.");
+      if (method === "GET" && action === "consent") {
+        const { data, error } = await admin.from("contact_consent_audit").select("id,previous_status,new_status,source,changed_at").eq("tenant_id", tenantId).eq("contact_id", id).order("changed_at", { ascending: false }).limit(100);
+        if (error) throw error;
+        return json({ ok: true, data });
+      }
       if (method === "GET") {
         const { data, error } = await admin.from("contacts").select("id,phone_e164,display_name,consent_status,consent_source,consent_at,opted_out_at,metadata,created_at,updated_at").eq("tenant_id", tenantId).eq("id", id).single();
         if (error) throw error;
@@ -138,12 +153,21 @@ Deno.serve(async (request) => {
         const status = body.status;
         if (!["opted_in", "opted_out"].includes(status)) return fail(422, "INVALID_CONSENT", "status must be opted_in or opted_out.");
         if (!String(body.source ?? "").trim()) return fail(422, "CONSENT_SOURCE_REQUIRED", "A consent source is required.");
+        const { data: current, error: currentError } = await admin.from("contacts").select("consent_status").eq("tenant_id", tenantId).eq("id", id).single();
+        if (currentError) throw currentError;
         const now = new Date().toISOString();
         const { data, error } = await admin.from("contacts").update({
           consent_status: status, consent_source: String(body.source).slice(0, 200),
           consent_at: status === "opted_in" ? now : null, opted_out_at: status === "opted_out" ? now : null, updated_at: now,
         }).eq("tenant_id", tenantId).eq("id", id).select("id,phone_e164,consent_status,consent_source,consent_at,opted_out_at").single();
         if (error) throw error;
+        if (current.consent_status !== status) {
+          const { error: auditError } = await admin.from("contact_consent_audit").insert({
+            tenant_id: tenantId, contact_id: id, api_key_id: key.id,
+            previous_status: current.consent_status, new_status: status, source: String(body.source).slice(0, 200),
+          });
+          if (auditError) throw auditError;
+        }
         return json({ ok: true, data });
       }
     }
@@ -228,7 +252,13 @@ Deno.serve(async (request) => {
         if (contactsError) throw contactsError;
         if ((contacts ?? []).length !== contactIds.length) return fail(422, "CONTACTS_NOT_FOUND", "One or more contacts do not belong to this workspace.");
         if (contacts!.some((c: any) => c.consent_status !== "opted_in")) return fail(403, "CONSENT_REQUIRED", "Every campaign recipient must have recorded opt-in consent.");
-        const { data: campaign, error } = await admin.from("campaigns").insert({ tenant_id: tenantId, name, template_id: templateId, status: "draft" }).select("id,name,status,template_id,created_at").single();
+        let scheduledAt: string | null = null;
+        if (body.scheduled_at !== undefined && body.scheduled_at !== null && body.scheduled_at !== "") {
+          const parsedSchedule = new Date(String(body.scheduled_at));
+          if (!Number.isFinite(parsedSchedule.getTime()) || parsedSchedule.getTime() <= Date.now()) return fail(422, "INVALID_SCHEDULE", "scheduled_at must be a valid future timestamp.");
+          scheduledAt = parsedSchedule.toISOString();
+        }
+        const { data: campaign, error } = await admin.from("campaigns").insert({ tenant_id: tenantId, name, template_id: templateId, status: "draft", scheduled_at: scheduledAt }).select("id,name,status,template_id,scheduled_at,created_at").single();
         if (error) throw error;
         const { error: recipientsError } = await admin.from("campaign_recipients").insert(contactIds.map((contact_id: string) => ({ tenant_id: tenantId, campaign_id: campaign.id, contact_id })));
         if (recipientsError) {
@@ -245,6 +275,17 @@ Deno.serve(async (request) => {
         const { count, error: countError } = await admin.from("campaign_recipients").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("campaign_id", id);
         if (countError) throw countError;
         return json({ ok: true, data: { ...campaign, recipient_count: count ?? 0 } });
+      }
+      if (method === "POST" && action === "start") {
+        const internalToken = Deno.env.get("INTERNAL_FUNCTION_TOKEN");
+        if (!internalToken) return fail(503, "CAMPAIGN_LAUNCH_UNAVAILABLE", "Campaign launch is not configured for API access.");
+        const launch = await fetch(new URL("/functions/v1/campaign-launch", Deno.env.get("SUPABASE_URL")!).toString(), {
+          method: "POST", headers: { "Content-Type": "application/json", "X-Internal-Token": internalToken },
+          body: JSON.stringify({ tenant_id: tenantId, campaign_id: id }), signal: AbortSignal.timeout(115000),
+        });
+        const result = await launch.json().catch(() => ({}));
+        if (!launch.ok) return fail(launch.status, "CAMPAIGN_LAUNCH_FAILED", result.error ?? "Campaign could not be started.");
+        return json({ ok: true, data: { id, status: result.status ?? "running", result } }, 202);
       }
       if (method === "POST" && ["pause", "cancel"].includes(action)) {
         const { data: status, error } = await admin.rpc("control_campaign", { p_tenant_id: tenantId, p_campaign_id: id, p_action: action });
