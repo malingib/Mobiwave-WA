@@ -243,12 +243,17 @@ Deno.serve(async (request) => {
         if (mediaUrl.protocol !== "https:" || mediaUrl.username || mediaUrl.password) return fail(422, "INVALID_MEDIA_URL", "Media link must be a public HTTPS URL.");
         outbound[type] = { link: media.link, ...(media.caption ? { caption: String(media.caption).slice(0, 1024) } : {}), ...(media.filename ? { filename: String(media.filename).slice(0, 255) } : {}) };
       }
-      const upstream = await fetch(new URL("/functions/v1/meta-send", Deno.env.get("SUPABASE_URL")!).toString(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Internal-Token": internalToken, "Idempotency-Key": idempotencyKey },
-        body: JSON.stringify(outbound),
-        signal: AbortSignal.timeout(22000),
-      });
+      let upstream: Response;
+      try {
+        upstream = await fetch(new URL("/functions/v1/meta-send", Deno.env.get("SUPABASE_URL")!).toString(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Internal-Token": internalToken, "Idempotency-Key": idempotencyKey },
+          body: JSON.stringify(outbound),
+          signal: AbortSignal.timeout(22000),
+        });
+      } catch {
+        return fail(504, "MESSAGE_OUTCOME_UNKNOWN", "MobiWave could not confirm the send outcome. Retry only with the same Idempotency-Key.", { status: "outcome_unknown", idempotency_key: idempotencyKey });
+      }
       const result = await upstream.json().catch(() => ({}));
       if (!upstream.ok) return fail(upstream.status, result.error_code ?? "MESSAGE_SEND_FAILED", result.error ?? "The message could not be submitted.", { status: result.status ?? null });
       return json({ ok: true, data: { message_id: result.message_id, status: result.status ?? "accepted", type, to: body.to }, meta: { idempotent_replay: result.idempotent_replay ?? false, persistence_warning: result.persistence_warning ?? false } }, 202);
