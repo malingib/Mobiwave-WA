@@ -4,8 +4,8 @@ import { timingSafeEqual } from "node:crypto";
 
 function authorized(provided: string | undefined, expected: string | undefined): boolean {
   if (!provided || !expected) return false;
-  const a = Buffer.from(provided);
-  const b = Buffer.from(expected);
+  const a = new Uint8Array(Buffer.from(provided));
+  const b = new Uint8Array(Buffer.from(expected));
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
