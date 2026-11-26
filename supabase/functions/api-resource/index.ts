@@ -253,6 +253,8 @@ Deno.serve(async (request) => {
         const name = String(body.name ?? "").trim();
         const templateId = String(body.template_id ?? "");
         const contactIds = Array.isArray(body.contact_ids) ? [...new Set(body.contact_ids.filter((v: unknown): v is string => typeof v === "string" && uuid.test(v)))] : [];
+        const templateParameters = body.template_parameters === undefined ? [] : body.template_parameters;
+        if (!Array.isArray(templateParameters)) return fail(422, "INVALID_TEMPLATE_PARAMETERS", "template_parameters must be a Meta template components array.");
         if (name.length < 1 || name.length > 180 || !uuid.test(templateId) || contactIds.length < 1 || contactIds.length > 5000)
           return fail(422, "INVALID_CAMPAIGN", "Provide a name, template_id and 1–5,000 contact_ids.");
         const { data: template, error: templateError } = await admin.from("wa_templates").select("id,meta_status").eq("tenant_id", tenantId).eq("id", templateId).maybeSingle();
@@ -268,7 +270,7 @@ Deno.serve(async (request) => {
           if (!Number.isFinite(parsedSchedule.getTime()) || parsedSchedule.getTime() <= Date.now()) return fail(422, "INVALID_SCHEDULE", "scheduled_at must be a valid future timestamp.");
           scheduledAt = parsedSchedule.toISOString();
         }
-        const { data: campaign, error } = await admin.from("campaigns").insert({ tenant_id: tenantId, name, template_id: templateId, template_parameters: body.template_parameters && typeof body.template_parameters === "object" && !Array.isArray(body.template_parameters) ? body.template_parameters : {}, status: "draft", scheduled_at: scheduledAt }).select("id,name,status,template_id,scheduled_at,created_at").single();
+        const { data: campaign, error } = await admin.from("campaigns").insert({ tenant_id: tenantId, name, template_id: templateId, template_parameters: templateParameters, status: "draft", scheduled_at: scheduledAt }).select("id,name,status,template_id,scheduled_at,created_at").single();
         if (error) throw error;
         const { error: recipientsError } = await admin.from("campaign_recipients").insert(contactIds.map((contact_id: string) => ({ tenant_id: tenantId, campaign_id: campaign.id, contact_id })));
         if (recipientsError) {
