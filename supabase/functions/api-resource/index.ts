@@ -63,6 +63,12 @@ Deno.serve(async (request) => {
     const id = parts[1] || "";
     const action = parts[2] || "";
     const method = request.method;
+    await admin.from("tenant_api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", key.id);
+    const { error: usageLogError } = await admin.from("usage_events").insert({
+      tenant_id: key.tenant_id, event_type: "api_request", quantity: 1, reference_id: key.id,
+      metadata: { client_id: key.client_id, method, resource: resource || "root" },
+    });
+    if (usageLogError) return fail(503, "USAGE_LOG_UNAVAILABLE", "API usage could not be recorded; no operation was performed.");
     const body = method === "POST" || method === "PATCH" ? await request.json().catch(() => null) : null;
     if ((method === "POST" || method === "PATCH") && (!body || typeof body !== "object" || Array.isArray(body)))
       return fail(400, "INVALID_JSON", "A valid JSON object is required.");
