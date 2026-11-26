@@ -26,8 +26,10 @@ async function sha256(value: string) {
 }
 function phone(value: unknown) { return typeof value === "string" && /^\+[1-9][0-9]{7,14}$/.test(value); }
 function pageParams(url: URL) {
-  const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") || 50)));
-  const offset = Math.max(0, Number(url.searchParams.get("offset") || 0));
+  const rawLimit = Number(url.searchParams.get("limit") || 50);
+  const rawOffset = Number(url.searchParams.get("offset") || 0);
+  const limit = Number.isFinite(rawLimit) ? Math.min(100, Math.max(1, Math.floor(rawLimit))) : 50;
+  const offset = Number.isFinite(rawOffset) ? Math.min(1_000_000, Math.max(0, Math.floor(rawOffset))) : 0;
   return { limit, offset };
 }
 Deno.serve(async (request) => {
