@@ -51,11 +51,13 @@ Success response:
 {
   "ok": true,
   "message_id": "wamid...",
-  "status": "sent_to_meta"
+  "status": "sent_to_meta",
+  "idempotent_replay": false,
+  "persistence_warning": false
 }
 ```
 
-This means Meta accepted the request; it is not a guarantee of delivery. Delivery/read/failure status is updated from Meta webhook events.
+This means Meta accepted the request; it is not a guarantee of delivery. Delivery/read/failure status is updated from Meta webhook events. The response can also include `idempotent_replay` and `persistence_warning`.
 
 ## Guardrails
 
@@ -101,3 +103,123 @@ https://wap.mobiwave.co.ke/api/webhooks/whatsapp
 ```
 
 Use the verification token generated in **Integrations → Meta connection**. Subscribe the WhatsApp Business Account to the `messages` and `message_template_status_update` webhook fields.
+
+## Code examples
+
+Keep the key in a server-side environment variable named `MOBIWAVE_API_KEY`.
+
+### cURL
+
+```bash
+curl --request POST \
+  --url https://wap.mobiwave.co.ke/api/v1/messages/send \
+  --header "X-API-Key: $MOBIWAVE_API_KEY" \
+  --header "Idempotency-Key: order-MW-1042-update-v1" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "to": "+254712345678",
+    "template_name": "order_update",
+    "language_code": "en",
+    "components": []
+  }'
+```
+
+### JavaScript (Node.js 18+)
+
+```js
+const response = await fetch(
+  "https://wap.mobiwave.co.ke/api/v1/messages/send",
+  {
+    method: "POST",
+    headers: {
+      "X-API-Key": process.env.MOBIWAVE_API_KEY,
+      "Idempotency-Key": "order-MW-1042-update-v1",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      to: "+254712345678",
+      template_name: "order_update",
+      language_code: "en",
+      components: []
+    })
+  }
+);
+const result = await response.json();
+if (!response.ok) throw new Error(result.error || `MobiWave API error: ${response.status}`);
+console.log(result);
+```
+
+### Python (requests)
+
+```python
+import os
+import requests
+
+response = requests.post(
+    "https://wap.mobiwave.co.ke/api/v1/messages/send",
+    headers={
+        "X-API-Key": os.environ["MOBIWAVE_API_KEY"],
+        "Idempotency-Key": "order-MW-1042-update-v1",
+    },
+    json={
+        "to": "+254712345678",
+        "template_name": "order_update",
+        "language_code": "en",
+        "components": [],
+    },
+    timeout=30,
+)
+response.raise_for_status()
+print(response.json())
+```
+
+### PHP (cURL)
+
+```php
+<?php
+$payload = [
+  "to" => "+254712345678",
+  "template_name" => "order_update",
+  "language_code" => "en",
+  "components" => [],
+];
+$ch = curl_init("https://wap.mobiwave.co.ke/api/v1/messages/send");
+curl_setopt_array($ch, [
+  CURLOPT_POST => true,
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_HTTPHEADER => [
+    "X-API-Key: " . getenv("MOBIWAVE_API_KEY"),
+    "Idempotency-Key: order-MW-1042-update-v1",
+    "Content-Type: application/json",
+  ],
+  CURLOPT_POSTFIELDS => json_encode($payload),
+]);
+$body = curl_exec($ch);
+$status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+if ($body === false || $status < 200 || $status >= 300) {
+  throw new RuntimeException("MobiWave API request failed: " . curl_error($ch));
+}
+curl_close($ch);
+echo $body;
+```
+
+## Webhook signature verification example (Node.js)
+
+Verify the exact raw request body before parsing JSON. The signing secret is shown only once when the customer webhook is created.
+
+```js
+import crypto from "node:crypto";
+
+function verifyMobiWaveWebhook(rawBody, signature, secret) {
+  const expected = "sha256=" + crypto
+    .createHmac("sha256", secret)
+    .update(rawBody)
+    .digest("hex");
+  const received = Buffer.from(signature || "");
+  const expectedBuffer = Buffer.from(expected);
+  return received.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(received, expectedBuffer);
+}
+```
+
+The interactive documentation is also published at [https://wap.mobiwave.co.ke/api-docs/](https://wap.mobiwave.co.ke/api-docs/).
