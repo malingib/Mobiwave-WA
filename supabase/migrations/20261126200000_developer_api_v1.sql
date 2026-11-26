@@ -41,3 +41,19 @@ revoke all on function public.claim_tenant_api_rate_limit(uuid, integer) from pu
 grant execute on function public.claim_tenant_api_rate_limit(uuid, integer) to service_role;
 
 -- Keep only recent rate-limit buckets; run opportunistically from API traffic.
+
+create table if not exists public.contact_consent_audit (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  api_key_id uuid references public.tenant_api_keys(id) on delete set null,
+  previous_status text not null check (previous_status in ('unknown','opted_in','opted_out')),
+  new_status text not null check (new_status in ('opted_in','opted_out')),
+  source text not null check (length(trim(source)) between 1 and 200),
+  changed_at timestamptz not null default now()
+);
+create index if not exists contact_consent_audit_tenant_contact_idx
+  on public.contact_consent_audit(tenant_id, contact_id, changed_at desc);
+alter table public.contact_consent_audit enable row level security;
+revoke all on public.contact_consent_audit from anon, authenticated;
+grant all on public.contact_consent_audit to service_role;
