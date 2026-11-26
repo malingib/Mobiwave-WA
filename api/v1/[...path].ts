@@ -26,10 +26,10 @@ export default async function handler(request: Request): Promise<Response> {
     body = await request.arrayBuffer();
     if (!body.byteLength || body.byteLength > 128 * 1024) return reply({ ok: false, error: { code: "INVALID_BODY_SIZE", message: "Request body must be between 1 byte and 128 KiB." } }, 413);
   }
-  const isUnifiedSend = path === "messages" && request.method === "POST";
-  const upstreamPath = isUnifiedSend ? "api-send" : "api-resource";
+  const isUnifiedSend = false;
+  const upstreamPath = "api-resource";
   const target = new URL("/functions/v1/" + upstreamPath, backendUrl);
-  if (!isUnifiedSend) target.searchParams.set("path", path);
+  target.searchParams.set("path", path);
   url.searchParams.forEach((value, key) => { if (key !== "path") target.searchParams.append(key, value); });
   const headers = new Headers({ "Content-Type": "application/json" });
   if (auth) headers.set("Authorization", auth);
@@ -37,20 +37,6 @@ export default async function handler(request: Request): Promise<Response> {
   for (const name of ["idempotency-key"]) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
-  }
-  if (isUnifiedSend) {
-    if (!request.headers.get("idempotency-key")) return reply({ ok: false, error: { code: "IDEMPOTENCY_KEY_REQUIRED", message: "Provide an Idempotency-Key header between 8 and 200 characters." } }, 400);
-    let parsed: any;
-    try { parsed = JSON.parse(new TextDecoder().decode(body)); } catch { return reply({ ok: false, error: { code: "INVALID_JSON", message: "Request body must be valid JSON." } }, 400); }
-    if (parsed.type !== "template") return reply({ ok: false, error: { code: "MESSAGE_TYPE_NOT_ENABLED", message: "The unified endpoint currently accepts template messages. Text and media message types will be enabled after their Meta policy, consent and idempotency tests pass." } }, 422);
-    const template = parsed.template ?? {};
-    body = new TextEncoder().encode(JSON.stringify({
-      to: parsed.to,
-      template_name: template.name,
-      language_code: template.language ?? "en",
-      components: Array.isArray(template.components) ? template.components :
-        (Array.isArray(template.parameters) && template.parameters.length ? [{ type: "body", parameters: template.parameters.map((text: unknown) => ({ type: "text", text: String(text) })) }] : []),
-    })).buffer;
   }
   try {
     const upstream = await fetch(target.toString(), {
