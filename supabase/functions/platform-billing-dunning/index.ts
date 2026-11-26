@@ -261,14 +261,15 @@ async function processDunning(dryRun: boolean, asOf?: string) {
 
   const invoiceIds = invoices.map((invoice: Invoice) => invoice.id);
   const tenantIds = [...new Set(invoices.map((invoice: Invoice) => invoice.tenant_id))];
-  const [paymentsResult, itemsResult, tenantsResult, subscriptionsResult, accountsResult] = await Promise.all([
+  const [paymentsResult, itemsResult, tenantsResult, subscriptionsResult, accountsResult, ownersResult] = await Promise.all([
     supabase.from("platform_invoice_payments").select("invoice_id,amount_minor,reversed_at").in("invoice_id", invoiceIds),
     supabase.from("platform_invoice_items").select("invoice_id,description").in("invoice_id", invoiceIds),
     supabase.from("tenants").select("id,is_demo,billing_exempt").in("id", tenantIds),
     supabase.from("platform_customer_subscriptions").select("tenant_id,status,grace_ends_on,suspended_at,admin_override").in("tenant_id", tenantIds),
     supabase.from("platform_customer_accounts").select("tenant_id,billing_email").in("tenant_id", tenantIds),
+    supabase.from("tenant_members").select("tenant_id,user_id,created_at").in("tenant_id", tenantIds).eq("role", "owner").order("created_at", { ascending: true }),
   ]);
-  for (const result of [paymentsResult, itemsResult, tenantsResult, subscriptionsResult, accountsResult]) {
+  for (const result of [paymentsResult, itemsResult, tenantsResult, subscriptionsResult, accountsResult, ownersResult]) {
     if (result.error) throw result.error;
   }
 
@@ -287,6 +288,30 @@ async function processDunning(dryRun: boolean, asOf?: string) {
   const tenantById = new Map((tenantsResult.data ?? []).map((tenant: any) => [tenant.id, tenant]));
   const subscriptionByTenant = new Map((subscriptionsResult.data ?? []).map((subscription: Subscription) => [subscription.tenant_id, subscription]));
   const billingEmailByTenant = new Map((accountsResult.data ?? []).map((account: any) => [account.tenant_id, account.billing_email]));
+
+  // The workspace owner's verified Supabase Auth email is the billing email
+  // when no explicit billing contact or invoice snapshot has been saved.
+  // Never fall back to an unverified address or a regular team member.
+  const ownerEmailByTenant = new Map<string, string>();
+  await Promise.all((ownersResult.data ?? []).map(async (membership: any) => {
+    if (ownerEmailByTenant.has(membership.tenant_id)) return;
+    const { data, error } = await supabase.auth.admin.getUserById(membership.user_id);
+    if (error) {
+      console.warn("[platform-billing-dunning] could not resolve verified workspace owner email");
+      return;
+    }
+    const user = data.user;
+    const email = user?.email?.trim() ?? "";
+    if (user?.email_confirmed_at && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+      ownerEmailByTenant.set(membership.tenant_id, email);
+    }
+  }));
+
+  const resolvedBillingEmailByTenant = new Map<string, string>();
+  for (const tenantId of tenantIds) {
+    const accountEmail = String(billingEmailByTenant.get(tenantId) ?? "").trim();
+    resolvedBillingEmailByTenant.set(tenantId, accountEmail || ownerEmailByTenant.get(tenantId) || "");
+  }
 
   const eligible: Array<{ invoice: Invoice; outstanding: number; daysUntil: number; monthly: boolean }> = [];
   const eventsPlanned: Array<{ invoice_number: string; event_type: string; outstanding_minor: number }> = [];
@@ -309,7 +334,7 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     if (daysUntil <= -2) events.push("grace_final");
     for (const eventType of events) {
       eventsPlanned.push({ invoice_number: invoice.invoice_number, event_type: eventType, outstanding_minor: outstanding });
-      if (!dryRun) await emitEvent(invoice, eventType, outstanding, billingEmailByTenant.get(invoice.tenant_id));
+      if (!dryRun) await emitEvent(invoice, eventType, outstanding, resolvedBillingEmailByTenant.get(invoice.tenant_id));
     }
   }
 
@@ -379,14 +404,14 @@ async function processDunning(dryRun: boolean, asOf?: string) {
     }
     if (nextStatus === "suspended") {
       if (subscription.status !== "suspended") suspensions++;
-      if (!dryRun) await emitEvent(row.invoice, "suspended", row.outstanding, billingEmailByTenant.get(row.invoice.tenant_id));
+      if (!dryRun) await emitEvent(row.invoice, "suspended", row.outstanding, resolvedBillingEmailByTenant.get(row.invoice.tenant_id));
     }
   }
 
   if (dryRun) {
     for (const event of eventsPlanned) {
       const invoice = eligible.find((row) => row.invoice.invoice_number === event.invoice_number)?.invoice;
-      const billingEmail = invoice ? (invoice.billing_email_snapshot || billingEmailByTenant.get(invoice.tenant_id) || "").trim() : "";
+      const billingEmail = invoice ? (invoice.billing_email_snapshot || resolvedBillingEmailByTenant.get(invoice.tenant_id) || "").trim() : "";
       if (invoice && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billingEmail)) emailsSkipped++;
     }
   }
