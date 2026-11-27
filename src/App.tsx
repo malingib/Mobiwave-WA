@@ -358,7 +358,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const { confirm, confirmElement } = useConfirm();
-  const noticeIsError = /(^could not\b|^failed\b|^error\b|^unable\b|^invalid\b|^not found\b|^not configured\b|^not allowed\b|\b(?:rejected|denied|unavailable|could not|cannot|not allowed|not configured|not found|invalid|permission denied|duplicate|violates|did not|was not|not confirmed|no changes|edge function returned|non-2xx|network|unauthorized|forbidden|bad request|conflict|request failed|function invocation failed|failed to|fetch error|internal server error)\b|\b[1-9]\d* failed\b)/i.test(notice);
+  const noticeIsError = /(^could not\b|^failed\b|^error\b|^unable\b|^invalid\b|^not found\b|^not configured\b|^not allowed\b|^a background request failed\b|\b(?:rejected|denied|unavailable|could not|cannot|not allowed|not configured|not found|invalid|permission denied|duplicate|violates|did not|was not|not confirmed|no changes|edge function returned|non-2xx|network|unauthorized|forbidden|bad request|conflict|request failed|function invocation failed|failed to|fetch error|internal server error)\b|\b[1-9]\d* failed\b)/i.test(notice);
   useEffect(() => {
     if (!notice) return;
     // Only messages that ask the user to *do* something stay on screen.
