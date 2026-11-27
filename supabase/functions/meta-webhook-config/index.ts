@@ -18,11 +18,13 @@ Deno.serve(async (request) => {
     if (!tenantId || !/^[A-Za-z0-9_-]{32,100}$/.test(token)) return json({ error: "A tenant and a valid generated verification token are required." }, 400);
     await requireTenantRole(auth.admin, tenantId, auth.userId, ["owner", "admin"]);
     // The webhook handshake can be configured before the phone credentials are saved.
-    // Upsert only the tenant ID and token hash so an existing active integration keeps
-    // its encrypted token, phone number, WABA, and verification state unchanged.
+    // Rotating the token invalidates the previous verification audit until Meta
+    // completes a new GET handshake with the replacement token.
     const { error } = await auth.admin.from("meta_integrations").upsert({
       tenant_id: tenantId,
       webhook_verify_token_hash: await sha256(token),
+      webhook_verified_at: null,
+      webhook_verification_source: null,
       updated_at: new Date().toISOString(),
     }, { onConflict: "tenant_id" });
     if (error) throw error;
