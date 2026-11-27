@@ -137,7 +137,7 @@ export default function PlatformBilling() {
   const customers = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return data.customers;
-    return data.customers.filter((item) => `${item.name} ${item.slug} ${item.billing_name} ${item.billing_email} ${item.tier_name ?? ""}`.toLowerCase().includes(term));
+    return data.customers.filter((item) => `${item.name} ${item.slug} ${item.billing_name} ${item.billing_email} ${item.registration_email ?? ""} ${item.tier_name ?? ""}`.toLowerCase().includes(term));
   }, [data.customers, search]);
   const openInvoices = data.invoices.filter((invoice) => invoice.status !== "void" && Number(invoice.paid_minor) < Number(invoice.subtotal_minor));
   const outstanding = openInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal_minor) - Number(invoice.paid_minor), 0);
@@ -241,7 +241,7 @@ export default function PlatformBilling() {
   const closeCustomerModal = async () => {
     // Check if there are unsaved changes
     const hasChanges = customerTier !== (customer?.tier_id ?? "") ||
-      customerStatus !== (customer?.subscription_status ?? "") ||
+      (customerStatus || (customer?.subscription_status ?? "")) !== (customer?.subscription_status ?? "") ||
       String(document.querySelector<HTMLInputElement>("#billing-name")?.value || "") !== (customer?.billing_name || customer?.name || "") ||
       String(document.querySelector<HTMLInputElement>("#billing-email")?.value || "") !== (customer?.billing_email || customer?.registration_email || "") ||
       String(document.querySelector<HTMLInputElement>("#billing-reference")?.value || "") !== (customer?.billing_reference || "") ||
