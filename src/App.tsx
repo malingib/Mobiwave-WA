@@ -1600,18 +1600,20 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           <span className="min-w-0 flex-1"><strong>Platform console</strong><small>Service operator view</small></span>
           <ArrowUpRight size={14} className="flex-none" />
         </a>}
-        <a
-          href="/pricing"
-          className="upgrade-card mb-2 block rounded-xl border border-brand-100 bg-brand-50 p-3 transition-colors hover:bg-brand-100"
-        >
-          <strong className="block font-display text-[13px] font-bold text-text">Upgrade to Pro</strong>
-          <span className="mt-1 block text-[11px] leading-relaxed text-text-muted">
-            Unlock more messages, advanced analytics and priority support.
-          </span>
-          <span className="btn btn-primary btn-pill mt-3 h-8 w-full text-[11.5px]">
-            Upgrade Now <ArrowUpRight size={13} />
-          </span>
-        </a>
+        {!tenantPlanLoading && tenantPlan?.tier && !/enterprise/i.test(tenantPlan.tier.name) && (
+          <a
+            href="/pricing"
+            className="upgrade-card mb-2 block rounded-xl border border-brand-100 bg-brand-50 p-3 transition-colors hover:bg-brand-100"
+          >
+            <strong className="block font-display text-[13px] font-bold text-text">Upgrade your plan</strong>
+            <span className="mt-1 block text-[11px] leading-relaxed text-text-muted">
+              Explore higher tiers, more messages, advanced analytics and priority support.
+            </span>
+            <span className="btn btn-primary btn-pill mt-3 h-8 w-full text-[11.5px]">
+              View plans <ArrowUpRight size={13} />
+            </span>
+          </a>
+        )}
         <div className="flex items-center gap-2.5 rounded-lg border border-hairline bg-raised p-2">
           <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-brand-600 text-[12px] font-bold text-white">
             {user.email?.slice(0, 1).toUpperCase() ?? "U"}
