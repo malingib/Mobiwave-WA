@@ -1764,6 +1764,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           metricsError={overviewMetricsError}
           metricsLoading={overviewMetricsLoading}
           metaStatus={metaStatus}
+          tenantId={tenantId}
           onNavigate={(next) => goTo(next as View)}
           onOpenConversation={(conversationId) => { setSelectedConversation(conversationId); goTo("Inbox"); }}
         />
