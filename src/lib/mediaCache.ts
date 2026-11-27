@@ -1,10 +1,12 @@
 const DATABASE_NAME = "mobiwave-wa-media";
 const DATABASE_VERSION = 1;
-const STORE_NAME = "media";
+const MEDIA_STORE = "media";
+const META_STORE = "media_metadata";
 const MAX_CACHE_BYTES = 200 * 1024 * 1024;
 
 type CacheKey = { tenantId: string; userId: string; mediaId: string };
-type CachedMedia = CacheKey & { key: string; blob: Blob; size: number; lastAccessed: number };
+type CachedMedia = CacheKey & { key: string; blob: Blob };
+type MediaMetadata = { key: string; userId: string; size: number; lastAccessed: number };
 
 function cacheKey({ tenantId, userId, mediaId }: CacheKey) {
   return [tenantId, userId, mediaId].join(":");
@@ -16,10 +18,11 @@ function openDatabase(): Promise<IDBDatabase | null> {
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: "key" });
-        store.createIndex("userId", "userId", { unique: false });
-        store.createIndex("lastAccessed", "lastAccessed", { unique: false });
+      if (!db.objectStoreNames.contains(MEDIA_STORE)) db.createObjectStore(MEDIA_STORE, { keyPath: "key" });
+      if (!db.objectStoreNames.contains(META_STORE)) {
+        const metadata = db.createObjectStore(META_STORE, { keyPath: "key" });
+        metadata.createIndex("userId", "userId", { unique: false });
+        metadata.createIndex("lastAccessed", "lastAccessed", { unique: false });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -49,12 +52,13 @@ export async function getCachedMedia(key: CacheKey): Promise<Blob | null> {
   const db = await openDatabase();
   if (!db) return null;
   try {
-    const transaction = db.transaction(STORE_NAME, "readwrite");
-    const store = transaction.objectStore(STORE_NAME);
-    const record = await requestResult(store.get(cacheKey(key))) as CachedMedia | undefined;
+    const id = cacheKey(key);
+    const transaction = db.transaction([MEDIA_STORE, META_STORE], "readwrite");
+    const mediaStore = transaction.objectStore(MEDIA_STORE);
+    const metadataStore = transaction.objectStore(META_STORE);
+    const record = await requestResult(mediaStore.get(id)) as CachedMedia | undefined;
     if (!record?.blob) return null;
-    record.lastAccessed = Date.now();
-    store.put(record);
+    metadataStore.put({ key: id, userId: key.userId, size: record.blob.size, lastAccessed: Date.now() } satisfies MediaMetadata);
     return record.blob;
   } catch {
     return null;
@@ -69,37 +73,37 @@ export async function cacheMedia({ tenantId, userId, mediaId, blob }: CacheKey &
   if (!db) return;
   try {
     await requestPersistentStorage();
-    const record: CachedMedia = {
-      key: cacheKey({ tenantId, userId, mediaId }),
-      tenantId, userId, mediaId, blob, size: blob.size, lastAccessed: Date.now(),
-    };
+    const key = cacheKey({ tenantId, userId, mediaId });
     await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, "readwrite");
-      transaction.objectStore(STORE_NAME).put(record);
+      const transaction = db.transaction([MEDIA_STORE, META_STORE], "readwrite");
+      transaction.objectStore(MEDIA_STORE).put({ key, tenantId, userId, mediaId, blob } satisfies CachedMedia);
+      transaction.objectStore(META_STORE).put({ key, userId, size: blob.size, lastAccessed: Date.now() } satisfies MediaMetadata);
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
 
-    const records = await new Promise<CachedMedia[]>((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, "readonly");
-      const request = transaction.objectStore(STORE_NAME).getAll();
-      request.onsuccess = () => resolve(request.result as CachedMedia[]);
+    // Read only small metadata rows during LRU eviction, never every cached Blob.
+    const records = await new Promise<MediaMetadata[]>((resolve, reject) => {
+      const transaction = db.transaction(META_STORE, "readonly");
+      const request = transaction.objectStore(META_STORE).getAll();
+      request.onsuccess = () => resolve(request.result as MediaMetadata[]);
       request.onerror = () => reject(request.error);
     });
-    let total = records.reduce((sum, item) => sum + (Number(item.size) || item.blob?.size || 0), 0);
+    let total = records.reduce((sum, item) => sum + (Number(item.size) || 0), 0);
     if (total > MAX_CACHE_BYTES) {
       records.sort((a, b) => a.lastAccessed - b.lastAccessed);
       const victims: string[] = [];
       for (const item of records) {
         if (total <= MAX_CACHE_BYTES) break;
         victims.push(item.key);
-        total -= Number(item.size) || item.blob?.size || 0;
+        total -= Number(item.size) || 0;
       }
       if (victims.length) await new Promise<void>((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, "readwrite");
-        const store = transaction.objectStore(STORE_NAME);
-        victims.forEach((key) => store.delete(key));
+        const transaction = db.transaction([MEDIA_STORE, META_STORE], "readwrite");
+        const mediaStore = transaction.objectStore(MEDIA_STORE);
+        const metadataStore = transaction.objectStore(META_STORE);
+        victims.forEach((victim) => { mediaStore.delete(victim); metadataStore.delete(victim); });
         transaction.oncomplete = () => resolve();
         transaction.onerror = () => reject(transaction.error);
         transaction.onabort = () => reject(transaction.error);
@@ -118,14 +122,15 @@ export async function clearUserMediaCache(userId: string): Promise<void> {
   if (!db) return;
   try {
     await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, "readwrite");
-      const store = transaction.objectStore(STORE_NAME);
-      const index = store.index("userId");
-      const request = index.openKeyCursor(IDBKeyRange.only(userId));
+      const transaction = db.transaction([MEDIA_STORE, META_STORE], "readwrite");
+      const mediaStore = transaction.objectStore(MEDIA_STORE);
+      const metadataStore = transaction.objectStore(META_STORE);
+      const request = metadataStore.index("userId").openKeyCursor(IDBKeyRange.only(userId));
       request.onsuccess = () => {
         const cursor = request.result;
         if (cursor) {
-          store.delete(cursor.primaryKey);
+          mediaStore.delete(cursor.primaryKey);
+          metadataStore.delete(cursor.primaryKey);
           cursor.continue();
         }
       };
