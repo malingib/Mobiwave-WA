@@ -367,7 +367,7 @@ export default function App() {
     // visible forever.
     const needsManualAttention = /^(could not|failed|error|unable|invalid|not found|not configured|not allowed|enter|select|record)\b|copy it now|copy the signing secret|copy the value|select and copy|will not be shown again|won't be shown again|record how and when|edge function|non-2xx|unauthorized|forbidden|network error/i.test(notice);
     if (needsManualAttention) return;
-    const timeout = window.setTimeout(() => setNotice(""), 4500);
+    const timeout = window.setTimeout(() => setNotice(""), noticeIsError ? 15000 : 8000);
     return () => window.clearTimeout(timeout);
   }, [notice]);
   const [workspaceName, setWorkspaceName] = useState("");
