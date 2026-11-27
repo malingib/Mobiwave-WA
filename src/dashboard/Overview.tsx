@@ -50,6 +50,7 @@ export default function Overview({
   metricsError,
   metricsLoading = false,
   metaStatus,
+  tenantId,
   onNavigate,
   onOpenConversation,
 }: {
@@ -59,11 +60,16 @@ export default function Overview({
   metricsError: string;
   metricsLoading?: boolean;
   metaStatus: MetaStatus;
+  tenantId: string;
   onNavigate: (view: string) => void;
   onOpenConversation: (conversationId: string) => void;
 }) {
   const [range, setRange] = useState<7 | 14>(14);
-  const [showOnboarding, setShowOnboarding] = useState(true);
+  const onboardingDismissKey = `mobiwave-wa:onboarding-dismissed:${tenantId}`;
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    try { return localStorage.getItem(onboardingDismissKey) !== "true"; }
+    catch { return true; }
+  });
 
   const stats = useMemo(() => {
     const open = metrics?.conversations.open ?? 0;
@@ -173,7 +179,10 @@ export default function Overview({
                 <button
                   type="button"
                   className="icon-btn ml-2 flex-shrink-0"
-                  onClick={() => setShowOnboarding(false)}
+                  onClick={() => {
+                    setShowOnboarding(false);
+                    try { localStorage.setItem(onboardingDismissKey, "true"); } catch { /* keep dismissal for this session */ }
+                  }}
                   aria-label="Close onboarding banner"
                 >
                   <X size={16} />

@@ -1758,12 +1758,14 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
       </div>
       {view === "Overview" && <section className="content"><Suspense fallback={<div className="panel" role="status">Loading overview…</div>}>
         <Overview
+          key={tenantId}
           conversations={conversations}
           dailyMessages={dailyMessages}
           metrics={overviewMetrics}
           metricsError={overviewMetricsError}
           metricsLoading={overviewMetricsLoading}
           metaStatus={metaStatus}
+          tenantId={tenantId}
           onNavigate={(next) => goTo(next as View)}
           onOpenConversation={(conversationId) => { setSelectedConversation(conversationId); goTo("Inbox"); }}
         />
