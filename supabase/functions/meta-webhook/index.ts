@@ -66,18 +66,39 @@ Deno.serve(async (request) => {
     const challenge = url.searchParams.get("hub.challenge");
     const legacyExpected = Deno.env.get("META_WEBHOOK_VERIFY_TOKEN");
     const tokenHash = token ? await sha256(token) : "";
-    const { data: matchingTenant } = tokenHash ? await admin.from("meta_integrations").select("tenant_id").eq("webhook_verify_token_hash", tokenHash).limit(1).maybeSingle() : { data: null };
-    if (mode === "subscribe" && challenge && ((matchingTenant?.tenant_id && tokenHash) || (legacyExpected && token === legacyExpected))) {
-      // Only a successful workspace-specific token handshake is evidence that
-      // this tenant completed Meta callback verification. A platform-level
-      // legacy token may keep an old callback working, but must not stamp every
-      // workspace as verified.
-      if (matchingTenant?.tenant_id) {
+    const { data: matchingTenant } = tokenHash ? await admin.from("meta_integrations").select("tenant_id").eq("webhook_verify_token_hash", tokenHash).eq("enabled", true).limit(1).maybeSingle() : { data: null };
+    const workspaceTokenMatches = Boolean(matchingTenant?.tenant_id && tokenHash);
+    const legacyTokenMatches = Boolean(legacyExpected && token === legacyExpected);
+    if (mode === "subscribe" && challenge && (workspaceTokenMatches || legacyTokenMatches)) {
+      // A workspace token always identifies its tenant. A legacy platform token
+      // can be attributed only when exactly one active integration exists;
+      // never mark every tenant verified from a shared platform secret.
+      let auditTenantId: string | null = matchingTenant?.tenant_id ?? null;
+      let auditSource = "workspace_token";
+      if (!auditTenantId && legacyTokenMatches) {
+        const { data: activeIntegrations, error: lookupError } = await admin
+          .from("meta_integrations")
+          .select("tenant_id")
+          .eq("enabled", true)
+          .limit(2);
+        if (lookupError) {
+          console.error("Meta legacy webhook handshake could not resolve its active workspace.", lookupError.message);
+          return new Response("Verification audit could not be saved", { status: 500 });
+        }
+        if (activeIntegrations?.length === 1) {
+          auditTenantId = String(activeIntegrations[0].tenant_id);
+          auditSource = "platform_legacy_token";
+        }
+      }
+      if (auditTenantId) {
         const verifiedAt = new Date().toISOString();
         const { data: audited, error: auditError } = await admin.from("meta_integrations")
-          .update({ webhook_verified_at: verifiedAt, updated_at: verifiedAt })
-          .eq("tenant_id", matchingTenant.tenant_id)
-          .eq("webhook_verify_token_hash", tokenHash)
+          .update({
+            webhook_verified_at: verifiedAt,
+            webhook_verification_source: auditSource,
+            updated_at: verifiedAt,
+          })
+          .eq("tenant_id", auditTenantId)
           .select("tenant_id")
           .maybeSingle();
         if (auditError || !audited) {
