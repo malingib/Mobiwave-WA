@@ -1267,7 +1267,8 @@ export default function App() {
     setBusy(false);
     if (error || data?.error || data?.ok !== true) { setNotice(data?.error ?? error?.message ?? "Meta webhook verification token was not saved. Try again."); return; }
     setMetaWebhookToken(raw);
-    setNotice("Verification token saved securely. Copy it now and paste the same value into Meta.");
+    setMetaStatus((current) => current ? { ...current, webhook_verified_at: null, webhook_verification_source: null } : current);
+    setNotice("New verification token saved. The previous callback verification has been reset; paste this token into Meta and verify the callback again.");
   }
   async function saveMeta(event: FormEvent) {
     event.preventDefault(); if (!supabase) return; setBusy(true);
