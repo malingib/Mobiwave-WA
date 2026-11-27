@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { clearWorkspaceUiState, readWorkspaceUiState, withTimeout, writeWorkspaceUiState } from "./lib/runtime.js";
+import { clearUserMediaCache } from "./lib/mediaCache";
 import { ErrorPage } from "./ErrorPages";
 import type { DailyMessagePoint, OverviewMetrics } from "./dashboard/Overview";
 
@@ -130,26 +131,64 @@ function campaignPreview(campaign: Campaign, template?: Template) {
   }
   return parts;
 }
-function MessageMedia({ mediaId, type, filename, tenantId }: { mediaId: string; type: string; filename?: string; tenantId: string }) {
+function MessageMedia({ mediaId, type, filename, tenantId, userId }: { mediaId: string; type: string; filename?: string; tenantId: string; userId: string }) {
   const [source, setSource] = useState("");
-  const [error, setError] = useState(false);
-  useEffect(() => {
-    let active = true;
-    setSource(""); setError(false);
-    if (!supabase || !mediaId) return;
-    supabase.functions.invoke("meta-media", { body: { tenant_id: tenantId, media_id: mediaId } }).then(({ data, error: invokeError }) => {
-      if (!active) return;
-      if (invokeError || !data?.base64 || !data?.content_type) { setError(true); return; }
-      setSource("data:" + data.content_type + ";base64," + data.base64);
-    }).catch(() => { if (active) setError(true); });
-    return () => { active = false; };
-  }, [mediaId, tenantId]);
-  if (error) return <small className="media-error">Media unavailable. Refresh or check the WhatsApp connection.</small>;
-  if (!source) return <small className="media-loading">Loading attachment…</small>;
-  if (type === "image") return <img className="message-media-image" src={source} alt={filename || "WhatsApp attachment"}/>;
-  if (type === "video") return <video className="message-media-video" controls src={source}/>;
-  if (type === "audio") return <audio controls src={source}/>;
-  return <a className="message-media-download" href={source} download={filename || "WhatsApp attachment"}>{filename || "Download attachment"}</a>;
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => () => { if (source) URL.revokeObjectURL(source); }, [source]);
+
+  async function openMedia() {
+    if (!supabase || loading || source) return;
+    setLoading(true);
+    setError("");
+    try {
+      const cacheKey = { tenantId, userId, mediaId };
+      const cached = await import("./lib/mediaCache").then(({ getCachedMedia }) => getCachedMedia(cacheKey));
+      if (cached) {
+        setSource(URL.createObjectURL(cached));
+        return;
+      }
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) throw new Error("Your session has expired. Sign in again.");
+      const endpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-media`;
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + session.access_token,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ tenant_id: tenantId, media_id: mediaId, filename }),
+      });
+      if (!response.ok) {
+        let detail = "Attachment could not be retrieved.";
+        try { detail = (await response.json()).error || detail; } catch { /* retain generic message */ }
+        throw new Error(detail);
+      }
+      const blob = await response.blob();
+      if (!blob.size) throw new Error("Meta returned an empty attachment.");
+      const contentType = response.headers.get("content-type") || blob.type || "application/octet-stream";
+      const mediaBlob = blob.type ? blob : new Blob([blob], { type: contentType });
+      const { cacheMedia } = await import("./lib/mediaCache");
+      await cacheMedia({ ...cacheKey, blob: mediaBlob });
+      setSource(URL.createObjectURL(mediaBlob));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Attachment could not be retrieved.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (source && type === "image") return <img className="message-media-image" src={source} alt={filename || "WhatsApp attachment"}/>;
+  if (source && type === "video") return <video className="message-media-video" controls preload="metadata" src={source}/>;
+  if (source && type === "audio") return <audio controls preload="metadata" src={source}/>;
+  if (source) return <a className="message-media-download" href={source} download={filename || "WhatsApp attachment"}>{filename || "Download attachment"}</a>;
+  return <div className="message-media-placeholder">
+    <button type="button" className="secondary-button compact" onClick={() => void openMedia()} disabled={loading}>
+      {loading ? "Loading attachment…" : type === "image" ? "View image" : type === "audio" ? "Load audio" : type === "video" ? "Load video" : "Download attachment"}
+    </button>
+    {error && <small className="media-error" role="status">{error}</small>}
+  </div>;
 }
 function planStateLabel(plan: TenantPlan | null) {
   switch (plan?.state) {
@@ -1387,8 +1426,10 @@ export default function App() {
   }
   async function signOut() {
     if (!supabase) return;
+    const signedOutUserId = user?.id;
     const { error } = await supabase.auth.signOut();
     if (error) { setNotice("Could not sign out: " + error.message); return; }
+    if (signedOutUserId) await clearUserMediaCache(signedOutUserId);
     clearWorkspaceUiState();
     setTenants([]);
     setTenantId("");
@@ -1808,7 +1849,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-key`}</pre><a className="btn btn-primary
           <div className="chat-panel">
             {!selectedConversation?<div className="empty-chat"><div className="empty-chat-icon"><MessageCircle size={26}/></div><strong>Choose a conversation</strong><span>Select a contact to read and reply to their messages.</span><div className="empty-chat-tips"><span>Assign an owner</span><span>Reply inside 24h</span><span>Leave a private note</span></div></div>:<>
               <div className="chat-header"><button type="button" className="inbox-back-button" onClick={()=>setSelectedConversation("")}><ArrowLeft size={16}/> Conversations</button><div className="chat-contact-heading"><strong>{conversations.find(c=>c.id===selectedConversation)?.contacts?.display_name||conversations.find(c=>c.id===selectedConversation)?.contacts?.phone_e164}</strong><span>{conversations.find(c=>c.id===selectedConversation)?.contacts?.phone_e164}</span></div>{(()=>{const c=conversations.find(x=>x.id===selectedConversation);return c?<div className="chat-head-actions"><span className={"chat-status is-"+c.status}>{c.status}</span>{(isAdmin||activeTenant?.role==="agent")&&<label className="assignment-control"><span>Assigned to</span><select aria-label="Assign conversation" value={c.assigned_to||""} onChange={e=>void assignConversation(c,e.target.value)}><option value="">Unassigned</option>{teamMembers.map(member=><option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>}{canAgent&&c.status!=="resolved"&&<button className="secondary-button compact" onClick={()=>void resolveConversation(c)}>Resolve</button>}</div>:null})()}</div>
-              <div ref={chatMessagesRef} className="chat-messages" role="log" aria-label="Conversation messages" aria-live="polite" aria-relevant="additions text">{messageHasMore&&<button type="button" className="secondary-button compact" onClick={()=>void loadOlderMessages()} disabled={loadingOlderMessages}>{loadingOlderMessages?"Loading earlier messages…":"Load earlier messages"}</button>}{messages.length===0?<div className="chat-empty"><MessageCircle size={22}/><strong>No messages yet</strong><span>Incoming and outgoing WhatsApp messages will appear here.</span></div>:messages.map(m=><div key={m.id} className={m.is_note?"message-bubble internal-note":m.direction==="outbound"?"message-bubble outbound":"message-bubble inbound"}>{m.body&&<p>{m.body}</p>}{m.media_id&&m.message_type&&<MessageMedia mediaId={m.media_id} type={m.message_type} filename={m.filename} tenantId={tenantId}/>}<small>{m.is_note?"Internal note · "+(m.author_id===user?.id?"You":"Teammate"):m.actor_type}{m.status?" · "+m.status:""} · {new Date(m.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div>)}</div>
+              <div ref={chatMessagesRef} className="chat-messages" role="log" aria-label="Conversation messages" aria-live="polite" aria-relevant="additions text">{messageHasMore&&<button type="button" className="secondary-button compact" onClick={()=>void loadOlderMessages()} disabled={loadingOlderMessages}>{loadingOlderMessages?"Loading earlier messages…":"Load earlier messages"}</button>}{messages.length===0?<div className="chat-empty"><MessageCircle size={22}/><strong>No messages yet</strong><span>Incoming and outgoing WhatsApp messages will appear here.</span></div>:messages.map(m=><div key={m.id} className={m.is_note?"message-bubble internal-note":m.direction==="outbound"?"message-bubble outbound":"message-bubble inbound"}>{m.body&&<p>{m.body}</p>}{m.media_id&&m.message_type&&<MessageMedia mediaId={m.media_id} type={m.message_type} filename={m.filename} tenantId={tenantId} userId={user?.id ?? ""}/>}<small>{m.is_note?"Internal note · "+(m.author_id===user?.id?"You":"Teammate"):m.actor_type}{m.status?" · "+m.status:""} · {new Date(m.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div>)}</div>
               {canAgent?<><div className="composer-tabs"><button type="button" className={composerMode==="reply"?"active":""} onClick={()=>setComposerMode("reply")}>Reply</button><button type="button" className={composerMode==="note"?"active":""} onClick={()=>setComposerMode("note")}>Internal note</button></div><form className="chat-reply" onSubmit={sendReply}><div className="chat-reply-body"><textarea aria-label={composerMode==="note"?"Internal note":"Message reply"} value={replyText} onChange={e=>setReplyText(e.target.value)} placeholder={composerMode==="note"?"Write a note for your team…":"Reply within the 24-hour service window…"} required/><small className="composer-hint">{composerMode==="note"?"Private note · only your team can see this.":"Official Cloud API · replies require an open 24-hour service window."}<span>{replyText.length}</span></small></div><button className="primary-button" disabled={busy}>{composerMode==="note"?"Add note":"Send"} <Send size={15}/></button></form></>:<p className="read-only-inbox">Your account role has read-only inbox access.</p>}
             </>}
           </div>
