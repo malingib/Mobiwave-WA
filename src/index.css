@@ -4765,7 +4765,7 @@
   }
   .app-shell .usage-head,
   .app-shell .usage-row {
-    grid-template-columns: minmax(0, 1.2fr) 6rem 7rem 6.5rem 6.5rem 7rem 9rem;
+    grid-template-columns: minmax(0, 1.2fr) 6rem 6rem 7rem 6.5rem 6.5rem;
   }
   .app-shell .notice strong,
   .app-shell .inline-notice strong { display: block; font-size: .8125rem; font-weight: 600; }
