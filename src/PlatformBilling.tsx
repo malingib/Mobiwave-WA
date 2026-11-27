@@ -12,7 +12,7 @@ type Tier = {
   max_team_members: number; monthly_message_limit: number; monthly_ai_request_limit: number;
 };
 type Customer = {
-  tenant_id: string; name: string; slug: string; billing_name: string; billing_email: string;
+  tenant_id: string; name: string; slug: string; billing_name: string; billing_email: string; registration_email?: string | null;
   billing_reference: string; billing_address: string; notes: string; tier_id: string | null;
   tier_name: string | null; subscription_status: string | null; currency: string | null;
   monthly_price_minor: number | null; invoice_count: number; outstanding_minor: number; paid_minor: number;
@@ -137,7 +137,7 @@ export default function PlatformBilling() {
   const customers = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return data.customers;
-    return data.customers.filter((item) => `${item.name} ${item.slug} ${item.billing_name} ${item.billing_email} ${item.tier_name ?? ""}`.toLowerCase().includes(term));
+    return data.customers.filter((item) => `${item.name} ${item.slug} ${item.billing_name} ${item.billing_email} ${item.registration_email ?? ""} ${item.tier_name ?? ""}`.toLowerCase().includes(term));
   }, [data.customers, search]);
   const openInvoices = data.invoices.filter((invoice) => invoice.status !== "void" && Number(invoice.paid_minor) < Number(invoice.subtotal_minor));
   const outstanding = openInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal_minor) - Number(invoice.paid_minor), 0);
@@ -241,9 +241,9 @@ export default function PlatformBilling() {
   const closeCustomerModal = async () => {
     // Check if there are unsaved changes
     const hasChanges = customerTier !== (customer?.tier_id ?? "") ||
-      customerStatus !== (customer?.subscription_status ?? "") ||
-      String(document.querySelector<HTMLInputElement>("#billing-name")?.value || "") !== (customer?.billing_name || "") ||
-      String(document.querySelector<HTMLInputElement>("#billing-email")?.value || "") !== (customer?.billing_email || "") ||
+      (customerStatus || (customer?.subscription_status ?? "")) !== (customer?.subscription_status ?? "") ||
+      String(document.querySelector<HTMLInputElement>("#billing-name")?.value || "") !== (customer?.billing_name || customer?.name || "") ||
+      String(document.querySelector<HTMLInputElement>("#billing-email")?.value || "") !== (customer?.billing_email || customer?.registration_email || "") ||
       String(document.querySelector<HTMLInputElement>("#billing-reference")?.value || "") !== (customer?.billing_reference || "") ||
       String(document.querySelector<HTMLTextAreaElement>("#billing-address")?.value || "") !== (customer?.billing_address || "") ||
       String(document.querySelector<HTMLTextAreaElement>("#billing-account-notes")?.value || "") !== (customer?.notes || "");
@@ -479,7 +479,7 @@ export default function PlatformBilling() {
             </div>
             <div className="billing-table-wrap"><table className="billing-table"><thead><tr><th>CLIENT</th><th>PLAN / STATUS</th><th>OPEN BALANCE</th><th>PAID TO DATE</th><th>INVOICES</th><th /></tr></thead><tbody>
               {customers.map((item) => <tr key={item.tenant_id}>
-                <td><strong>{item.billing_name || item.name}</strong><small>{item.billing_email || item.slug}</small></td>
+                <td><strong>{item.billing_name || item.name}</strong><small>{item.billing_email || item.registration_email || item.slug}</small></td>
                 <td>{item.tier_name ? <><strong>{item.tier_name}</strong><small>{item.subscription_status} · {money(item.monthly_price_minor, item.currency ?? "KES")}/mo</small></> : <span className="billing-muted">No tier assigned</span>}</td>
                 <td className={Number(item.outstanding_minor) > 0 ? "billing-amount-due" : ""}>{money(item.outstanding_minor)}</td>
                 <td>{money(item.paid_minor)}</td><td>{item.invoice_count}</td>
@@ -564,7 +564,7 @@ export default function PlatformBilling() {
             <input 
               id="billing-name" 
               name="billing_name" 
-              defaultValue={customer.billing_name} 
+              defaultValue={customer.billing_name || customer.name} 
               maxLength={160} 
               required 
               aria-required="true"
@@ -577,7 +577,7 @@ export default function PlatformBilling() {
               id="billing-email" 
               name="billing_email" 
               type="email" 
-              defaultValue={customer.billing_email} 
+              defaultValue={customer.billing_email || customer.registration_email || ""} 
               maxLength={254} 
               required 
               aria-required="true"
