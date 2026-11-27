@@ -18,7 +18,13 @@ interface Invoice {
   status: string;
   is_overdue: boolean;
   items?: Array<{ id: string; description: string; quantity: number; unit_amount_minor: number; line_total_minor: number }>;
-  payments?: Array<{ id: string; amount_minor: number; method: string; reference: string | null; paid_at: string }>;
+  payments?: Array<{ id: string; amount_minor: number; method: string; reference: string | null; paid_at: string; reversed_at?: string | null; reversal_reason?: string | null }>;
+}
+interface BillingAccount {
+  billing_name: string;
+  billing_email: string;
+  billing_reference: string;
+  billing_address: string;
 }
 interface Tenant {
   id: string;
@@ -44,6 +50,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [account, setAccount] = useState<BillingAccount | null>(null);
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [checkoutInvoiceId, setCheckoutInvoiceId] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -51,7 +58,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId }) => {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (!tenantId) { setTenant(null); setInvoices([]); setLoading(false); return; }
+      if (!tenantId) { setTenant(null); setInvoices([]); setAccount(null); setLoading(false); return; }
       setLoading(true);
       setError(null);
       try {
@@ -64,7 +71,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId }) => {
         if (summaryError) throw summaryError;
         if (allowanceError) console.warn('Meta allowance unavailable:', allowanceError);
         if (cancelled) return;
-        const billing = summary as { entitlements?: BillingEntitlements; invoices?: Invoice[] } | null;
+        const billing = summary as { entitlements?: BillingEntitlements; invoices?: Invoice[]; account?: BillingAccount } | null;
         const entitlement = billing?.entitlements;
         setTenant({
           id: tenantData.id,
@@ -77,6 +84,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId }) => {
           tenant_meta_allowance: allowance ?? null,
         });
         setInvoices(Array.isArray(billing?.invoices) ? billing.invoices : []);
+        setAccount(billing?.account ?? null);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Billing information could not be loaded.');
       } finally {
@@ -131,6 +139,15 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId }) => {
           <article className="kpi-card panel kpi-tone-brand"><div className="kpi-body"><span className="kpi-icon"><MessageSquare size={20} /></span><div className="kpi-copy"><span className="kpi-label">Meta messages left</span><strong className="kpi-value">{(tenant?.tenant_meta_allowance?.free_service_remaining || 0).toLocaleString()}</strong><span className="kpi-hint">Resets {date(tenant?.tenant_meta_allowance?.period_end)}</span></div></div></article>
         </div>
         <div className="billing-note"><strong>Subscription billing:</strong> Your monthly platform subscription is billed by MobiWave. Meta messaging charges are separate and billed by WhatsApp according to Meta’s published rates. Optional integration assistance is billed only if you request it and approve a separate quote.</div>
+        <section className="panel form-panel mt-6" aria-labelledby="billing-contact-title">
+          <div className="section-header"><div><h2 id="billing-contact-title">Billing contact</h2><p>Invoices use your saved billing details, or your verified workspace registration email when no separate billing email is recorded.</p></div></div>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div><span className="muted small">Billing name</span><strong className="block">{account?.billing_name || tenant?.name || '—'}</strong></div>
+            <div><span className="muted small">Billing email</span><strong className="block break-all">{account?.billing_email || 'Not available'}</strong></div>
+            <div><span className="muted small">Customer reference</span><strong className="block">{account?.billing_reference || '—'}</strong></div>
+          </div>
+          {account?.billing_address && <p className="muted small mt-3">{account.billing_address}</p>}
+        </section>
         <div className="section-header"><div><h2>Invoices</h2><p>Review invoice totals, payments received and outstanding balances.</p></div><strong>{outstandingLabel} outstanding</strong></div>
         <div className="source-list">
           <div className="source-table-head invoice-head"><span>Invoice</span><span>Issued</span><span>Due</span><span>Total</span><span>Paid</span><span>Balance</span><span>Status</span></div>
@@ -142,7 +159,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId }) => {
               {((invoice.items?.length || 0) > 0 || (invoice.payments?.length || 0) > 0) && <details className="px-4 py-3 text-sm">
                 <summary className="cursor-pointer font-medium text-brand-700">View invoice details and payment records</summary>
                 {invoice.items?.length ? <div className="mt-3"><strong>Invoice items</strong>{invoice.items.map((item) => <div className="flex justify-between gap-4 border-b border-ink-100 py-2" key={item.id}><span>{item.description} · {item.quantity} × {money(item.unit_amount_minor, invoice.currency)}</span><strong>{money(item.line_total_minor, invoice.currency)}</strong></div>)}</div> : null}
-                {invoice.payments?.length ? <div className="mt-3"><strong>Verified payments</strong>{invoice.payments.map((payment) => <div className="flex flex-wrap justify-between gap-3 border-b border-ink-100 py-2" key={payment.id}><span>{date(payment.paid_at)} · {(payment.method || 'payment').toUpperCase()}{payment.reference ? ' · ' + payment.reference : ''}</span><strong>{money(payment.amount_minor, invoice.currency)}</strong></div>)}</div> : null}
+                {invoice.payments?.length ? <div className="mt-3"><strong>Payment history</strong>{invoice.payments.map((payment) => <div className="flex flex-wrap justify-between gap-3 border-b border-ink-100 py-2" key={payment.id}><span>{date(payment.paid_at)} · {(payment.method || 'payment').toUpperCase()}{payment.reference ? ' · ' + payment.reference : ''}{payment.reversed_at ? ' · Reversed' + (payment.reversal_reason ? ': ' + payment.reversal_reason : '') : ''}</span><strong>{money(payment.amount_minor, invoice.currency)}</strong></div>)}</div> : null}
               </details>}
             </div>
           ))}
