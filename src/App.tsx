@@ -143,13 +143,18 @@ function MessageMedia({ mediaId, type, filename, tenantId, userId }: { mediaId: 
     setError("");
     try {
       const cacheKey = { tenantId, userId, mediaId };
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) throw new Error("Your session has expired. Sign in again.");
       const cached = await import("./lib/mediaCache").then(({ getCachedMedia }) => getCachedMedia(cacheKey));
       if (cached) {
+        // Re-check current tenant membership before serving a browser-local copy.
+        const { data: membership, error: membershipError } = await supabase
+          .from("tenant_members").select("tenant_id")
+          .eq("tenant_id", tenantId).eq("user_id", userId).maybeSingle();
+        if (membershipError || !membership) throw new Error("You no longer have access to this workspace attachment.");
         setSource(URL.createObjectURL(cached));
         return;
       }
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !session?.access_token) throw new Error("Your session has expired. Sign in again.");
       const endpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-media`;
       const response = await fetch(endpoint, {
         method: "POST",
