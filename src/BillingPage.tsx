@@ -117,6 +117,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ tenantId }) => {
   const date = (value?: string | null) => value ? new Date(value).toLocaleDateString('en-KE', { year: 'numeric', month: 'long', day: 'numeric' }) : '—';
   const subscriptionLabel = tenant?.subscription_status ? tenant.subscription_status.replace(/_/g, ' ') : 'Not assigned';
   const outstandingByCurrency = invoices.reduce<Record<string, number>>((totals, invoice) => {
+    if (invoice.status === 'void') return totals;
     totals[invoice.currency] = (totals[invoice.currency] || 0) + Math.max(0, invoice.balance_minor || 0);
     return totals;
   }, {});
