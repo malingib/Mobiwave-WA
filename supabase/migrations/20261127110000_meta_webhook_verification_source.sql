@@ -19,7 +19,7 @@ begin
       );
   end if;
 end;
-$;
+$$;
 
 comment on column public.meta_integrations.webhook_verification_source is
   'Token source used for the last successful Meta GET callback verification handshake.';
