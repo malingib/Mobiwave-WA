@@ -79,24 +79,34 @@ Deno.serve(async (request) => {
     if (!allowedTypes.has(contentType)) return json({ error: "This attachment type cannot be downloaded (" + contentType + ")." }, 415);
     const length = Number(mediaResponse.headers.get("content-length") ?? 0);
     if (length > maxBytes) return json({ error: "Attachment exceeds the 8 MB preview limit." }, 413);
-    stage = "read_media";
-    const reader = mediaResponse.body?.getReader();
-    if (!reader) return json({ error: "Attachment response was empty." }, 502);
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.length;
-      if (total > maxBytes) { await reader.cancel(); return json({ error: "Attachment exceeds the 8 MB preview limit." }, 413); }
-      chunks.push(value);
-    }
-    const bytes = new Uint8Array(total);
-    let byteOffset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, byteOffset); byteOffset += chunk.length; }
-    let binary = "";
-    for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-    return json({ base64: btoa(binary), content_type: contentType });
+    stage = "stream_media";
+    if (!mediaResponse.body) return json({ error: "Attachment response was empty." }, 502);
+    const safeFilename = String(body.filename ?? "WhatsApp attachment")
+      .replace(/[\\r\\n"]/g, "_")
+      .replace(/[\\/\\\\]/g, "_")
+      .slice(0, 180) || "WhatsApp attachment";
+    let streamedBytes = 0;
+    const limitedBody = mediaResponse.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        streamedBytes += chunk.byteLength;
+        if (streamedBytes > maxBytes) {
+          controller.error(new Error("Attachment exceeds the 8 MB preview limit."));
+          return;
+        }
+        controller.enqueue(chunk);
+      },
+    }));
+    const disposition = contentType.startsWith("image/") || contentType.startsWith("audio/") || contentType.startsWith("video/")
+      ? "inline"
+      : "attachment";
+    const headers = new Headers(corsHeaders);
+    headers.set("Content-Type", contentType);
+    headers.set("Content-Disposition", disposition + '; filename="' + safeFilename + '"');
+    headers.set("Cache-Control", "private, no-store");
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("Vary", "Authorization");
+    if (Number.isFinite(length) && length > 0) headers.set("Content-Length", String(length));
+    return new Response(limitedBody, { status: 200, headers });
   } catch (error) {
     const message = errorMessage(error);
     console.error("meta-media request failed", { stage, error: message });
